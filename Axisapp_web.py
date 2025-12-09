@@ -18,7 +18,6 @@ def is_probably_xlsx(file_path: str) -> bool:
     """Проверяет, что файл Excel корректен и существует."""
     return file_path.endswith(".xlsx") and os.path.exists(file_path)
 
-
 # =========================
 # НАСТРОЙКИ / КОНСТАНТЫ
 # =========================
@@ -455,6 +454,13 @@ class GabaritCalculator:
             if not type_elem or not formula:
                 continue
             total_value = 0.0
+
+            # --- SAFETY FIX: ensure 'sections' exists ---
+if "sections" not in globals():
+    sections = []
+# -------------------------------------------
+
+
             for s in sections:
                 if s.get("kind") == "door":
                     width = s.get("frame_width_mm", 0.0)
