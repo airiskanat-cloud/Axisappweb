@@ -10,15 +10,20 @@ from openpyxl.workbook import Workbook
 from openpyxl.drawing.image import Image as XLImage
 
 # =========================
-# Константы и пути
+# Настройки / константы
 # =========================
+
+DEBUG = False  # включи True временно для отладки логинов/паролей в sidebar
 
 def resource_path(relative_path: str) -> str:
     """Возвращает корректный путь к файлу (поддержка PyInstaller)."""
-    if hasattr(sys, "_MEIPASS"):
-        base_path = sys._MEIPASS
-    else:
-        base_path = os.path.abspath(os.path.dirname(__file__))
+    try:
+        if hasattr(sys, "_MEIPASS"):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(os.path.dirname(__file__))
+    except Exception:
+        base_path = os.getcwd()
     return os.path.join(base_path, relative_path)
 
 
@@ -41,7 +46,7 @@ FORM_HEADER = [
     "Тип изделия", "Вид изделия", "Створки",
     "Профильная система",
     "Тип стеклопакета",
-    "Режим заполнения",  # Ламбри / Сэндвич
+    "Режим заполнения",
     "Ширина, мм", "Высота, мм",
     "LEFT, мм", "CENTER, мм", "RIGHT, мм", "TOP, мм",
     "Ширина створки, мм", "Высота створки, мм",
@@ -55,8 +60,8 @@ COMPANY_NAME = "ООО «AXIS»"
 COMPANY_CITY = "Город Астана"
 COMPANY_PHONE = "+7 707 504 4040"
 COMPANY_EMAIL = "Axisokna.kz@mail.ru"
-COMPANY_SITE = "www.axis.kz"  # опционально
-LOGO_FILENAME = "logo_axis.png"  # файл логотипа рядом с .py
+COMPANY_SITE = "www.axis.kz"
+LOGO_FILENAME = "logo_axis.png"
 
 # =========================
 # Утилиты
@@ -136,7 +141,8 @@ def eval_formula(formula: str, context: dict) -> float:
         result = eval(formula, {"__builtins__": {}}, allowed_names)
         return float(result)
     except Exception as e:
-        print(f"Ошибка в формуле '{formula}': {e}")
+        if DEBUG:
+            print(f"Ошибка в формуле '{formula}': {e}")
         return 0.0
 
 # =========================
@@ -179,7 +185,8 @@ class ExcelClient:
             wb.create_sheet(SHEET_REF3)
             wb.create_sheet(SHEET_USERS)
             wb.save(self.filename)
-            print(f"Создан новый шаблон Excel: {self.filename}")
+            if DEBUG:
+                print(f"Создан новый шаблон Excel: {self.filename}")
         except Exception as e:
             print(f"Ошибка при создании шаблона Excel: {e}")
 
@@ -188,7 +195,6 @@ class ExcelClient:
             self.wb = load_workbook(self.filename, data_only=True)
         except zipfile.BadZipFile:
             print(f"BadZipFile: {self.filename} is not a valid xlsx.")
-            # пытаемся сделать бэкап поврежденного файла и создать новый шаблон
             try:
                 bak = self.filename + ".corrupt." + str(int(os.path.getmtime(self.filename)))
                 os.rename(self.filename, bak)
@@ -199,7 +205,6 @@ class ExcelClient:
             self.wb = load_workbook(self.filename, data_only=True)
         except Exception as e:
             print(f"Ошибка при загрузке Excel: {e}")
-            # создаём рабочую книгу в памяти, но не перезаписываем файл
             self.wb = Workbook()
 
     def save(self):
@@ -240,7 +245,7 @@ class ExcelClient:
 
     def clear_and_write(self, sheet_name: str, header: list, rows: list):
         ws = self.ws(sheet_name)
-        # удаляем все строки
+        # удаляем все строки (безопасно)
         try:
             ws.delete_rows(1, ws.max_row or 1)
         except Exception:
@@ -262,44 +267,55 @@ class ExcelClient:
         self.save()
 
 # =========================
-# Пользователи
+# Пользователи (безопасная загрузка)
 # =========================
 
 def load_users(excel: ExcelClient):
+    """
+    Надёжно читает пользователей из листа SHEET_USERS.
+    Очищает неразрывные пробелы, убирает звёздочки в паролях и приводит логин к lower() для сравнения.
+    """
     excel.load()
     try:
-        rows = excel.read_records(SHEET_USERS)
+        rows = excel.read_records(SHEET_USERS) or []
     except Exception:
-        return {}
+        rows = []
 
     users = {}
+
+    def _clean_cell_val(v):
+        if v is None:
+            return ""
+        s = str(v)
+        # убрать неразрывные пробелы и обычные пробелы по краям
+        s = s.replace("\xa0", " ").strip()
+        return s
+
     for row in rows:
-        # Попробуем найти столбцы похожие на логин/пароль/роль
         raw_login = get_field(row, "логин", "") or get_field(row, "login", "")
         raw_password = get_field(row, "парол", "") or get_field(row, "password", "")
         raw_role = get_field(row, "роль", "") or get_field(row, "role", "")
 
-        # Нормализация
-        login = str(raw_login).strip()
-        # логин приведём к нижнему регистру, чтобы ввод был нечувствителен к регистру
+        login = _clean_cell_val(raw_login)
         login_norm = login.lower()
 
-        password = str(raw_password or "").strip()
-        # убираем "звёздочки" маскировки в конце или начале, если они есть
-        if password.startswith("*") or password.endswith("*"):
-            password = password.strip("*").strip()
-        # можно также убрать случайные пробелы по краям
-        password = password.strip()
+        password = _clean_cell_val(raw_password)
+        # убрать маскировочные звёздочки, если они есть, и пробелы
+        password = password.strip("*").strip()
 
-        role = str(raw_role or "").strip()
+        role = _clean_cell_val(raw_role)
 
         if login_norm:
             users[login_norm] = {"password": password, "role": role, "_raw_login": login}
+
     return users
 
 
-
 def login_form(excel: ExcelClient):
+    """
+    Корректная и безопасная форма входа для Streamlit.
+    Возвращает текущего пользователя или None.
+    """
     if "current_user" in st.session_state:
         return st.session_state["current_user"]
 
@@ -311,23 +327,32 @@ def login_form(excel: ExcelClient):
 
     users = load_users(excel)
 
-    # Временно показываем debug (при необходимости можно отключить)
-    # st.sidebar.write("DEBUG: users:", users)
+    # Отладочный вывод, включается через DEBUG = True
+    if DEBUG:
+        try:
+            st.sidebar.write("DEBUG users keys:", list(users.keys()))
+            st.sidebar.write("DEBUG users (repr):", {k: repr(v["password"]) for k, v in users.items()})
+        except Exception:
+            pass
 
     if submitted:
-    entered_login = (login or "").strip().lower()
-    entered_password = (password or "").strip()
-    user = users.get(entered_login)
-    if user and entered_password == user["password"]:
-        st.session_state["current_user"] = {"login": user["_raw_login"], "role": user.get("role", "")}
-        st.sidebar.success(f"Привет, {user['_raw_login']}!")
-        return st.session_state["current_user"]
-    else:
-        st.sidebar.error("Неверный логин или пароль")
+        # Нормализация введённых значений
+        entered_login = (login or "").strip().lower()
+        entered_password = (password or "").strip()
 
+        user = users.get(entered_login)
+        if user and entered_password == (user.get("password") or ""):
+            st.session_state["current_user"] = {"login": user["_raw_login"], "role": user.get("role", "")}
+            st.sidebar.success(f"Привет, {user['_raw_login']}!")
+            return st.session_state["current_user"]
+        else:
+            st.sidebar.error("Неверный логин или пароль")
+
+    return None
 
 # =========================
 # Gabarit / Material / Final calculators
+# (оставил логику как у тебя, слегка отформатировал)
 # =========================
 
 class GabaritCalculator:
@@ -365,9 +390,7 @@ class GabaritCalculator:
 
     def calculate(self, order: dict, sections: list):
         ref_rows = self.excel.read_records(SHEET_REF3)
-        # если нет справочника — не ломаемся, но возвращаем пустой список
         if not ref_rows:
-            # всё равно подсчитаем суммарную площадь и периметр
             total_area = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
             total_perimeter = sum(s.get("perimeter_m", 0.0) * s.get("Nwin", 1) for s in sections)
             return [], total_area, total_perimeter
@@ -592,13 +615,9 @@ class FinalCalculator:
         return self.excel.read_records(SHEET_REF2)
 
     def _find_price_for_filling(self, filling_value):
-        """
-        Ищем в СПРАВОЧНИК-2 строку с заполнением == filling_value и берем подходящую колонку с 'стоимость' и 'заполн'
-        """
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
-        # Поиск строки по полю 'заполнение'
         chosen = None
         for r in ref2:
             fill_name = get_field(r, "заполнение", "")
@@ -607,14 +626,12 @@ class FinalCalculator:
                 break
         if not chosen:
             return 0.0
-        # Поиск колонки с ценой
         for k in chosen.keys():
             if k is None:
                 continue
             h = str(k).lower()
             if "стоимость" in h and ("заполн" in h or "запол" in h or "за" in h):
                 return safe_float(chosen[k], 0.0)
-        # fallback: любая колонка с стоимостью
         for k in chosen.keys():
             if k is None:
                 continue
@@ -623,19 +640,13 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_montage(self, montage_type):
-        """
-        Ищем цену монтажа по типу монтажа в СПРАВОЧНИК-2.
-        Если montage_type == 'Нет' или пусто — вернём 0.
-        """
         if not montage_type:
             return 0.0
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
         chosen = None
-        # сначала ищем строку где поле 'монтаж' или 'тип монтаж' соответствует
         for r in ref2:
-            # возможно тип монтажа хранится в поле "монтаж" или в колонке "тип монтаж"
             m_val = get_field(r, "монтаж", None)
             if m_val and str(m_val).strip().lower() == str(montage_type).strip().lower():
                 chosen = r
@@ -644,10 +655,8 @@ class FinalCalculator:
             if m_val2 and str(m_val2).strip().lower() == str(montage_type).strip().lower():
                 chosen = r
                 break
-        # Если строка не найдена, можно попробовать взять первую строку содержащую цену монтажа
         if not chosen:
             for r in ref2:
-                # check if any montage price exists in this row
                 for k in r.keys():
                     if k is None:
                         continue
@@ -658,14 +667,12 @@ class FinalCalculator:
                     break
         if not chosen:
             return 0.0
-        # выбираем колонку с монтажной ценой
         for k in chosen.keys():
             if k is None:
                 continue
             hk = str(k).lower()
             if "монтаж" in hk and "стоимость" in hk:
                 return safe_float(chosen[k], 0.0)
-        # fallback — любая стоимость
         for k in chosen.keys():
             if k is None:
                 continue
@@ -677,7 +684,6 @@ class FinalCalculator:
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
-        # find row with glass type
         chosen = None
         for r in ref2:
             rt = get_field(r, "тип стеклопак", "") or get_field(r, "тип стеклопакета", "")
@@ -686,14 +692,12 @@ class FinalCalculator:
                 break
         if not chosen:
             chosen = ref2[0]
-        # get cost field
         for k in chosen.keys():
             if k is None:
                 continue
             hk = str(k).lower()
             if "стоимость" in hk and ("стеклопак" in hk or "стеклопакет" in hk or "за м" in hk or "за м²" in hk or "за м2" in hk):
                 return safe_float(chosen[k], 0.0)
-        # fallback
         for k in chosen.keys():
             if k is None:
                 continue
@@ -705,7 +709,6 @@ class FinalCalculator:
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
-        # ищем колонку с тонировкой
         for r in ref2:
             for k in r.keys():
                 if k is None:
@@ -716,7 +719,6 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_handles(self):
-        # ищем колонку для цены ручек
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
@@ -727,7 +729,6 @@ class FinalCalculator:
                 hk = str(k).lower()
                 if ("ручк" in hk or "ручки" in hk) and "стоимость" in hk:
                     return safe_float(r[k], 0.0)
-        # fallback: try fields names containing 'ручк'
         for r in ref2:
             for k in r.keys():
                 if k is None:
@@ -747,7 +748,6 @@ class FinalCalculator:
                 hk = str(k).lower()
                 if ("доводчик" in hk or "доводч" in hk) and "стоимость" in hk:
                     return safe_float(r[k], 0.0)
-        # fallback
         for r in ref2:
             for k in r.keys():
                 if k is None:
@@ -765,7 +765,6 @@ class FinalCalculator:
                   lambr_cost: float = 0.0,
                   handles_qty: int = 0,
                   closer_qty: int = 0):
-        # Получаем справочник-2
         ref2_rows = self._lookup_ref2_rows()
 
         glass_type = order.get("glass_type", "")
@@ -777,7 +776,6 @@ class FinalCalculator:
 
         price_glass = self._find_price_for_glass_by_type(glass_type)
         price_toning = self._find_price_for_toning()
-        # price assembly (сборка) — ищем колонку со словом 'сбор' и 'стоимость'
         price_assembly = 0.0
         if ref2_rows:
             for r in ref2_rows:
@@ -797,33 +795,24 @@ class FinalCalculator:
 
         rows = []
 
-        # Стеклопакет
         glass_sum = total_area_glass * price_glass if total_area_glass > 0 else 0.0
         rows.append(["Стеклопакет", price_glass, "за м²", glass_sum])
 
-        # Тонировка
         toning_sum = total_area_glass * price_toning if (toning == "Есть" and total_area_glass > 0) else 0.0
         rows.append(["Тонировка", price_toning, "за м²", toning_sum])
 
-        # Сборка
         assembly_sum = total_area_all * price_assembly if assembly == "Есть" else 0.0
         rows.append(["Сборка", price_assembly, "за м²", assembly_sum])
 
-        # Монтаж
         montage_sum = total_area_all * price_montage if montage != "" and montage.lower() != "нет" else 0.0
         rows.append(["Монтаж (" + str(montage) + ")", price_montage, "за м²", montage_sum])
 
-        # Материалы
         rows.append(["Материал", "-", "-", material_total])
-
-        # Ламбри/Сэндвич (lambr_cost уже рассчитан)
         rows.append(["Панели (Ламбри/Сэндвич)", "-", "-", lambr_cost])
 
-        # Ручки
         handles_sum = price_handles * handles_qty if handles_qty > 0 else 0.0
         rows.append(["Ручки", price_handles, "шт.", handles_sum])
 
-        # Доводчик
         closer_sum = price_closer * closer_qty if closer_qty > 0 else 0.0
         rows.append(["Доводчик", price_closer, "шт.", closer_sum])
 
@@ -844,7 +833,6 @@ class FinalCalculator:
         total_sum = base_sum + ensure_sum
         extra_rows = [["ИТОГО", "", "", total_sum]]
 
-        # Записываем итоговый лист
         self.excel.clear_and_write(SHEET_FINAL, self.HEADER, rows + extra_rows)
         return rows, total_sum, ensure_sum
 
@@ -865,7 +853,6 @@ def build_smeta_workbook(order: dict,
     logo_path = resource_path(LOGO_FILENAME)
     current_row = 1
 
-    # Логотип в левом верхнем углу (A1)
     if os.path.exists(logo_path):
         try:
             img = XLImage(logo_path)
@@ -873,9 +860,10 @@ def build_smeta_workbook(order: dict,
             img.width = 80
             ws.add_image(img, "A1")
         except Exception as e:
-            print(f"Не удалось вставить логотип: {e}")
+            if DEBUG:
+                print(f"Не удалось вставить логотип: {e}")
 
-    contact_col = 3  # колонка C
+    contact_col = 3
     ws.cell(row=current_row, column=contact_col, value=COMPANY_NAME)
     current_row += 1
     ws.cell(row=current_row, column=contact_col, value=COMPANY_CITY)
@@ -892,7 +880,6 @@ def build_smeta_workbook(order: dict,
     ws.cell(row=current_row, column=1, value="Коммерческое предложение")
     current_row += 2
 
-    # Общие данные заказа
     ws.cell(row=current_row, column=1, value=f"Заказ № {order.get('order_number','')}")
     current_row += 1
     ws.cell(row=current_row, column=1, value=f"Тип изделия: {order.get('product_type','')}")
@@ -914,7 +901,6 @@ def build_smeta_workbook(order: dict,
     ws.cell(row=current_row, column=1, value=f"Доводчик: {order.get('door_closer','')}")
     current_row += 2
 
-    # Состав позиции / секций
     ws.cell(row=current_row, column=1, value="Состав позиции:")
     current_row += 1
 
@@ -949,7 +935,6 @@ def build_smeta_workbook(order: dict,
     current_row += 1
     ws.cell(row=current_row, column=1, value=f"ИТОГО к оплате: {total_sum:.2f}")
 
-    # простая попытка выставить ширину колонок
     try:
         for col in ['A','B','C','D','E','F']:
             ws.column_dimensions[col].width = 20
@@ -978,9 +963,8 @@ def main():
     st.title("📘 Калькулятор алюминиевых изделий (Axis Pro GF)")
     st.info(f"Пользователь: **{user['login']}**")
 
-    # Загружаем Справочник-2 для типов ручек/стекла/заполнений и цен
+    # Загрузка справочников и UI — оставил твою логику без изменений по смыслу
     ref2_records = excel.read_records(SHEET_REF2)
-    # Собираем варианты заполнений (из колонки 'заполнение' в СПРАВОЧНИК-2)
     filling_types_set = set()
     montage_types_set = set()
     handle_types_set = set()
@@ -990,25 +974,20 @@ def main():
         f = get_field(row, "заполнение", None)
         if f is not None:
             filling_types_set.add(str(f).strip())
-        # монтаж: возможно есть колонка 'монтаж' или значение в колонке
         m = get_field(row, "монтаж", None)
         if m is not None:
             montage_types_set.add(str(m).strip())
-        # ручка
         h = get_field(row, "ручк", None)
         if h is not None:
             handle_types_set.add(str(h).strip())
-        # стеклопакет
         g = get_field(row, "тип стеклопак", None) or get_field(row, "тип стеклопакета", None)
         if g is not None:
             glass_types_set.add(str(g).strip())
 
-    # добавим явные опции на случай отсутствия
     if not filling_types_set:
         filling_options = ["Ламбри", "Сэндвич", "Стеклопакет", "Нет"]
     else:
         filling_options = sorted(list(filling_types_set))
-        # ensure special option "Нет" present for disabling panel calculations
         if "Нет" not in filling_options:
             filling_options.append("Нет")
 
@@ -1022,7 +1001,7 @@ def main():
     handle_types = sorted(list(handle_types_set)) if handle_types_set else [""]
     glass_types = sorted(list(glass_types_set)) if glass_types_set else ["двойной"]
 
-    # ---------- Сайдбар: общие данные заказа ----------
+    # ---------- Сайдбар ----------
     with st.sidebar:
         st.header("Общие данные заказа")
 
@@ -1042,48 +1021,32 @@ def main():
             glass_types
         )
 
-        # Заполнение панелей: варианты берём из СПРАВОЧНИК-2
         st.markdown("### Режим панелей")
         filling_global = st.selectbox("Заполнение панелей (из справочника-2)", filling_options, index=0)
 
         toning = st.selectbox("Тонировка", ["Нет", "Есть"])
         assembly = st.selectbox("Сборка", ["Нет", "Есть"])
 
-        # Монтаж: варианты берём из СПРАВОЧНИК-2
         montage = st.selectbox("Монтаж (из СПРАВОЧНИК-2)", montage_options, index=0)
 
-        handle_type = st.selectbox(
-            "Тип ручек",
-            handle_types,
-            index=0 if handle_types else 0
-        )
+        handle_type = st.selectbox("Тип ручек", handle_types, index=0 if handle_types else 0)
         door_closer = st.selectbox("Доводчик", ["Нет", "Есть"])
 
-        # Кнопка применения заполнения к позициям — будет считаться при клике
         apply_filling = st.button("Применить заполнение панелей к позициям (не-тамбур)")
 
     # ---------- Основная часть ----------
     col_left, col_right = st.columns([2, 1])
 
-    # Справа: информационный блок
     with col_right:
         st.header("Информация")
         st.info("Заполнения панелей берутся из СПРАВОЧНИК-2. Если выбран режим 'Нет' — панели не учитываются в расчёте.")
-        # показываем предупреждение если excel явно повреждён (is_probably_xlsx)
         if not is_probably_xlsx(EXCEL_FILE):
             st.warning("Excel-файл может быть повреждён или не стандартного формата — создан или восстановлен шаблон. Проверьте справочники в Excel.")
 
-    # Левая колонка: позиции
     with col_left:
         st.header("Позиции (габариты изделий)")
 
-        positions_count = st.number_input(
-            "Количество позиций",
-            min_value=1,
-            max_value=10,
-            value=1,
-            step=1
-        )
+        positions_count = st.number_input("Количество позиций", min_value=1, max_value=10, value=1, step=1)
 
         base_positions_inputs = []
         lambr_positions_inputs = []
@@ -1181,7 +1144,6 @@ def main():
                         st.markdown(f"--- Глухая секция {pidx+1} ---")
                         pw = st.number_input(f"Ширина глухой секции {pidx+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"panel_w_{i}_{pidx}")
                         ph = st.number_input(f"Высота глухой секции {pidx+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"panel_h_{i}_{pidx}")
-                        # options for filling per-panel: use filling_options
                         pf = st.selectbox(f"Заполнение глухой секции {pidx+1} (поз.{i+1})", options=filling_options, index=0, key=f"panel_fill_{i}_{pidx}")
                         sections_inputs.append({
                             "kind": "panel",
@@ -1333,15 +1295,11 @@ def main():
                     "filling": p.get("filling", filling_global)
                 })
 
-        # Apply filling global if button pressed and non-tambur
         if apply_filling and product_type != "Тамбур":
             for s in sections:
                 s["filling"] = filling_global
 
-        # Если заполнение панелей выбрано как "Нет" в СПРАВОЧНИК-2 — игнорируем панели в расчетах
-        # Проверим, есть ли в СПРАВОЧНИК-2 запись 'Нет' для заполнения
         disable_panels = False
-        # Если глобально выбрано "Нет", то панели игнорируются
         if str(filling_global).strip().lower() == "нет":
             disable_panels = True
 
@@ -1363,21 +1321,16 @@ def main():
         # --- Lambr/Sandwich calculation (по хлыстам 6 м) ---
         linear_meters = 0.0
         for s in sections:
-            # игнорируем панели если выключено
-            if disable_panels and (s.get("filling") in ("Ламбри", "Сэндвич") or str(s.get("filling")).strip().lower() == "ламбри" or str(s.get("filling")).strip().lower() == "сэндвич"):
+            if disable_panels and (s.get("filling") in ("Ламбри", "Сэндвич") or str(s.get("filling")).strip().lower() in ("ламбри", "сэндвич")):
                 continue
             if s.get("filling") in ("Ламбри", "Сэндвич"):
                 linear_meters += s.get("perimeter_m", 0.0) * s.get("Nwin", 1)
 
         count_hlyst = math.ceil(linear_meters / 6.0) if linear_meters > 0 else 0
 
-        # цена за метр заполнения из СПРАВОЧНИК-2
-        # используем FinalCalculator helper
         fin_calc = FinalCalculator(excel)
         price_per_meter_fill = 0.0
-        # если глобальное заполнение == "Нет", цена не нужна
         if not disable_panels and linear_meters > 0:
-            # берем цену по названию filling_global
             price_per_meter_fill = fin_calc._find_price_for_filling(filling_global)
 
         if price_per_meter_fill <= 0 and linear_meters > 0:
@@ -1400,13 +1353,10 @@ def main():
                 elif s.get("door_type") == "double":
                     double_pairs += 1
         if double_pairs:
-            # double_pairs counts sections labeled double (we inserted two sections per double door)
             door_blocks += double_pairs / 2.0
         door_blocks = int(math.ceil(door_blocks))
 
-        # handles_count: number of leaves (sections with kind=='door'), but if double door blocks counted as 1 block with 2 leaves, we approximate:
         handles_count = sum(1 for s in sections if s.get("kind") == "door")
-        # closer count: one per block
         closer_count = door_blocks
 
         # --- Final calculation ---
@@ -1435,11 +1385,9 @@ def main():
 
         with tab1:
             st.subheader("Расчет по габаритам")
-            # Отображаем габаритные строки (если нужны)
             if gabarit_rows:
                 gab_disp = [{"Тип элемента": t, "Фактическое значение": v} for t, v in gabarit_rows]
                 st.dataframe(gab_disp, use_container_width=True)
-            # Внизу — только общая площадь и суммарный периметр изделия (по вашему запросу)
             st.write(f"Общая площадь (служебная): **{total_area_gab:.3f} м²**")
             st.write(f"Суммарный периметр изделия: **{total_perimeter_gab:.3f} м**")
 
@@ -1490,8 +1438,8 @@ def main():
                 order_number,
                 pos_index,
                 product_type,
-                "",  # вид изделия
-                "",  # створки
+                "",
+                "",
                 profile_system,
                 glass_type,
                 filling_global if product_type != "Тамбур" else "Тамбур",
@@ -1515,7 +1463,6 @@ def main():
         for row in rows_for_form:
             excel.append_form_row(row)
 
-        # --- Коммерческий Excel ---
         smeta_bytes = build_smeta_workbook(
             order={
                 "order_number": order_number,
@@ -1543,7 +1490,6 @@ def main():
             file_name=default_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
-
 
 if __name__ == "__main__":
     main()
