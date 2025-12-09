@@ -1,1 +1,18 @@
 .DS_Store # чтобы он больше не появлялся
+# Office temp files
+~$*.xlsx
+~$*.xls
+~$*.doc*
+~$*.tmp
+# Python cache
+__pycache__/
+*.pyc
+
+# Office temp files
+~$*.xlsx
+~$*.xls
+~$*.doc*
+~$*.tmp
+# Python cache
+__pycache__/
+*.pyc
