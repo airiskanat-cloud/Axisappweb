@@ -14,6 +14,11 @@ import operator as op
 import logging
 import json
 
+def is_probably_xlsx(file_path: str) -> bool:
+    """Проверяет, что файл Excel корректен и существует."""
+    return file_path.endswith(".xlsx") and os.path.exists(file_path)
+
+
 # =========================
 # НАСТРОЙКИ / КОНСТАНТЫ
 # =========================
