@@ -34,6 +34,19 @@ def resource_path(relative_path: str) -> str:
 DATA_DIR = os.path.join(os.path.expanduser("~"), ".axis_app_data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
+import shutil
+
+# Путь к шаблону в репозитории
+BUNDLED_TEMPLATE = resource_path("axis_pro_gf.xlsx")  # если в корне
+
+# Если файл не существует в DATA_DIR — копируем шаблон
+if os.path.exists(BUNDLED_TEMPLATE) and not os.path.exists(EXCEL_FILE):
+    try:
+        shutil.copyfile(BUNDLED_TEMPLATE, EXCEL_FILE)
+    except Exception as e:
+        logger.error(f"Error copying template: {e}")
+
+
 TEMPLATE_EXCEL_NAME = "axis_pro_gf.xlsx"
 EXCEL_FILE = os.path.join(DATA_DIR, TEMPLATE_EXCEL_NAME)
 SESSION_FILE = os.path.join(DATA_DIR, "session_user.json")
