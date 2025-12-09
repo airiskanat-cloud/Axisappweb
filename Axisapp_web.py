@@ -8,15 +8,19 @@ import streamlit as st
 from openpyxl import load_workbook
 from openpyxl.workbook import Workbook
 from openpyxl.drawing.image import Image as XLImage
+import ast
+import operator as op
+import logging
 
 # =========================
 # Настройки / константы
 # =========================
 
-DEBUG = False  # включи True временно для отладки логинов/паролей в sidebar
+DEBUG = False  # включи True временно для отладки логинов/паролей и структуры справочников в sidebar
+
+logger = logging.getLogger(__name__)
 
 def resource_path(relative_path: str) -> str:
-    """Возвращает корректный путь к файлу (поддержка PyInstaller)."""
     try:
         if hasattr(sys, "_MEIPASS"):
             base_path = sys._MEIPASS
@@ -67,29 +71,46 @@ LOGO_FILENAME = "logo_axis.png"
 # Утилиты
 # =========================
 
+def normalize_key(k):
+    if k is None:
+        return None
+    s = str(k)
+    s = s.replace("\xa0", " ")
+    s = " ".join(s.split())
+    return s.strip()
+
+def _clean_cell_val(v):
+    if v is None:
+        return ""
+    s = str(v)
+    s = s.replace("\xa0", " ").strip()
+    return s
+
 def safe_float(value, default=0.0):
     try:
         if value is None:
             return default
-        return float(str(value).replace(",", "."))
+        s = str(value)
+        s = s.replace("\xa0", "").replace(" ", "")  # убрать пробелы тысяч
+        s = s.replace(",", ".")
+        if s == "":
+            return default
+        return float(s)
     except Exception:
         return default
-
 
 def safe_int(value, default=0):
     try:
         if value is None:
             return default
-        return int(float(str(value).replace(",", ".")))
+        s = str(value)
+        s = s.replace("\xa0", "").replace(" ", "")
+        s = s.replace(",", ".")
+        if s == "":
+            return default
+        return int(float(s))
     except Exception:
         return default
-
-
-def normalize_key(k):
-    if k is None:
-        return None
-    return str(k).strip()
-
 
 def get_field(row: dict, needle: str, default=None):
     """Поиск значения в записи по подстроке имени поля (независимо от регистра и пробелов)."""
@@ -103,14 +124,79 @@ def get_field(row: dict, needle: str, default=None):
             return row[k]
     return default
 
+# =========================
+# Безопасный eval для формул (замена eval)
+# =========================
 
-def eval_formula(formula: str, context: dict) -> float:
-    """Выполняет python-формулу (строго ограниченный контекст) для ОДНОЙ секции."""
+_allowed_ops = {
+    ast.Add: op.add,
+    ast.Sub: op.sub,
+    ast.Mult: op.mul,
+    ast.Div: op.truediv,
+    ast.Pow: op.pow,
+    ast.USub: op.neg,
+    ast.UAdd: op.pos,
+    ast.Mod: op.mod,
+    ast.FloorDiv: op.floordiv,
+    ast.Lt: op.lt,
+    ast.Gt: op.gt,
+    ast.LtE: op.le,
+    ast.GtE: op.ge,
+    ast.Eq: op.eq,
+    ast.NotEq: op.ne,
+    ast.And: lambda a,b: a and b,
+    ast.Or: lambda a,b: a or b,
+}
+
+def _eval_ast(node, names):
+    if isinstance(node, ast.Expression):
+        return _eval_ast(node.body, names)
+    if isinstance(node, ast.Num):  # py <3.8
+        return node.n
+    if hasattr(ast, "Constant") and isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, ast.BinOp):
+        left = _eval_ast(node.left, names)
+        right = _eval_ast(node.right, names)
+        op_type = type(node.op)
+        if op_type in _allowed_ops:
+            return _allowed_ops[op_type](left, right)
+    if isinstance(node, ast.UnaryOp):
+        operand = _eval_ast(node.operand, names)
+        op_type = type(node.op)
+        if op_type in _allowed_ops:
+            return _allowed_ops[op_type](operand)
+    if isinstance(node, ast.Name):
+        if node.id in names:
+            return names[node.id]
+        raise ValueError(f"Использование недопустимого имени: {node.id}")
+    if isinstance(node, ast.Call):
+        func = node.func
+        # разрешаем math.* и max/min
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == "math":
+            fname = func.attr
+            if hasattr(math, fname):
+                args = [_eval_ast(a, names) for a in node.args]
+                return getattr(math, fname)(*args)
+        if isinstance(func, ast.Name) and func.id in ("max", "min"):
+            args = [_eval_ast(a, names) for a in node.args]
+            return globals()[func.id](*args)
+        raise ValueError("Вызовы функций ограничены: math.*, max, min")
+    if isinstance(node, ast.Compare):
+        left = _eval_ast(node.left, names)
+        if len(node.ops) != 1 or len(node.comparators) != 1:
+            raise ValueError("Сложные сравнения запрещены")
+        right = _eval_ast(node.comparators[0], names)
+        op_type = type(node.ops[0])
+        if op_type in _allowed_ops:
+            return _allowed_ops[op_type](left, right)
+    raise ValueError(f"Недопустимый узел в выражении: {type(node).__name__}")
+
+def safe_eval_formula(formula: str, context: dict) -> float:
     formula = (formula or "").strip()
     if not formula:
         return 0.0
-
-    allowed_names = {
+    names = {
         "width": context.get("width", 0.0),
         "height": context.get("height", 0.0),
         "left": context.get("left", 0.0),
@@ -136,13 +222,13 @@ def eval_formula(formula: str, context: dict) -> float:
         "max": max,
         "min": min,
     }
-
     try:
-        result = eval(formula, {"__builtins__": {}}, allowed_names)
-        return float(result)
+        node = ast.parse(formula, mode='eval')
+        value = _eval_ast(node, names)
+        return float(value)
     except Exception as e:
         if DEBUG:
-            print(f"Ошибка в формуле '{formula}': {e}")
+            st.sidebar.write(f"safe_eval_formula error for '{formula}': {e}")
         return 0.0
 
 # =========================
@@ -150,25 +236,23 @@ def eval_formula(formula: str, context: dict) -> float:
 # =========================
 
 def is_probably_xlsx(path: str) -> bool:
-    """
-    Надёжная проверка .xlsx: файл должен существовать, быть zip и содержать ключевые файлы.
-    """
     try:
         if not os.path.exists(path) or not os.path.isfile(path):
             return False
+        if os.path.getsize(path) < 4_000:
+            return False
         with zipfile.ZipFile(path, "r") as z:
             names = z.namelist()
-            if '[Content_Types].xml' in names and any(n.startswith('xl/') for n in names):
+            if '[Content_Types].xml' in names and 'xl/workbook.xml' in names:
                 return True
             return False
-    except Exception:
+    except (zipfile.BadZipFile, PermissionError, OSError):
         return False
 
 
 class ExcelClient:
     def __init__(self, filename: str):
         self.filename = filename
-        # Если файла нет — создаём корректный шаблон
         if not os.path.exists(self.filename):
             self._create_template()
         self.load()
@@ -176,7 +260,6 @@ class ExcelClient:
     def _create_template(self):
         try:
             wb = Workbook()
-            # удаляем стандартный лист
             if "Sheet" in wb.sheetnames:
                 del wb["Sheet"]
             wb.create_sheet(SHEET_FORM)
@@ -186,7 +269,7 @@ class ExcelClient:
             wb.create_sheet(SHEET_USERS)
             wb.save(self.filename)
             if DEBUG:
-                print(f"Создан новый шаблон Excel: {self.filename}")
+                st.sidebar.write(f"Создан новый шаблон Excel: {self.filename}")
         except Exception as e:
             print(f"Ошибка при создании шаблона Excel: {e}")
 
@@ -226,10 +309,20 @@ class ExcelClient:
         if not rows:
             return []
         raw_header = rows[0]
-        # нормализуем заголовки: оставляем строки, stripped
         header = []
+        seen = {}
         for h in raw_header:
-            header.append(normalize_key(h) if h is not None else None)
+            key = normalize_key(h) if h is not None else None
+            if key is None:
+                header.append(None)
+                continue
+            base = key
+            if base in seen:
+                seen[base] += 1
+                key = f"{base}_{seen[base]}"
+            else:
+                seen[base] = 1
+            header.append(key)
         data_rows = rows[1:]
         records = []
         for r in data_rows:
@@ -245,7 +338,6 @@ class ExcelClient:
 
     def clear_and_write(self, sheet_name: str, header: list, rows: list):
         ws = self.ws(sheet_name)
-        # удаляем все строки (безопасно)
         try:
             ws.delete_rows(1, ws.max_row or 1)
         except Exception:
@@ -260,8 +352,12 @@ class ExcelClient:
 
     def append_form_row(self, row: list):
         ws = self.ws(SHEET_FORM)
-        # Если лист пустой, добавляем шапку
-        if ws.max_row == 1 and all(cell.value is None for cell in ws[1]):
+        header_present = False
+        if ws.max_row >= 1:
+            first = [c.value for c in ws[1]]
+            if any(first):
+                header_present = True
+        if not header_present:
             ws.append(FORM_HEADER)
         ws.append(row)
         self.save()
@@ -271,10 +367,6 @@ class ExcelClient:
 # =========================
 
 def load_users(excel: ExcelClient):
-    """
-    Надёжно читает пользователей из листа SHEET_USERS.
-    Очищает неразрывные пробелы, убирает звёздочки в паролях и приводит логин к lower() для сравнения.
-    """
     excel.load()
     try:
         rows = excel.read_records(SHEET_USERS) or []
@@ -282,15 +374,6 @@ def load_users(excel: ExcelClient):
         rows = []
 
     users = {}
-
-    def _clean_cell_val(v):
-        if v is None:
-            return ""
-        s = str(v)
-        # убрать неразрывные пробелы и обычные пробелы по краям
-        s = s.replace("\xa0", " ").strip()
-        return s
-
     for row in rows:
         raw_login = get_field(row, "логин", "") or get_field(row, "login", "")
         raw_password = get_field(row, "парол", "") or get_field(row, "password", "")
@@ -298,11 +381,7 @@ def load_users(excel: ExcelClient):
 
         login = _clean_cell_val(raw_login)
         login_norm = login.lower()
-
-        password = _clean_cell_val(raw_password)
-        # убрать маскировочные звёздочки, если они есть, и пробелы
-        password = password.strip("*").strip()
-
+        password = _clean_cell_val(raw_password).strip("*").strip()
         role = _clean_cell_val(raw_role)
 
         if login_norm:
@@ -312,10 +391,6 @@ def load_users(excel: ExcelClient):
 
 
 def login_form(excel: ExcelClient):
-    """
-    Корректная и безопасная форма входа для Streamlit.
-    Возвращает текущего пользователя или None.
-    """
     if "current_user" in st.session_state:
         return st.session_state["current_user"]
 
@@ -327,7 +402,6 @@ def login_form(excel: ExcelClient):
 
     users = load_users(excel)
 
-    # Отладочный вывод, включается через DEBUG = True
     if DEBUG:
         try:
             st.sidebar.write("DEBUG users keys:", list(users.keys()))
@@ -336,7 +410,6 @@ def login_form(excel: ExcelClient):
             pass
 
     if submitted:
-        # Нормализация введённых значений
         entered_login = (login or "").strip().lower()
         entered_password = (password or "").strip()
 
@@ -351,8 +424,7 @@ def login_form(excel: ExcelClient):
     return None
 
 # =========================
-# Gabarit / Material / Final calculators
-# (оставил логику как у тебя, слегка отформатировал)
+# Calculators (Gabarit / Material / Final) — адаптированы под нормализацию и поиск цен
 # =========================
 
 class GabaritCalculator:
@@ -448,7 +520,7 @@ class GabaritCalculator:
                 }
                 ctx.update(geom)
 
-                total_value += eval_formula(str(formula), ctx)
+                total_value += safe_eval_formula(str(formula), ctx)
 
             gabarit_values.append([type_elem, total_value])
 
@@ -509,17 +581,14 @@ class MaterialCalculator:
             type_elem = get_field(row, "тип элемент", "")
             product_name = str(get_field(row, "товар", "") or "")
 
-            # фильтр по типу изделия
             if row_type:
                 if str(row_type).strip().lower() != order.get("product_type", "").strip().lower():
                     continue
 
-            # фильтр по системе профиля
             if row_profile:
                 if str(row_profile).strip().lower() != order.get("profile_system", "").strip().lower():
                     continue
 
-            # фильтр по выбору дублей
             if type_elem in selected_duplicates and selected_duplicates[type_elem]:
                 chosen_names = selected_duplicates[type_elem]
                 if product_name not in chosen_names:
@@ -567,7 +636,7 @@ class MaterialCalculator:
                 }
                 ctx.update(geom)
 
-                qty_fact_total += eval_formula(str(formula), ctx)
+                qty_fact_total += safe_eval_formula(str(formula), ctx)
 
             unit_price = safe_float(get_field(row, "цена за", 0.0))
             norm_per_pack = safe_float(get_field(row, "кол-во норм", 0.0))
@@ -618,25 +687,38 @@ class FinalCalculator:
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
-        chosen = None
+        fv = str(filling_value or "").replace("\xa0", " ").strip().lower()
+        # ищем по колонке "панели" или "заполнение"
         for r in ref2:
-            fill_name = get_field(r, "заполнение", "")
-            if fill_name and str(fill_name).strip().lower() == str(filling_value).strip().lower():
-                chosen = r
-                break
-        if not chosen:
-            return 0.0
-        for k in chosen.keys():
-            if k is None:
-                continue
-            h = str(k).lower()
-            if "стоимость" in h and ("заполн" in h or "запол" in h or "за" in h):
-                return safe_float(chosen[k], 0.0)
-        for k in chosen.keys():
-            if k is None:
-                continue
-            if "стоимость" in str(k).lower():
-                return safe_float(chosen[k], 0.0)
+            for k in r.keys():
+                if k is None:
+                    continue
+                if "панел" in str(k).lower() or "заполн" in str(k).lower():
+                    v = r[k]
+                    if v is None:
+                        continue
+                    # если значение в этой колонке соответствует заполнению
+                    if str(v).replace("\xa0", " ").strip().lower() == fv:
+                        # пробуем найти стоимость панелей в той же строке
+                        for kk in r.keys():
+                            if kk is None:
+                                continue
+                            if "стоимость" in str(kk).lower() and ("хлыст" in str(kk).lower() or "6" in str(kk) or "за 1 м" in str(kk).lower() or "за м" in str(kk).lower()):
+                                return safe_float(r[kk], 0.0)
+                        # иначе ищем любую числовую стоимость в строке рядом
+                        for kk in r.keys():
+                            if kk is None:
+                                continue
+                            if "стоимость" in str(kk).lower():
+                                return safe_float(r[kk], 0.0)
+        # fallback — попробуем найти строку где в колонке "тип стеклопакета" есть что-то и взять "стоимость стеклопакета..."
+        for r in ref2:
+            for k in r.keys():
+                if k is None:
+                    continue
+                if "панел" in str(k).lower() or "заполн" in str(k).lower():
+                    # если не нашли соответствие, вернём 0
+                    continue
         return 0.0
 
     def _find_price_for_montage(self, montage_type):
@@ -645,58 +727,58 @@ class FinalCalculator:
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
-        chosen = None
+        mt = str(montage_type or "").replace("\xa0", " ").strip().lower()
         for r in ref2:
-            m_val = get_field(r, "монтаж", None)
-            if m_val and str(m_val).strip().lower() == str(montage_type).strip().lower():
-                chosen = r
-                break
-            m_val2 = get_field(r, "тип монтаж", None) or get_field(r, "тип монта", None)
-            if m_val2 and str(m_val2).strip().lower() == str(montage_type).strip().lower():
-                chosen = r
-                break
-        if not chosen:
-            for r in ref2:
-                for k in r.keys():
-                    if k is None:
-                        continue
-                    if "монтаж" in str(k).lower() and "стоимость" in str(k).lower():
-                        chosen = r
-                        break
-                if chosen:
-                    break
-        if not chosen:
-            return 0.0
-        for k in chosen.keys():
-            if k is None:
-                continue
-            hk = str(k).lower()
-            if "монтаж" in hk and "стоимость" in hk:
-                return safe_float(chosen[k], 0.0)
-        for k in chosen.keys():
-            if k is None:
-                continue
-            if "стоимость" in str(k).lower():
-                return safe_float(chosen[k], 0.0)
+            for k in r.keys():
+                if k is None:
+                    continue
+                if "монтаж" in str(k).lower() and "стоимость" in str(k).lower():
+                    return safe_float(r[k], 0.0)
+        # search in values too
+        for r in ref2:
+            for k in r.keys():
+                if k is None:
+                    continue
+                if str(r[k]).replace("\xa0", " ").strip().lower() == mt:
+                    # find price in the row
+                    for kk in r.keys():
+                        if kk is None:
+                            continue
+                        if "стоимость" in str(kk).lower():
+                            return safe_float(r[kk], 0.0)
         return 0.0
 
     def _find_price_for_glass_by_type(self, glass_type):
         ref2 = self._lookup_ref2_rows()
         if not ref2:
             return 0.0
+        gt = str(glass_type or "").replace("\xa0", " ").strip().lower()
         chosen = None
         for r in ref2:
-            rt = get_field(r, "тип стеклопак", "") or get_field(r, "тип стеклопакета", "")
-            if rt and str(rt).strip().lower() == str(glass_type).strip().lower():
-                chosen = r
+            for k in r.keys():
+                if k is None:
+                    continue
+                if "тип стеклопак" in str(k).lower() or "тип стеклопакета" in str(k).lower():
+                    v = r[k]
+                    if v and str(v).strip().lower() == gt:
+                        chosen = r
+                        break
+            if chosen:
                 break
         if not chosen:
-            chosen = ref2[0]
+            # fallback to first row that contains numeric cost
+            for r in ref2:
+                for k in r.keys():
+                    if k is None:
+                        continue
+                    if "стоимость" in str(k).lower() and ("стеклопак" in str(k).lower() or "за м" in str(k).lower()):
+                        return safe_float(r[k], 0.0)
+            return 0.0
         for k in chosen.keys():
             if k is None:
                 continue
             hk = str(k).lower()
-            if "стоимость" in hk and ("стеклопак" in hk or "стеклопакет" in hk or "за м" in hk or "за м²" in hk or "за м2" in hk):
+            if "стоимость" in hk and ("стеклопак" in hk or "за м" in hk or "за м²" in hk or "за м2" in hk):
                 return safe_float(chosen[k], 0.0)
         for k in chosen.keys():
             if k is None:
@@ -909,7 +991,7 @@ def build_smeta_workbook(order: dict,
             row=current_row,
             column=1,
             value=(
-                f"Позиция {idx}: {order.get('product_type','')}, {p.get('width_mm',0)} × {p.get('height_mm',0)} мм, N = {p.get('Nwin',1)}"
+                f"Позиция {idx}: {order.get('product_type','')}, {p.get('width_mm',0)} × {p.get('height_mm',0)} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','')}"
             )
         )
         current_row += 1
@@ -923,7 +1005,7 @@ def build_smeta_workbook(order: dict,
                 row=current_row,
                 column=1,
                 value=(
-                    f"Панель {idx}: {p.get('width_mm',0)} × {p.get('height_mm',0)} мм, N = {p.get('Nwin',1)}"
+                    f"Панель {idx}: {p.get('width_mm',0)} × {p.get('height_mm',0)} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','')}"
                 )
             )
             current_row += 1
@@ -963,33 +1045,42 @@ def main():
     st.title("📘 Калькулятор алюминиевых изделий (Axis Pro GF)")
     st.info(f"Пользователь: **{user['login']}**")
 
-    # Загрузка справочников и UI — оставил твою логику без изменений по смыслу
+    # Загрузка справочников и UI
     ref2_records = excel.read_records(SHEET_REF2)
     filling_types_set = set()
     montage_types_set = set()
     handle_types_set = set()
     glass_types_set = set()
 
+    def _clean_for_set(v):
+        if v is None:
+            return None
+        s = str(v).replace("\xa0", " ").strip()
+        if s == "":
+            return None
+        return s
+
     for row in ref2_records:
-        f = get_field(row, "заполнение", None)
+        f = _clean_for_set(get_field(row, "панел") or get_field(row, "заполн") or get_field(row, "заполнение"))
         if f is not None:
-            filling_types_set.add(str(f).strip())
-        m = get_field(row, "монтаж", None)
+            filling_types_set.add(f)
+        m = _clean_for_set(get_field(row, "монтаж", None))
         if m is not None:
-            montage_types_set.add(str(m).strip())
-        h = get_field(row, "ручк", None)
+            montage_types_set.add(m)
+        h = _clean_for_set(get_field(row, "ручк", None))
         if h is not None:
-            handle_types_set.add(str(h).strip())
-        g = get_field(row, "тип стеклопак", None) or get_field(row, "тип стеклопакета", None)
+            handle_types_set.add(h)
+        g = _clean_for_set(get_field(row, "тип стеклопак", None) or get_field(row, "тип стеклопакета", None))
         if g is not None:
-            glass_types_set.add(str(g).strip())
+            glass_types_set.add(g)
 
     if not filling_types_set:
-        filling_options = ["Ламбри", "Сэндвич", "Стеклопакет", "Нет"]
+        filling_options_for_panels = ["Ламбри без термо", "Ламбри с термо", "Сэндвич", "Стеклопакет", "Нет"]
     else:
-        filling_options = sorted(list(filling_types_set))
-        if "Нет" not in filling_options:
-            filling_options.append("Нет")
+        filling_options_for_panels = sorted(list(filling_types_set))
+        for v in ["Ламбри без термо", "Ламбри с термо", "Сэндвич", "Стеклопакет", "Нет"]:
+            if v not in filling_options_for_panels:
+                filling_options_for_panels.append(v)
 
     if not montage_types_set:
         montage_options = ["Есть", "Нет"]
@@ -1016,32 +1107,30 @@ def main():
             ]
         )
 
+        # Глобальный выбор стеклопакета и тон/сборка/монтаж оставляем
         glass_type = st.selectbox(
             "Тип стеклопакета (цена берётся из справочника-2)",
             glass_types
         )
 
-        st.markdown("### Режим панелей")
-        filling_global = st.selectbox("Заполнение панелей (из справочника-2)", filling_options, index=0)
-
+        st.markdown("### Прочее")
         toning = st.selectbox("Тонировка", ["Нет", "Есть"])
         assembly = st.selectbox("Сборка", ["Нет", "Есть"])
-
         montage = st.selectbox("Монтаж (из СПРАВОЧНИК-2)", montage_options, index=0)
-
         handle_type = st.selectbox("Тип ручек", handle_types, index=0 if handle_types else 0)
         door_closer = st.selectbox("Доводчик", ["Нет", "Есть"])
-
-        apply_filling = st.button("Применить заполнение панелей к позициям (не-тамбур)")
 
     # ---------- Основная часть ----------
     col_left, col_right = st.columns([2, 1])
 
     with col_right:
         st.header("Информация")
-        st.info("Заполнения панелей берутся из СПРАВОЧНИК-2. Если выбран режим 'Нет' — панели не учитываются в расчёте.")
+        st.info("Панели выбираются на уровне секции (в тамбуре или для дополнительных панелей).")
         if not is_probably_xlsx(EXCEL_FILE):
             st.warning("Excel-файл может быть повреждён или не стандартного формата — создан или восстановлен шаблон. Проверьте справочники в Excel.")
+        if DEBUG:
+            st.write("DEBUG: первые 5 строк СПРАВОЧНИК-2:")
+            st.write(ref2_records[:5])
 
     with col_left:
         st.header("Позиции (габариты изделий)")
@@ -1069,6 +1158,7 @@ def main():
             nwin = st.number_input(f"Кол-во идентичных рам (N) (поз. {i+1})", min_value=1, value=1, step=1, key=f"nwin_{i}")
 
             if product_type != "Тамбур":
+                # по умолчанию неп тамбур — считаем как стеклопакет
                 base_positions_inputs.append({
                     "width_mm": width_mm,
                     "height_mm": height_mm,
@@ -1079,7 +1169,8 @@ def main():
                     "sash_width_mm": sash_width_mm if sash_width_mm > 0 else width_mm,
                     "sash_height_mm": sash_height_mm if sash_height_mm > 0 else height_mm,
                     "Nwin": nwin,
-                    "filling": filling_global
+                    "filling": "Стеклопакет",
+                    "kind": "window"
                 })
             else:
                 with st.expander(f"Параметры Тамбура — Позиция {i+1}", expanded=False):
@@ -1094,6 +1185,7 @@ def main():
                             sections_inputs.append({
                                 "kind": "door",
                                 "door_type": "one",
+                                "n_leaves": 1,
                                 "width_mm": dw,
                                 "height_mm": dh,
                                 "left_mm": 0.0,
@@ -1109,9 +1201,11 @@ def main():
                             dw_l = st.number_input(f"Ширина левой створки {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_wl_{i}_{d}")
                             dw_r = st.number_input(f"Ширина правой створки {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_wr_{i}_{d}")
                             dh = st.number_input(f"Высота двери {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_hd_{i}_{d}")
+                            # создаём две секции по створке — это упрощает подсчёт ручек/площадей
                             sections_inputs.append({
                                 "kind": "door",
                                 "door_type": "double",
+                                "n_leaves": 1,
                                 "width_mm": dw_l,
                                 "height_mm": dh,
                                 "left_mm": 0.0,
@@ -1126,6 +1220,7 @@ def main():
                             sections_inputs.append({
                                 "kind": "door",
                                 "door_type": "double",
+                                "n_leaves": 1,
                                 "width_mm": dw_r,
                                 "height_mm": dh,
                                 "left_mm": 0.0,
@@ -1142,9 +1237,9 @@ def main():
                     panel_count = st.number_input(f"Сколько глухих секций добавить в позицию {i+1}?", min_value=0, value=1, step=1, key=f"tp_{i}")
                     for pidx in range(int(panel_count)):
                         st.markdown(f"--- Глухая секция {pidx+1} ---")
-                        pw = st.number_input(f"Ширина глухой секции {pidx+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"panel_w_{i}_{pidx}")
-                        ph = st.number_input(f"Высота глухой секции {pidx+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"panel_h_{i}_{pidx}")
-                        pf = st.selectbox(f"Заполнение глухой секции {pidx+1} (поз.{i+1})", options=filling_options, index=0, key=f"panel_fill_{i}_{pidx}")
+                        pw = st.number_input(f"Ширина глухой секции {pidx+1} (поз.{i+1})", min_value=0.0, step=10.0, key=f"panel_w_{i}_{pidx}")
+                        ph = st.number_input(f"Высота глухой секции {pidx+1} (поз.{i+1})", min_value=0.0, step=10.0, key=f"panel_h_{i}_{pidx}")
+                        pf = st.selectbox(f"Заполнение глухой секции {pidx+1} (поз.{i+1})", options=["Ламбри без термо", "Ламбри с термо", "Стеклопакет"], index=0, key=f"panel_fill_{i}_{pidx}")
                         sections_inputs.append({
                             "kind": "panel",
                             "width_mm": pw,
@@ -1159,6 +1254,7 @@ def main():
                             "filling": pf
                         })
 
+                    # оставляем базовую позицию только как мета (не добавляем в sections автоматически)
                     base_positions_inputs.append({
                         "width_mm": width_mm,
                         "height_mm": height_mm,
@@ -1168,7 +1264,9 @@ def main():
                         "top_mm": top_mm,
                         "sash_width_mm": sash_width_mm if sash_width_mm > 0 else width_mm,
                         "sash_height_mm": sash_height_mm if sash_height_mm > 0 else height_mm,
-                        "Nwin": nwin
+                        "Nwin": nwin,
+                        "filling": "Тамбур_аггр",
+                        "kind": "tambur_meta"
                     })
 
         # Non-tambur: дополнительные панели (ламбри/сэндвич)
@@ -1181,6 +1279,7 @@ def main():
                 w = p1.number_input(f"Ширина панели {i+1}, мм", min_value=0.0, step=10.0, key=f"ls_w_{i}")
                 h = p2.number_input(f"Высота панели {i+1}, мм", min_value=0.0, step=10.0, key=f"ls_h_{i}")
                 q = p3.number_input(f"N (панель {i+1})", min_value=1, value=1, step=1, key=f"ls_q_{i}")
+                fill_opt = st.selectbox(f"Заполнение панели {i+1}", options=filling_options_for_panels, index=0, key=f"ls_fill_{i}")
                 lambr_positions_inputs.append({
                     "width_mm": w,
                     "height_mm": h,
@@ -1191,7 +1290,7 @@ def main():
                     "top_mm": 0.0,
                     "sash_width_mm": w,
                     "sash_height_mm": h,
-                    "filling": filling_global
+                    "filling": fill_opt
                 })
 
     # ---------- Выбор материалов при дублях ----------
@@ -1268,40 +1367,43 @@ def main():
         # sections
         sections = []
         if product_type == "Тамбур":
-            for s in sections_inputs:
-                if s["width_mm"] <= 0 or s["height_mm"] <= 0:
-                    st.warning("Одна из секций тамбура имеет 0 ширину или высоту и будет пропущена.")
-                    continue
-                area_m2 = (s["width_mm"] * s["height_mm"]) / 1_000_000.0
-                perimeter_m = 2 * (s["width_mm"] + s["height_mm"]) / 1000.0
-                sections.append({
-                    **s,
-                    "area_m2": area_m2,
-                    "perimeter_m": perimeter_m
-                })
+            # если есть детализированные секции — используем их и не добавляем базовую позицию (чтобы не было удвоения)
+            if sections_inputs:
+                for s in sections_inputs:
+                    if s["width_mm"] <= 0 or s["height_mm"] <= 0:
+                        st.warning("Одна из секций тамбура имеет 0 ширину или высоту и будет пропущена.")
+                        continue
+                    area_m2 = (s["width_mm"] * s["height_mm"]) / 1_000_000.0
+                    perimeter_m = 2 * (s["width_mm"] + s["height_mm"]) / 1000.0
+                    sections.append({
+                        **s,
+                        "area_m2": area_m2,
+                        "perimeter_m": perimeter_m
+                    })
+            else:
+                # если деталей нет — добавляем агрегатную позицию (в редких случаях)
+                for p in base_positions:
+                    sections.append({
+                        **p,
+                        "area_m2": p["area_m2"],
+                        "perimeter_m": p["perimeter_m"],
+                        "filling": "Стеклопакет"
+                    })
         else:
             for p in base_positions:
                 sections.append({
                     **p,
                     "area_m2": p["area_m2"],
                     "perimeter_m": p["perimeter_m"],
-                    "filling": p.get("filling", filling_global)
+                    "filling": p.get("filling", "Стеклопакет")
                 })
             for p in lambr_positions:
                 sections.append({
                     **p,
                     "area_m2": p["area_m2"],
                     "perimeter_m": p["perimeter_m"],
-                    "filling": p.get("filling", filling_global)
+                    "filling": p.get("filling", "Ламбри без термо")
                 })
-
-        if apply_filling and product_type != "Тамбур":
-            for s in sections:
-                s["filling"] = filling_global
-
-        disable_panels = False
-        if str(filling_global).strip().lower() == "нет":
-            disable_panels = True
 
         # --- Gabarit ---
         gab_calc = GabaritCalculator(excel)
@@ -1319,44 +1421,43 @@ def main():
         )
 
         # --- Lambr/Sandwich calculation (по хлыстам 6 м) ---
-        linear_meters = 0.0
+        # группируем линейные метры по типу заполнения
+        fill_linear = {}
         for s in sections:
-            if disable_panels and (s.get("filling") in ("Ламбри", "Сэндвич") or str(s.get("filling")).strip().lower() in ("ламбри", "сэндвич")):
-                continue
-            if s.get("filling") in ("Ламбри", "Сэндвич"):
-                linear_meters += s.get("perimeter_m", 0.0) * s.get("Nwin", 1)
-
-        count_hlyst = math.ceil(linear_meters / 6.0) if linear_meters > 0 else 0
+            fill = str(s.get("filling") or "").replace("\xa0", " ").strip().lower()
+            if fill in ("ламбри без термо", "ламбри с термо", "сэндвич"):
+                fill_linear.setdefault(fill, 0.0)
+                fill_linear[fill] += s.get("perimeter_m", 0.0) * s.get("Nwin", 1)
 
         fin_calc = FinalCalculator(excel)
-        price_per_meter_fill = 0.0
-        if not disable_panels and linear_meters > 0:
-            price_per_meter_fill = fin_calc._find_price_for_filling(filling_global)
-
-        if price_per_meter_fill <= 0 and linear_meters > 0:
-            st.warning("Не найдена цена за заполнение (Ламбри/Сэндвич) в СПРАВОЧНИК-2. Установлена 0.")
-
-        price_per_hlyst = price_per_meter_fill * 6.0
-        lambr_cost = count_hlyst * price_per_hlyst
+        lambr_cost = 0.0
+        for fill_name, linear_m in fill_linear.items():
+            price_per_meter = fin_calc._find_price_for_filling(fill_name)
+            if price_per_meter <= 0:
+                st.warning(f"Не найдена цена за заполнение '{fill_name}' в СПРАВОЧНИК-2. Установлена 0.")
+            count_hlyst = math.ceil(linear_m / 6.0) if linear_m > 0 else 0
+            price_per_hlyst = price_per_meter * 6.0
+            lambr_cost += count_hlyst * price_per_hlyst
 
         # --- Areas for glass etc.
-        total_area_glass = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections if s.get("filling") == "Стеклопакет")
+        # стеклопакет = сумма площадей секций, у которых filling == "Стеклопакет"
+        total_area_glass = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections if str(s.get("filling") or "").strip().lower() == "стеклопакет")
+        # общая площадь всех секций (для сборки/монтажа)
         total_area_all = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
 
         # --- Doors / handles / closer counts
+        # ручки по створкам (n_leaves), доводчики по дверным блокам
+        handles_count = sum(s.get("n_leaves", 1) for s in sections if s.get("kind") == "door")
+        # door_blocks: считаем блоки как количество уникальных дверных групп;
+        # поскольку мы создаём по-створочно записи, считаем блок как ceil(n_leaves_total / 2) при необходимости.
+        # Для простоты: считаем, что каждая пара створок образует блок, но если записи уже по-створочно и у двустворчатых созданы 2 записи,
+        # то на каждый 2 записи — 1 блок.
+        door_sections = [s for s in sections if s.get("kind") == "door"]
         door_blocks = 0
-        double_pairs = 0
-        for s in sections:
-            if s.get("kind") == "door":
-                if s.get("door_type") == "one":
-                    door_blocks += 1
-                elif s.get("door_type") == "double":
-                    double_pairs += 1
-        if double_pairs:
-            door_blocks += double_pairs / 2.0
-        door_blocks = int(math.ceil(door_blocks))
-
-        handles_count = sum(1 for s in sections if s.get("kind") == "door")
+        # группируем по логике: если door_type == "double" was represented by two entries, то блок = number_of_pairs
+        # упрощённо: считаем блок = ceil(len(door_sections) / 2)
+        if door_sections:
+            door_blocks = int(math.ceil(len(door_sections) / 2.0))
         closer_count = door_blocks
 
         # --- Final calculation ---
@@ -1390,6 +1491,8 @@ def main():
                 st.dataframe(gab_disp, use_container_width=True)
             st.write(f"Общая площадь (служебная): **{total_area_gab:.3f} м²**")
             st.write(f"Суммарный периметр изделия: **{total_perimeter_gab:.3f} м**")
+            if DEBUG:
+                st.write("DEBUG sections:", sections)
 
         with tab2:
             st.subheader("Расчёт материалов")
@@ -1413,7 +1516,7 @@ def main():
                     })
                 st.dataframe(mat_disp, use_container_width=True)
             st.write(f"Итого по материалам: **{material_total:.2f}**")
-            st.write(f"Панели (ламбри/сэндвич) — линейная длина: **{linear_meters:.3f} м**, Хлыстов(6м): **{count_hlyst}**, Цена/м: **{price_per_meter_fill:.2f}**, Итого: **{lambr_cost:.2f}**")
+            st.write(f"Панели (ламбри/сэндвич) — линейная длина по группам: **{', '.join([f'{k}: {v:.3f}м' for k,v in fill_linear.items()])}**, Итого: **{lambr_cost:.2f}**")
 
         with tab3:
             st.subheader("Итоговый расчет с монтажом")
@@ -1430,7 +1533,7 @@ def main():
             st.write(f"Обеспечение (60%): **{ensure_sum:.2f}**")
             st.write(f"ИТОГО к оплате: **{total_sum:.2f}**")
 
-        # --- Сохраняем в ЗАПРОСЫ ---
+        # --- Сохраняем в ЗАПРОСЫ (для базовых позиций) ---
         rows_for_form = []
         pos_index = 1
         for p in base_positions:
@@ -1442,7 +1545,7 @@ def main():
                 "",
                 profile_system,
                 glass_type,
-                filling_global if product_type != "Тамбур" else "Тамбур",
+                p.get("filling",""),
                 p["width_mm"],
                 p["height_mm"],
                 p.get("left_mm", 0.0),
@@ -1468,7 +1571,7 @@ def main():
                 "order_number": order_number,
                 "product_type": product_type,
                 "profile_system": profile_system,
-                "filling_mode": filling_global,
+                "filling_mode": "",  # убрали глобальный режим
                 "glass_type": glass_type,
                 "toning": toning,
                 "assembly": assembly,
