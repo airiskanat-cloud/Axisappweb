@@ -274,20 +274,29 @@ def load_users(excel: ExcelClient):
 
     users = {}
     for row in rows:
-        # попытаемся найти столбцы похожие на логин/пароль/роль
-        login = str(get_field(row, "логин", "") or "").strip()
-        if not login:
-            # попробуем английский
-            login = str(get_field(row, "login", "") or "").strip()
-        password = str(get_field(row, "парол", "") or "").strip()
-        if not password:
-            password = str(get_field(row, "password", "") or "").strip()
-        role = str(get_field(row, "роль", "") or "").strip()
-        if not role:
-            role = str(get_field(row, "role", "") or "").strip()
-        if login:
-            users[login] = {"password": password, "role": role}
+        # Попробуем найти столбцы похожие на логин/пароль/роль
+        raw_login = get_field(row, "логин", "") or get_field(row, "login", "")
+        raw_password = get_field(row, "парол", "") or get_field(row, "password", "")
+        raw_role = get_field(row, "роль", "") or get_field(row, "role", "")
+
+        # Нормализация
+        login = str(raw_login).strip()
+        # логин приведём к нижнему регистру, чтобы ввод был нечувствителен к регистру
+        login_norm = login.lower()
+
+        password = str(raw_password or "").strip()
+        # убираем "звёздочки" маскировки в конце или начале, если они есть
+        if password.startswith("*") or password.endswith("*"):
+            password = password.strip("*").strip()
+        # можно также убрать случайные пробелы по краям
+        password = password.strip()
+
+        role = str(raw_role or "").strip()
+
+        if login_norm:
+            users[login_norm] = {"password": password, "role": role, "_raw_login": login}
     return users
+
 
 
 def login_form(excel: ExcelClient):
@@ -306,14 +315,16 @@ def login_form(excel: ExcelClient):
     # st.sidebar.write("DEBUG: users:", users)
 
     if submitted:
-        user = users.get(login)
-        if user and str(password) == str(user.get("password", "")):
-            st.session_state["current_user"] = {"login": login, "role": user.get("role", "")}
-            st.sidebar.success(f"Привет, {login}!")
-            return st.session_state["current_user"]
-        else:
-            st.sidebar.error("Неверный логин или пароль")
-    return None
+    entered_login = (login or "").strip().lower()
+    entered_password = (password or "").strip()
+    user = users.get(entered_login)
+    if user and entered_password == user["password"]:
+        st.session_state["current_user"] = {"login": user["_raw_login"], "role": user.get("role", "")}
+        st.sidebar.success(f"Привет, {user['_raw_login']}!")
+        return st.session_state["current_user"]
+    else:
+        st.sidebar.error("Неверный логин или пароль")
+
 
 # =========================
 # Gabarit / Material / Final calculators
