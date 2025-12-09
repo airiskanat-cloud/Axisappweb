@@ -480,27 +480,29 @@ class GabaritCalculator:
             total_value = 0.0
 
             for s in sections:
-                width = s.get("width_mm", 0.0)
-                height = s.get("height_mm", 0.0)
+                # Поддержка новых полей: для дверей берем frame размеры, для панелей — width/height
+                if s.get("kind") == "door":
+                    width = s.get("frame_width_mm", 0.0)
+                    height = s.get("frame_height_mm", 0.0)
+                    sash_w = s.get("leaves", [{}])[0].get("width_mm", width) if s.get("leaves") else width
+                    sash_h = s.get("leaves", [{}])[0].get("height_mm", height) if s.get("leaves") else height
+                else:
+                    width = s.get("width_mm", 0.0)
+                    height = s.get("height_mm", 0.0)
+                    sash_w = s.get("sash_width_mm", width)
+                    sash_h = s.get("sash_height_mm", height)
+
                 left = s.get("left_mm", 0.0)
                 center = s.get("center_mm", 0.0)
                 right = s.get("right_mm", 0.0)
                 top = s.get("top_mm", 0.0)
-                sash_w = s.get("sash_width_mm", width)
-                sash_h = s.get("sash_height_mm", height)
                 area = s.get("area_m2", 0.0)
                 perimeter = s.get("perimeter_m", 0.0)
                 qty = s.get("Nwin", 1)
 
                 geom = self._calc_imposts_context(width, height, left, center, right, top)
 
-                nsash = s.get("nsash", 1)
-                if s.get("kind") == "door":
-                    if s.get("door_type") == "double":
-                        nsash = 2
-                    else:
-                        nsash = 1
-
+                nsash = s.get("n_leaves", len(s.get("leaves", [])) or 1)
                 ctx = {
                     "width": width,
                     "height": height,
@@ -603,8 +605,14 @@ class MaterialCalculator:
             qty_fact_total = 0.0
 
             for s in sections:
-                width = s.get("width_mm", 0.0)
-                height = s.get("height_mm", 0.0)
+                # подстраиваем контекст под door/panel/окна
+                if s.get("kind") == "door":
+                    width = s.get("frame_width_mm", 0.0)
+                    height = s.get("frame_height_mm", 0.0)
+                else:
+                    width = s.get("width_mm", 0.0)
+                    height = s.get("height_mm", 0.0)
+
                 left = s.get("left_mm", 0.0)
                 center = s.get("center_mm", 0.0)
                 right = s.get("right_mm", 0.0)
@@ -629,9 +637,9 @@ class MaterialCalculator:
                     "area": area,
                     "perimeter": perimeter,
                     "qty": qty,
-                    "nsash": s.get("nsash", 1),
-                    "n_sash_active": 1 if s.get("nsash", 1) >= 1 else 0,
-                    "n_sash_passive": max(s.get("nsash", 1) - 1, 0),
+                    "nsash": s.get("n_leaves", len(s.get("leaves", [])) or 1),
+                    "n_sash_active": 1 if s.get("n_leaves", len(s.get("leaves", [])) or 1) >= 1 else 0,
+                    "n_sash_passive": max(s.get("n_leaves", len(s.get("leaves", [])) or 1) - 1, 0),
                     "hinges_per_sash": 3,
                 }
                 ctx.update(geom)
@@ -991,7 +999,7 @@ def build_smeta_workbook(order: dict,
             row=current_row,
             column=1,
             value=(
-                f"Позиция {idx}: {order.get('product_type','')}, {p.get('width_mm',0)} × {p.get('height_mm',0)} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','')}"
+                f"Позиция {idx}: {order.get('product_type','')}, {p.get('width_mm',p.get('frame_width_mm',0))} × {p.get('height_mm',p.get('frame_height_mm',0))} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','') or p.get('leaves',[{'filling':''}])[0].get('filling','')}"
             )
         )
         current_row += 1
@@ -1032,8 +1040,20 @@ def build_smeta_workbook(order: dict,
 # Streamlit UI: main
 # =========================
 
+def ensure_session_state():
+    #инициализация хранилища секций/блоков для тамбура
+    if "tam_door_count" not in st.session_state:
+        st.session_state["tam_door_count"] = 0
+    if "tam_panel_count" not in st.session_state:
+        st.session_state["tam_panel_count"] = 0
+    if "sections_inputs" not in st.session_state:
+        st.session_state["sections_inputs"] = []  # список секций словарей
+    # хранить временные saved ids не обязательно; кнопки добавляют в sections_inputs
+
 def main():
     st.set_page_config(page_title="Axis Pro GF • Калькулятор", layout="wide")
+
+    ensure_session_state()
 
     excel = ExcelClient(EXCEL_FILE)
 
@@ -1125,7 +1145,7 @@ def main():
 
     with col_right:
         st.header("Информация")
-        st.info("Панели выбираются на уровне секции (в тамбуре или для дополнительных панелей).")
+        st.info("Параметры тамбура теперь детализированы: каждая секция — отдельный блок (дверной блок или глухая панель).")
         if not is_probably_xlsx(EXCEL_FILE):
             st.warning("Excel-файл может быть повреждён или не стандартного формата — создан или восстановлен шаблон. Проверьте справочники в Excel.")
         if DEBUG:
@@ -1139,8 +1159,9 @@ def main():
 
         base_positions_inputs = []
         lambr_positions_inputs = []
-        sections_inputs = []
+        # sections_inputs теперь в st.session_state["sections_inputs"]
 
+        # ---------- Ввод базовых позиций (окна/двери — без тамбура) ----------
         for i in range(int(positions_count)):
             st.subheader(f"Позиция {i+1}")
             c1, c2, c3, c4 = st.columns(4)
@@ -1173,101 +1194,9 @@ def main():
                     "kind": "window"
                 })
             else:
-                with st.expander(f"Параметры Тамбура — Позиция {i+1}", expanded=False):
-                    st.markdown("**Двери**")
-                    door_count = st.number_input(f"Сколько отдельных дверей добавить в позицию {i+1}?", min_value=0, value=1, step=1, key=f"tdc_{i}")
-                    for d in range(int(door_count)):
-                        st.markdown(f"--- Дверь {d+1} ---")
-                        dt = st.selectbox(f"Тип двери {d+1} (поз.{i+1})", ["one", "double"], key=f"door_type_{i}_{d}")
-                        if dt == "one":
-                            dw = st.number_input(f"Ширина двери {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_w_{i}_{d}")
-                            dh = st.number_input(f"Высота двери {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_h_{i}_{d}")
-                            sections_inputs.append({
-                                "kind": "door",
-                                "door_type": "one",
-                                "n_leaves": 1,
-                                "width_mm": dw,
-                                "height_mm": dh,
-                                "left_mm": 0.0,
-                                "center_mm": 0.0,
-                                "right_mm": 0.0,
-                                "top_mm": 0.0,
-                                "sash_width_mm": dw,
-                                "sash_height_mm": dh,
-                                "Nwin": 1,
-                                "filling": "Стеклопакет"
-                            })
-                        else:
-                            dw_l = st.number_input(f"Ширина левой створки {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_wl_{i}_{d}")
-                            dw_r = st.number_input(f"Ширина правой створки {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_wr_{i}_{d}")
-                            dh = st.number_input(f"Высота двери {d+1} (поз.{i+1}), мм", min_value=0.0, step=10.0, key=f"door_hd_{i}_{d}")
-                            # создаём две секции по створке — это упрощает подсчёт ручек/площадей
-                            sections_inputs.append({
-                                "kind": "door",
-                                "door_type": "double",
-                                "n_leaves": 1,
-                                "width_mm": dw_l,
-                                "height_mm": dh,
-                                "left_mm": 0.0,
-                                "center_mm": 0.0,
-                                "right_mm": 0.0,
-                                "top_mm": 0.0,
-                                "sash_width_mm": dw_l,
-                                "sash_height_mm": dh,
-                                "Nwin": 1,
-                                "filling": "Стеклопакет"
-                            })
-                            sections_inputs.append({
-                                "kind": "door",
-                                "door_type": "double",
-                                "n_leaves": 1,
-                                "width_mm": dw_r,
-                                "height_mm": dh,
-                                "left_mm": 0.0,
-                                "center_mm": 0.0,
-                                "right_mm": 0.0,
-                                "top_mm": 0.0,
-                                "sash_width_mm": dw_r,
-                                "sash_height_mm": dh,
-                                "Nwin": 1,
-                                "filling": "Стеклопакет"
-                            })
-
-                    st.markdown("**Глухие секции (панели)**")
-                    panel_count = st.number_input(f"Сколько глухих секций добавить в позицию {i+1}?", min_value=0, value=1, step=1, key=f"tp_{i}")
-                    for pidx in range(int(panel_count)):
-                        st.markdown(f"--- Глухая секция {pidx+1} ---")
-                        pw = st.number_input(f"Ширина глухой секции {pidx+1} (поз.{i+1})", min_value=0.0, step=10.0, key=f"panel_w_{i}_{pidx}")
-                        ph = st.number_input(f"Высота глухой секции {pidx+1} (поз.{i+1})", min_value=0.0, step=10.0, key=f"panel_h_{i}_{pidx}")
-                        pf = st.selectbox(f"Заполнение глухой секции {pidx+1} (поз.{i+1})", options=["Ламбри без термо", "Ламбри с термо", "Стеклопакет"], index=0, key=f"panel_fill_{i}_{pidx}")
-                        sections_inputs.append({
-                            "kind": "panel",
-                            "width_mm": pw,
-                            "height_mm": ph,
-                            "left_mm": 0.0,
-                            "center_mm": 0.0,
-                            "right_mm": 0.0,
-                            "top_mm": 0.0,
-                            "sash_width_mm": pw,
-                            "sash_height_mm": ph,
-                            "Nwin": 1,
-                            "filling": pf
-                        })
-
-                    # оставляем базовую позицию только как мета (не добавляем в sections автоматически)
-                    base_positions_inputs.append({
-                        "width_mm": width_mm,
-                        "height_mm": height_mm,
-                        "left_mm": left_mm,
-                        "center_mm": center_mm,
-                        "right_mm": right_mm,
-                        "top_mm": top_mm,
-                        "sash_width_mm": sash_width_mm if sash_width_mm > 0 else width_mm,
-                        "sash_height_mm": sash_height_mm if sash_height_mm > 0 else height_mm,
-                        "Nwin": nwin,
-                        "filling": "Тамбур_аггр",
-                        "kind": "tambur_meta"
-                    })
+                # Для тамбура НЕ добавляем агрегатную мета-позицию.
+                # Вместо этого пользователь будет добавлять блоки дверей и глухих секций ниже.
+                st.markdown(f"Позиция {i+1} — тамбур: используйте блоки ниже для детализации (двери / панели).")
 
         # Non-tambur: дополнительные панели (ламбри/сэндвич)
         if product_type != "Тамбур":
@@ -1292,6 +1221,122 @@ def main():
                     "sash_height_mm": h,
                     "filling": fill_opt
                 })
+
+    # ---------- UI: параметры тамбура (новая логика) ----------
+    if product_type == "Тамбур":
+        st.markdown("---")
+        st.header("Параметры тамбура (детализация по секциям)")
+
+        c_add = st.columns([1,1,6])
+        if c_add[0].button("Добавить дверной блок"):
+            st.session_state["tam_door_count"] += 1
+        if c_add[1].button("Добавить глухую секцию"):
+            st.session_state["tam_panel_count"] += 1
+
+        # Формы для дверных блоков
+        for i in range(st.session_state.get("tam_door_count", 0)):
+            with st.expander(f"Дверной блок #{i+1}", expanded=False):
+                name = st.text_input(f"Название блока #{i+1}", value=f"Дверной блок {i+1}", key=f"door_name_{i}")
+                count = st.number_input(f"Кол-во одинаковых блоков #{i+1}", min_value=1, value=1, key=f"door_count_{i}")
+                dtype = st.selectbox(f"Тип двери #{i+1}", ["Одностворчатая","Двухстворчатая","Многозстворчатая"], key=f"door_type_{i}")
+                frame_w = st.number_input(f"Ширина рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, key=f"frame_w_{i}")
+                frame_h = st.number_input(f"Высота рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, key=f"frame_h_{i}")
+                left = st.number_input(f"LEFT, мм #{i+1}", min_value=0.0, step=10.0, key=f"left_{i}")
+                center = st.number_input(f"CENTER, мм #{i+1}", min_value=0.0, step=10.0, key=f"center_{i}")
+                right = st.number_input(f"RIGHT, мм #{i+1}", min_value=0.0, step=10.0, key=f"right_{i}")
+                top = st.number_input(f"TOP, мм #{i+1}", min_value=0.0, step=10.0, key=f"top_{i}")
+
+                # сколько створок — по типу или вручную
+                default_leaves = 1 if dtype=="Одностворчатая" else (2 if dtype=="Двухстворчатая" else 2)
+                n_leaves = st.number_input(f"Кол-во створок #{i+1}", min_value=1, value=default_leaves, key=f"n_leaves_{i}")
+
+                leaves = []
+                for L in range(int(n_leaves)):
+                    lw = st.number_input(f"Ширина створки {L+1} (мм) — блок {i+1}", min_value=0.0, step=10.0, key=f"leaf_w_{i}_{L}")
+                    lh = st.number_input(f"Высота створки {L+1} (мм) — блок {i+1}", min_value=0.0, step=10.0, key=f"leaf_h_{i}_{L}")
+                    fill = st.selectbox(f"Заполнение створки {L+1} — блок {i+1}", ["Стеклопакет","Ламбри без термо","Ламбри с термо","Сэндвич"], key=f"leaf_fill_{i}_{L}")
+                    leaves.append({"width_mm": lw, "height_mm": lh, "filling": fill})
+
+                if st.button(f"Добавить/обновить дверной блок #{i+1} в секциях", key=f"save_door_{i}"):
+                    # добавляем/обновляем: если блок с таким name уже в sections_inputs — обновляем, иначе добавляем
+                    found = False
+                    for idx, s in enumerate(st.session_state["sections_inputs"]):
+                        if s.get("block_name") == name and s.get("kind") == "door":
+                            st.session_state["sections_inputs"][idx] = {
+                                "kind": "door",
+                                "block_name": name,
+                                "count": int(count),
+                                "frame_width_mm": frame_w,
+                                "frame_height_mm": frame_h,
+                                "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top,
+                                "n_leaves": int(n_leaves),
+                                "leaves": leaves,
+                                "Nwin": int(count)
+                            }
+                            found = True
+                            break
+                    if not found:
+                        st.session_state["sections_inputs"].append({
+                            "kind": "door",
+                            "block_name": name,
+                            "count": int(count),
+                            "frame_width_mm": frame_w,
+                            "frame_height_mm": frame_h,
+                            "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top,
+                            "n_leaves": int(n_leaves),
+                            "leaves": leaves,
+                            "Nwin": int(count)
+                        })
+                    st.success(f"Блок '{name}' добавлен/обновлён в секциях.")
+
+        # Формы для глухих секций (панелей)
+        for i in range(st.session_state.get("tam_panel_count", 0)):
+            with st.expander(f"Глухая секция #{i+1}", expanded=False):
+                name = st.text_input(f"Название панели #{i+1}", value=f"Панель {i+1}", key=f"panel_name_{i}")
+                count = st.number_input(f"Кол-во одинаковых панелей #{i+1}", min_value=1, value=1, key=f"panel_count_{i}")
+                w = st.number_input(f"Ширина панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_w_{i}")
+                h = st.number_input(f"Высота панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_h_{i}")
+                left = st.number_input(f"LEFT панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_left_{i}")
+                center = st.number_input(f"CENTER панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_center_{i}")
+                right = st.number_input(f"RIGHT панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_right_{i}")
+                top = st.number_input(f"TOP панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_top_{i}")
+                fill = st.selectbox(f"Заполнение панели #{i+1}", ["Ламбри без термо","Ламбри с термо","Сэндвич"], key=f"panel_fill_{i}")
+
+                if st.button(f"Добавить/обновить панель #{i+1} в секциях", key=f"save_panel_{i}"):
+                    found = False
+                    for idx, s in enumerate(st.session_state["sections_inputs"]):
+                        if s.get("block_name") == name and s.get("kind") == "panel":
+                            st.session_state["sections_inputs"][idx] = {
+                                "kind": "panel",
+                                "block_name": name,
+                                "count": int(count),
+                                "width_mm": w,
+                                "height_mm": h,
+                                "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top,
+                                "filling": fill,
+                                "Nwin": int(count)
+                            }
+                            found = True
+                            break
+                    if not found:
+                        st.session_state["sections_inputs"].append({
+                            "kind": "panel",
+                            "block_name": name,
+                            "count": int(count),
+                            "width_mm": w,
+                            "height_mm": h,
+                            "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top,
+                            "filling": fill,
+                            "Nwin": int(count)
+                        })
+                    st.success(f"Панель '{name}' добавлена/обновлена в секциях.")
+
+        # Отображение текущих секций (для проверки)
+        st.markdown("**Текущие секции (в секциях)**")
+        for idx, s in enumerate(st.session_state["sections_inputs"], start=1):
+            st.write(f"{idx}. {s.get('kind')} — {s.get('block_name')} — N={s.get('Nwin',1)}")
+
+        st.markdown("---")
 
     # ---------- Выбор материалов при дублях ----------
     st.header("🧾 Выбор материалов при дублях (если в справочнике несколько товаров на один элемент)")
@@ -1339,7 +1384,7 @@ def main():
             st.error("Введите номер заказа.")
             st.stop()
 
-        # Собираем base_positions и sections
+        # Собираем base_positions и lambr_positions (как раньше)
         base_positions = []
         for p in base_positions_inputs:
             if p["width_mm"] <= 0 or p["height_mm"] <= 0:
@@ -1364,30 +1409,37 @@ def main():
                     "perimeter_m": perimeter_m,
                 })
 
-        # sections
+        # sections: для тамбура используем st.session_state["sections_inputs"], иначе собираем из base_positions+lambr
         sections = []
         if product_type == "Тамбур":
-            # если есть детализированные секции — используем их и не добавляем базовую позицию (чтобы не было удвоения)
-            if sections_inputs:
-                for s in sections_inputs:
-                    if s["width_mm"] <= 0 or s["height_mm"] <= 0:
-                        st.warning("Одна из секций тамбура имеет 0 ширину или высоту и будет пропущена.")
-                        continue
-                    area_m2 = (s["width_mm"] * s["height_mm"]) / 1_000_000.0
-                    perimeter_m = 2 * (s["width_mm"] + s["height_mm"]) / 1000.0
+            if not st.session_state["sections_inputs"]:
+                st.error("Добавьте хотя бы одну секцию (дверь или глухую панель) для тамбура.")
+                st.stop()
+            for s in st.session_state["sections_inputs"]:
+                # проверяем и приводим к единому формату: area_m2 и perimeter_m
+                if s.get("kind") == "door":
+                    fw = safe_float(s.get("frame_width_mm", 0.0))
+                    fh = safe_float(s.get("frame_height_mm", 0.0))
+                    area_m2 = (fw * fh) / 1_000_000.0
+                    perimeter_m = 2 * (fw + fh) / 1000.0
+                    # ensure n_leaves
+                    nleaves = int(s.get("n_leaves", len(s.get("leaves", [])) or 1))
                     sections.append({
                         **s,
                         "area_m2": area_m2,
-                        "perimeter_m": perimeter_m
+                        "perimeter_m": perimeter_m,
+                        "nsash": nleaves
                     })
-            else:
-                # если деталей нет — добавляем агрегатную позицию (в редких случаях)
-                for p in base_positions:
+                else:  # panel
+                    w = safe_float(s.get("width_mm", 0.0))
+                    h = safe_float(s.get("height_mm", 0.0))
+                    area_m2 = (w * h) / 1_000_000.0
+                    perimeter_m = 2 * (w + h) / 1000.0
                     sections.append({
-                        **p,
-                        "area_m2": p["area_m2"],
-                        "perimeter_m": p["perimeter_m"],
-                        "filling": "Стеклопакет"
+                        **s,
+                        "area_m2": area_m2,
+                        "perimeter_m": perimeter_m,
+                        "nsash": 0
                     })
         else:
             for p in base_positions:
@@ -1421,7 +1473,6 @@ def main():
         )
 
         # --- Lambr/Sandwich calculation (по хлыстам 6 м) ---
-        # группируем линейные метры по типу заполнения
         fill_linear = {}
         for s in sections:
             fill = str(s.get("filling") or "").replace("\xa0", " ").strip().lower()
@@ -1440,24 +1491,31 @@ def main():
             lambr_cost += count_hlyst * price_per_hlyst
 
         # --- Areas for glass etc.
-        # стеклопакет = сумма площадей секций, у которых filling == "Стеклопакет"
-        total_area_glass = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections if str(s.get("filling") or "").strip().lower() == "стеклопакет")
-        # общая площадь всех секций (для сборки/монтажа)
+        total_area_glass = sum(
+            s.get("area_m2", 0.0) * s.get("Nwin", 1)
+            for s in sections
+            if str(s.get("filling") or "").strip().lower() == "стеклопакет" or
+               any((leaf.get("filling","").strip().lower() == "стеклопакет") for leaf in s.get("leaves", []))
+        )
         total_area_all = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
 
         # --- Doors / handles / closer counts
-        # ручки по створкам (n_leaves), доводчики по дверным блокам
-        handles_count = sum(s.get("n_leaves", 1) for s in sections if s.get("kind") == "door")
-        # door_blocks: считаем блоки как количество уникальных дверных групп;
-        # поскольку мы создаём по-створочно записи, считаем блок как ceil(n_leaves_total / 2) при необходимости.
-        # Для простоты: считаем, что каждая пара створок образует блок, но если записи уже по-створочно и у двустворчатых созданы 2 записи,
-        # то на каждый 2 записи — 1 блок.
-        door_sections = [s for s in sections if s.get("kind") == "door"]
+        handles_count = 0
+        for s in sections:
+            if s.get("kind") == "door":
+                nleaves = int(s.get("n_leaves", len(s.get("leaves", [])) or 1))
+                handles_count += nleaves * s.get("Nwin", 1)
+
+        # door_blocks: считаем как суммарное количество дверных блоков, округлённое по 2 створки = 1 блок
         door_blocks = 0
-        # группируем по логике: если door_type == "double" was represented by two entries, то блок = number_of_pairs
-        # упрощённо: считаем блок = ceil(len(door_sections) / 2)
+        door_sections = [s for s in sections if s.get("kind") == "door"]
         if door_sections:
-            door_blocks = int(math.ceil(len(door_sections) / 2.0))
+            # для каждого дверного секционного блока — считаем блоки по паре створок
+            for s in door_sections:
+                nleaves = int(s.get("n_leaves", len(s.get("leaves", [])) or 1))
+                # каждые 2 створки считаем как 1 блок, умножаем на Nwin
+                door_blocks += int(math.ceil(nleaves / 2.0) * s.get("Nwin", 1))
+
         closer_count = door_blocks
 
         # --- Final calculation ---
@@ -1533,35 +1591,92 @@ def main():
             st.write(f"Обеспечение (60%): **{ensure_sum:.2f}**")
             st.write(f"ИТОГО к оплате: **{total_sum:.2f}**")
 
-        # --- Сохраняем в ЗАПРОСЫ (для базовых позиций) ---
+        # --- Сохраняем в ЗАПРОСЫ ---
         rows_for_form = []
         pos_index = 1
-        for p in base_positions:
-            rows_for_form.append([
-                order_number,
-                pos_index,
-                product_type,
-                "",
-                "",
-                profile_system,
-                glass_type,
-                p.get("filling",""),
-                p["width_mm"],
-                p["height_mm"],
-                p.get("left_mm", 0.0),
-                p.get("center_mm", 0.0),
-                p.get("right_mm", 0.0),
-                p.get("top_mm", 0.0),
-                p.get("sash_width_mm", p["width_mm"]),
-                p.get("sash_height_mm", p["height_mm"]),
-                p["Nwin"],
-                toning,
-                assembly,
-                montage,
-                handle_type,
-                door_closer,
-            ])
-            pos_index += 1
+        if product_type == "Тамбур":
+            # сохраняем каждую секцию как отдельную позицию
+            for p in sections:
+                if p.get("kind") == "door":
+                    # сохраняем рамные параметры + первую створку как пример (в колонках створки)
+                    first_leaf = p.get("leaves", [{}])[0]
+                    rows_for_form.append([
+                        order_number,
+                        pos_index,
+                        product_type,
+                        p.get("door_type", "") or "",  # не всегда заполняется, можно оставить blank
+                        p.get("filling","") or "",
+                        profile_system,
+                        glass_type,
+                        p.get("filling",""),
+                        p.get("frame_width_mm", 0),
+                        p.get("frame_height_mm", 0),
+                        p.get("left_mm", 0.0),
+                        p.get("center_mm", 0.0),
+                        p.get("right_mm", 0.0),
+                        p.get("top_mm", 0.0),
+                        first_leaf.get("width_mm", p.get("frame_width_mm", 0)),
+                        first_leaf.get("height_mm", p.get("frame_height_mm", 0)),
+                        p.get("Nwin", 1),
+                        toning,
+                        assembly,
+                        montage,
+                        handle_type,
+                        door_closer,
+                    ])
+                else:  # panel
+                    rows_for_form.append([
+                        order_number,
+                        pos_index,
+                        product_type,
+                        "",
+                        p.get("filling",""),
+                        profile_system,
+                        glass_type,
+                        p.get("filling",""),
+                        p.get("width_mm", 0),
+                        p.get("height_mm", 0),
+                        p.get("left_mm", 0.0),
+                        p.get("center_mm", 0.0),
+                        p.get("right_mm", 0.0),
+                        p.get("top_mm", 0.0),
+                        p.get("width_mm", 0),
+                        p.get("height_mm", 0),
+                        p.get("Nwin", 1),
+                        toning,
+                        assembly,
+                        montage,
+                        handle_type,
+                        door_closer,
+                    ])
+                pos_index += 1
+        else:
+            for p in base_positions:
+                rows_for_form.append([
+                    order_number,
+                    pos_index,
+                    product_type,
+                    "",
+                    "",
+                    profile_system,
+                    glass_type,
+                    p.get("filling",""),
+                    p["width_mm"],
+                    p["height_mm"],
+                    p.get("left_mm", 0.0),
+                    p.get("center_mm", 0.0),
+                    p.get("right_mm", 0.0),
+                    p.get("top_mm", 0.0),
+                    p.get("sash_width_mm", p["width_mm"]),
+                    p.get("sash_height_mm", p["height_mm"]),
+                    p["Nwin"],
+                    toning,
+                    assembly,
+                    montage,
+                    handle_type,
+                    door_closer,
+                ])
+                pos_index += 1
 
         for row in rows_for_form:
             excel.append_form_row(row)
