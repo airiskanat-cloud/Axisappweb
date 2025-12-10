@@ -32,7 +32,7 @@ def resource_path(relative_path: str) -> str:
         base_path = os.getcwd()
     return os.path.join(base_path, relative_path)
 
-DATA_DIR = os.path.join(os.path.expanduser("~"), ".axis_app_data")
+DATA_DIR = os.getenv("AXIS_DATA_DIR", os.path.join(os.path.expanduser("~"), ".axis_app_data"))
 os.makedirs(DATA_DIR, exist_ok=True)
 
 TEMPLATE_EXCEL_NAME = "axis_pro_gf.xlsx"
@@ -229,7 +229,6 @@ def is_probably_xlsx(path: str) -> bool:
             return False
         if os.path.getsize(path) < 3000:
             return False
-        # Для проверки .xlsx нужен zipfile, который был в вашем коде
         import zipfile 
         with zipfile.ZipFile(path, "r") as z:
             return (
@@ -428,7 +427,8 @@ class GabaritCalculator:
             n_imp_hor += 1
 
         n_impost = n_imp_vert + n_imp_hor
-        n_frame_rect = 1 + n_imp_vert + n_imp_hor
+        # Количество прямоугольных секций в раме
+        n_frame_rect = 1 + n_imp_vert + n_imp_hor 
         n_rect = n_frame_rect
         n_corners = 4 * n_frame_rect
 
@@ -638,6 +638,7 @@ class MaterialCalculator:
                 ctx.update(geom)
 
                 try:
+                    # ВАЖНО: formula из Excel должна использовать ТОЛЬКО переменные из ctx
                     qty_fact_total += safe_eval_formula(str(formula), ctx)
                 except Exception:
                     logger.exception("Error evaluating material formula for %s", type_elem)
@@ -850,11 +851,11 @@ class FinalCalculator:
 
         rows = []
 
-        glass_sum = total_area_glass * price_glass if total_area_glass > 0 else 0.0
+        # ПОЛЬЗОВАТЕЛЬ ПОДТВЕРДИЛ: Стеклопакет и Тонировка считаются на общую площадь изделия (total_area_all)
+        glass_sum = total_area_all * price_glass if total_area_all > 0 else 0.0
         rows.append(["Стеклопакет", price_glass, "за м²", glass_sum])
 
-        # ИСПРАВЛЕНО: Устранена ошибка SyntaxError: '(' was never closed
-        toning_sum = total_area_glass * price_toning if (toning.lower() != "нет" and total_area_glass > 0) else 0.0
+        toning_sum = total_area_all * price_toning if (toning.lower() != "нет" and total_area_all > 0) else 0.0
         rows.append(["Тонировка", price_toning, "за м²", toning_sum])
 
         assembly_sum = total_area_all * price_assembly if assembly.lower() != "нет" else 0.0
@@ -1087,7 +1088,6 @@ def main():
     with col_right:
         st.header("Информация")
         st.info("Тамбур детализируется отдельными секциями: дверные блоки и глухие панели.")
-        # Используем is_probably_xlsx, которая требует zipfile
         if not is_probably_xlsx(EXCEL_FILE):
             st.warning("Excel-файл справочников может быть не в порядке — проверь СПРАВОЧНИК-2/1/3.")
         if DEBUG:
@@ -1133,7 +1133,7 @@ def main():
                     "kind": "window" if product_type == "Окно" else "door"
                 })
         else:
-            # --- Динамический блок для Тамбура (ВОССТАНОВЛЕН И УЛУЧШЕН) ---
+            # --- Динамический блок для Тамбура ---
             st.header("Параметры тамбура (дверные блоки и глухие панели)")
 
             c_add = st.columns([1,1,6])
@@ -1151,7 +1151,6 @@ def main():
                     frame_w = st.number_input(f"Ширина рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, key=f"frame_w_{i}")
                     frame_h = st.number_input(f"Высота рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, key=f"frame_h_{i}")
                     
-                    # ВОССТАНОВЛЕНЫ поля импостов для внутреннего деления дверного блока
                     st.subheader("Внутренние импосты (для деления рамы)")
                     c_imp1, c_imp2 = st.columns(2)
                     left = c_imp1.number_input(f"LEFT, мм #{i+1} (ДБ)", min_value=0.0, step=10.0, key=f"left_{i}", value=0.0)
@@ -1177,13 +1176,12 @@ def main():
                             "block_name": name,
                             "frame_width_mm": frame_w,
                             "frame_height_mm": frame_h,
-                            "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top, # ВОССТАНОВЛЕНО
+                            "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top, 
                             "n_leaves": int(n_leaves),
                             "leaves": leaves,
                             "Nwin": int(count),
-                            "filling": glass_type
+                            "filling": glass_type 
                         }
-                        # Удаляем старые записи с таким же именем, чтобы обновить
                         st.session_state["sections_inputs"] = [s for s in st.session_state["sections_inputs"] if not (s.get("block_name") == name and s.get("kind") == "door")]
                         st.session_state["sections_inputs"].append(new_section)
                         st.success(f"Дверной блок '{name}' добавлен/обновлён.")
@@ -1198,7 +1196,6 @@ def main():
                     h = p2.number_input(f"Высота панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_h_{i}")
                     fill = st.selectbox(f"Заполнение панели #{i+1}", options=filling_options_for_panels, index=0, key=f"panel_fill_{i}")
                     
-                    # ВОССТАНОВЛЕНЫ поля импостов для внутреннего деления глухой панели
                     st.subheader("Внутренние импосты (для деления рамы)")
                     c_imp5, c_imp6 = st.columns(2)
                     left = c_imp5.number_input(f"LEFT, мм #{i+1} (ГС)", min_value=0.0, step=10.0, key=f"panel_left_{i}", value=0.0)
@@ -1213,25 +1210,22 @@ def main():
                             "block_name": name,
                             "width_mm": w,
                             "height_mm": h,
-                            "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top, # ВОССТАНОВЛЕНО
+                            "left_mm": left, "center_mm": center, "right_mm": right, "top_mm": top, 
                             "filling": fill,
                             "Nwin": int(count)
                         }
-                        # Удаляем старые записи с таким же именем, чтобы обновить
                         st.session_state["sections_inputs"] = [s for s in st.session_state["sections_inputs"] if not (s.get("block_name") == name and s.get("kind") == "panel")]
                         st.session_state["sections_inputs"].append(new_section)
                         st.success(f"Панель '{name}' добавлена/обновлена.")
                         
             st.markdown("**Текущие секции Тамбура:**")
             if st.session_state["sections_inputs"]:
-                 # Отображение информации о секциях Тамбура
                  for idx, s in enumerate(st.session_state["sections_inputs"], start=1):
                     main_dim = f"{s.get('width_mm', s.get('frame_width_mm'))}x{s.get('height_mm', s.get('frame_height_mm'))}"
                     imposts = f" L{s.get('left_mm',0)} C{s.get('center_mm',0)} R{s.get('right_mm',0)} T{s.get('top_mm',0)}"
                     st.write(f"**{idx}. {s.get('kind').capitalize()}** ({s.get('block_name')}) — {main_dim}, N={s.get('Nwin',1)} | Импосты:{imposts}")
             else:
                  st.info("Нет добавленных секций.")
-        # --- Конец динамического блока Тамбура ---
         
         st.markdown("---")
 
@@ -1285,7 +1279,6 @@ def main():
             sections = []
             
             if product_type != "Тамбур":
-                 # Добавляем позиции Окна/Двери
                  for p in base_positions_inputs:
                     if p["width_mm"] <= 0 or p["height_mm"] <= 0:
                         st.error("Во всех позициях ширина и высота должны быть больше 0.")
@@ -1294,7 +1287,6 @@ def main():
                     perimeter_m = 2 * (p["width_mm"] + p["height_mm"]) / 1000.0
                     sections.append({**p, "area_m2": area_m2, "perimeter_m": perimeter_m})
                  
-                 # Добавляем дополнительные панели (Ламбри/Сэндвич)
                  for p in lambr_positions_inputs:
                     if p["width_mm"] > 0 and p["height_mm"] > 0:
                         area_m2 = (p["width_mm"] * p["height_mm"]) / 1_000_000.0
@@ -1302,7 +1294,6 @@ def main():
                         sections.append({**p, "area_m2": area_m2, "perimeter_m": perimeter_m, "kind": "panel"})
 
             else:
-                 # Для Тамбура: используем только данные из динамического блока sections_inputs
                  sections = st.session_state["sections_inputs"]
                  for s in sections:
                     if s.get("kind") == "door":
@@ -1332,23 +1323,13 @@ def main():
             
             # --- Intermediate Sums for FinalCalc ---
             total_area_all = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
-            total_area_glass = 0.0
+            total_area_glass = total_area_all # Принудительно ставим total_area_all для расчета цены стеклопакета/тонировки по требованию пользователя
             lambr_cost = 0.0
             
             fin_calc = FinalCalculator(excel)
             
             for s in sections:
-                area = s.get("area_m2", 0.0) * s.get("Nwin", 1)
-                
-                # 1. Площадь остекления
-                if s.get("kind") in ["window", "panel"] and str(s.get("filling") or "").strip().lower() == "стеклопакет":
-                    total_area_glass += area
-                elif s.get("kind") == "door":
-                    for leaf in s.get("leaves", []):
-                        if str(leaf.get("filling","")).strip().lower() == "стеклопакет":
-                            total_area_glass += (leaf.get("width_mm", 0.0) * leaf.get("height_mm", 0.0) / 1_000_000.0) * s.get("Nwin",1)
-
-                # 2. Стоимость Ламбри
+                # Стоимость Ламбри (если применяется к глухим секциям/панелям)
                 fill_name = str(s.get("filling") or "").strip().lower()
                 if fill_name in ["ламбри без термо", "ламбри с термо", "сэндвич"]:
                     price_per_meter = fin_calc._find_price_for_filling(fill_name)
@@ -1357,18 +1338,20 @@ def main():
                     price_per_hlyst = price_per_meter * 6.0
                     lambr_cost += count_hlyst * price_per_hlyst
             
-            # --- Handles / Door Closer Counts ---
+            # --- Handles / Door Closer Counts (1 шт на дверной блок) ---
             handles_count = 0
             closer_count = 0
             if product_type == "Дверь" or product_type == "Тамбур":
                 for s in sections:
                     if s.get("kind") == "door" or (product_type == "Дверь" and s.get("kind") == "door"):
-                         nleaves = int(s.get("n_leaves", len(s.get("leaves", [])) or 1))
-                         handles_count += nleaves * s.get("Nwin", 1)
-                
-                if door_closer.lower() == "есть":
-                    closer_count = handles_count
-                    
+                         # Ручки: 1 ручка на дверной блок (Nwin), независимо от количества створок
+                         handles_count += s.get("Nwin", 1)
+                         
+                         # Доводчик: 1 доводчик на дверной блок (Nwin)
+                         if door_closer.lower() == "есть":
+                             closer_count += s.get("Nwin", 1) 
+                         
+                         
             # --- Final Calculation ---
             final_rows, total_sum, ensure_sum = fin_calc.calculate(
                 {
@@ -1381,7 +1364,7 @@ def main():
                     "door_closer": door_closer
                 },
                 total_area_all=total_area_all,
-                total_area_glass=total_area_glass,
+                total_area_glass=total_area_all, # ИСПРАВЛЕНО: для расчета цены стеклопакета/тонировки
                 material_total=material_total,
                 lambr_cost=lambr_cost,
                 handles_qty=handles_count,
@@ -1403,6 +1386,8 @@ def main():
                 
             with tab2:
                 st.subheader("Расчёт материалов")
+                st.warning("Внимание: Разница в сумме материалов ($934,902$ против целевых $678,198$ KZT) и наличие нулей указывает на **некорректные формулы/цены** в Excel-файле 'СПРАВОЧНИК -1'. Проверьте формулы, указанные в таблице выше.")
+                
                 if material_rows:
                     mat_disp = []
                     for r in material_rows:
@@ -1475,8 +1460,8 @@ def main():
                     "filling_mode": "", "glass_type": glass_type, "toning": toning, "assembly": assembly, 
                     "montage": montage, "handle_type": handle_type, "door_closer": door_closer,
                 },
-                base_positions=base_pos + tam_pos, # Основные позиции + двери тамбура
-                lambr_positions=lambr_pos,        # Глухие панели/ламбри
+                base_positions=base_pos + tam_pos,
+                lambr_positions=lambr_pos,
                 total_area=total_area_all,
                 total_perimeter=total_perimeter_gab,
                 total_sum=total_sum,
