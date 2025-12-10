@@ -3,13 +3,13 @@ import os
 import sys
 import shutil
 from io import BytesIO
-import zipfile # Для is_probably_xlsx
+import zipfile
 import logging
 import json
 import ast
 import operator as op
 
-import streamlit as st # Убедиться, что это первая импортируемая библиотека Streamlit
+import streamlit as st
 from openpyxl import load_workbook
 from openpyxl.workbook import Workbook
 from openpyxl.drawing.image import Image as XLImage
@@ -39,7 +39,6 @@ TEMPLATE_EXCEL_NAME = "axis_pro_gf.xlsx"
 EXCEL_FILE = os.path.join(DATA_DIR, TEMPLATE_EXCEL_NAME)
 SESSION_FILE = os.path.join(DATA_DIR, "session_user.json")
 
-# Копирование шаблона при первом запуске
 BUNDLED_TEMPLATE = resource_path(TEMPLATE_EXCEL_NAME)
 if os.path.exists(BUNDLED_TEMPLATE) and not os.path.exists(EXCEL_FILE):
     try:
@@ -159,7 +158,7 @@ def _eval_ast(node, names):
     if isinstance(node, ast.Constant):
         return node.value
 
-    if isinstance(node, ast.Num):  # compatibility
+    if isinstance(node, ast.Num):
         return node.n
 
     if isinstance(node, ast.UnaryOp):
@@ -180,14 +179,12 @@ def _eval_ast(node, names):
 
     if isinstance(node, ast.Call):
         func = node.func
-        # math.x
         if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == "math":
             fname = func.attr
             if hasattr(math, fname):
                 args = [_eval_ast(a, names) for a in node.args]
                 return getattr(math, fname)(*args)
 
-        # max/min
         if isinstance(func, ast.Name) and func.id in ("max", "min"):
             args = [_eval_ast(a, names) for a in node.args]
             return globals()[func.id](*args)
@@ -223,7 +220,7 @@ def safe_eval_formula(formula: str, context: dict) -> float:
         return 0.0
 
 # =========================
-# EXCEL CLIENT
+# EXCEL CLIENT (с бэкапом)
 # =========================
 
 def is_probably_xlsx(path: str) -> bool:
@@ -249,7 +246,6 @@ class ExcelClient:
 
     def _create_template(self):
         wb = Workbook()
-        # ensure named sheets exist
         if "Sheet" in wb.sheetnames:
             del wb["Sheet"]
         wb.create_sheet(SHEET_FORM)
@@ -334,7 +330,6 @@ class ExcelClient:
     def append_form_row(self, row: list):
         ws = self.ws(SHEET_FORM)
         try:
-            # if header empty -> write header
             if ws.max_row == 1 and not any(ws[1]):
                 ws.append(FORM_HEADER)
         except Exception:
@@ -464,7 +459,6 @@ class GabaritCalculator:
             total_value = 0.0
 
             for s in sections:
-                # размеры: отдельная логика для дверей
                 if s.get("kind") == "door":
                     width = s.get("frame_width_mm", 0.0) or s.get("width_mm", 0.0)
                     height = s.get("frame_height_mm", 0.0) or s.get("height_mm", 0.0)
@@ -857,7 +851,7 @@ class FinalCalculator:
         glass_sum = total_area_glass * price_glass if total_area_glass > 0 else 0.0
         rows.append(["Стеклопакет", price_glass, "за м²", glass_sum])
 
-        # ИСПРАВЛЕНИЕ СИНТАКСИЧЕСКОЙ ОШИБКИ ('(' was never closed)
+        # ИСПРАВЛЕНИЕ: Устранена ошибка SyntaxError: '(' was never closed
         toning_sum = total_area_glass * price_toning if (toning.lower() != "нет" and total_area_glass > 0) else 0.0
         rows.append(["Тонировка", price_toning, "за м²", toning_sum])
 
@@ -958,7 +952,9 @@ def build_smeta_workbook(order: dict,
         current_row += 1
         ws.cell(row=current_row, column=1, value="Панели Ламбри / Сэндвич:"); current_row += 1
         for idx, p in enumerate(lambr_positions, start=1):
-            ws.cell(row=current_row, column=1, value=f"Панель {idx}: {p.get('width_mm',0)} × {p.get('height_mm',0)} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','')}")
+            w = p.get('width_mm', p.get('frame_width_mm', 0))
+            h = p.get('height_mm', p.get('frame_height_mm', 0))
+            ws.cell(row=current_row, column=1, value=f"Панель {idx}: {w} × {h} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','')}")
             current_row += 1
 
     current_row += 2
@@ -991,15 +987,13 @@ def ensure_session_state():
         st.session_state["sections_inputs"] = []
 
 def main():
-    # ИСПРАВЛЕНИЕ 1: NameError: name 'st' is not defined 
-    # (Хотя импорт был, убедимся, что st доступен, и сохраним его как st)
+    # ИСПРАВЛЕНИЕ: NameError: name 'st' is not defined
     st.set_page_config(page_title="Axis Pro GF • Калькулятор", layout="wide") 
     
     ensure_session_state()
 
     excel = ExcelClient(EXCEL_FILE)
 
-    # восстановление сессии
     if "current_user" not in st.session_state:
         try:
             if os.path.exists(SESSION_FILE):
@@ -1042,7 +1036,6 @@ def main():
         if g:
             glass_types_set.add(g)
 
-    # Жёстко задаём опции панелей: только три варианта
     filling_options_for_panels = ["Ламбри без термо", "Ламбри с термо", "Стеклопакет"]
 
     if not montage_types_set:
@@ -1052,7 +1045,7 @@ def main():
         if "Нет" not in montage_options:
             montage_options.append("Нет")
     if "Нет" in montage_options:
-        montage_options.insert(0, montage_options.pop(montage_options.index("Нет"))) # 'Нет' первым
+        montage_options.insert(0, montage_options.pop(montage_options.index("Нет")))
 
     handle_types = sorted(list(handle_types_set)) if handle_types_set else [""]
     glass_types = sorted(list(glass_types_set)) if glass_types_set else ["двойной"]
@@ -1079,7 +1072,6 @@ def main():
         handle_type = st.selectbox("Тип ручек", handle_types, index=0)
         door_closer = st.selectbox("Доводчик", ["Нет", "Есть"])
 
-        # Кнопка очистки формы (добавлена для стабильности)
         if st.button("✨ Новый расчёт / Очистить форму"):
             for k in list(st.session_state.keys()):
                 if k.startswith(("w_","h_","l_","r_","c_","t_","sw_","sh_","nwin_","ls_w_","ls_h_","ls_q_","ls_fill_","door_","panel_","leaf_","tam_")):
@@ -1101,29 +1093,30 @@ def main():
             st.write("DEBUG sections_inputs:", st.session_state.get("sections_inputs", []))
 
     with col_left:
-        st.header("Позиции (окна/двери/тамбур)")
-        positions_count = st.number_input("Количество позиций", min_value=1, max_value=10, value=1, step=1)
+        st.header("Позиции (окна/двери)")
+        
+        # --- Блок для Окна/Двери (фиксированное число полей) ---
+        if product_type != "Тамбур":
+            positions_count = st.number_input("Количество позиций (Окно/Дверь)", min_value=1, max_value=10, value=1, step=1)
+            
+            base_positions_inputs = []
+            
+            for i in range(int(positions_count)):
+                st.subheader(f"Позиция {i+1}")
+                c1, c2, c3, c4 = st.columns(4)
+                width_mm = c1.number_input(f"Ширина, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"w_{i}")
+                height_mm = c2.number_input(f"Высота, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"h_{i}")
+                left_mm = c3.number_input(f"LEFT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"l_{i}")
+                right_mm = c4.number_input(f"RIGHT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"r_{i}")
 
-        base_positions_inputs = []
-        lambr_positions_inputs = []
+                c5, c6, c7, c8 = st.columns(4)
+                center_mm = c5.number_input(f"CENTER, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"c_{i}")
+                top_mm = c6.number_input(f"TOP, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"t_{i}")
+                sash_width_mm = c7.number_input(f"Ширина створки, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sw_{i}")
+                sash_height_mm = c8.number_input(f"Высота створки, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sh_{i}")
 
-        for i in range(int(positions_count)):
-            st.subheader(f"Позиция {i+1}")
-            c1, c2, c3, c4 = st.columns(4)
-            width_mm = c1.number_input(f"Ширина, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"w_{i}")
-            height_mm = c2.number_input(f"Высота, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"h_{i}")
-            left_mm = c3.number_input(f"LEFT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"l_{i}")
-            right_mm = c4.number_input(f"RIGHT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"r_{i}")
+                nwin = st.number_input(f"Кол-во идентичных рам (N) (поз. {i+1})", min_value=1, value=1, step=1, key=f"nwin_{i}")
 
-            c5, c6, c7, c8 = st.columns(4)
-            center_mm = c5.number_input(f"CENTER, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"c_{i}")
-            top_mm = c6.number_input(f"TOP, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"t_{i}")
-            sash_width_mm = c7.number_input(f"Ширина створки, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sw_{i}")
-            sash_height_mm = c8.number_input(f"Высота створки, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sh_{i}")
-
-            nwin = st.number_input(f"Кол-во идентичных рам (N) (поз. {i+1})", min_value=1, value=1, step=1, key=f"nwin_{i}")
-
-            if product_type != "Тамбур":
                 base_positions_inputs.append({
                     "width_mm": width_mm,
                     "height_mm": height_mm,
@@ -1137,36 +1130,86 @@ def main():
                     "filling": glass_type,
                     "kind": "window" if product_type == "Окно" else "door"
                 })
-            else:
-                st.markdown("Позиция тамбура: не задаём общий габарит. Добавляй дверные блоки и панели ниже.")
+        else:
+             # --- Динамический блок для Тамбура (ВКЛЮЧЕНО) ---
+            st.header("Параметры тамбура (дверные блоки и глухие панели)")
 
-        # дополнительные панели для не-тамбур
-        if product_type != "Тамбур":
-            st.subheader("Панели (Ламбри/Сэндвич) — дополнительные")
-            panel_count_ls = st.number_input("Количество дополнительных панелей", min_value=0, value=0, step=1, key="ls_panel_count")
-            for i in range(int(panel_count_ls)):
-                st.markdown(f"**Панель {i+1}**")
-                p1, p2, p3 = st.columns(3)
-                w = p1.number_input(f"Ширина панели {i+1}, мм", min_value=0.0, step=10.0, key=f"ls_w_{i}")
-                h = p2.number_input(f"Высота панели {i+1}, мм", min_value=0.0, step=10.0, key=f"ls_h_{i}")
-                q = p3.number_input(f"N (панель {i+1})", min_value=1, value=1, step=1, key=f"ls_q_{i}")
-                fill_opt = st.selectbox(f"Заполнение панели {i+1}", options=filling_options_for_panels, index=0, key=f"ls_fill_{i}")
-                lambr_positions_inputs.append({
-                    "width_mm": w,
-                    "height_mm": h,
-                    "Nwin": q,
-                    "left_mm": 0.0,
-                    "center_mm": 0.0,
-                    "right_mm": 0.0,
-                    "top_mm": 0.0,
-                    "sash_width_mm": w,
-                    "sash_height_mm": h,
-                    "filling": fill_opt,
-                    "kind": "panel"
-                })
-        
-        if product_type == "Тамбур":
-             st.warning("Внимание: для типа 'Тамбур' используйте раздел 'Панели (Ламбри/Сэндвич) — дополнительные' для ввода всех секций.")
+            c_add = st.columns([1,1,6])
+            if c_add[0].button("Добавить дверной блок"):
+                st.session_state["tam_door_count"] += 1
+            if c_add[1].button("Добавить глухую секцию"):
+                st.session_state["tam_panel_count"] += 1
+            
+            # Дверные блоки
+            for i in range(st.session_state.get("tam_door_count", 0)):
+                with st.expander(f"Дверной блок #{i+1}", expanded=False):
+                    name = st.text_input(f"Название блока #{i+1}", value=f"Дверной блок {i+1}", key=f"door_name_{i}")
+                    count = st.number_input(f"Кол-во одинаковых блоков #{i+1}", min_value=1, value=1, key=f"door_count_{i}")
+                    dtype = st.selectbox(f"Тип двери #{i+1}", ["Одностворчатая","Двухстворчатая"], key=f"door_type_{i}")
+                    frame_w = st.number_input(f"Ширина рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, key=f"frame_w_{i}")
+                    frame_h = st.number_input(f"Высота рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, key=f"frame_h_{i}")
+                    # Для тамбура импосты обычно не используются, но оставим для совместимости расчетов
+                    # left = st.number_input(f"LEFT, мм #{i+1}", min_value=0.0, step=10.0, key=f"left_{i}", value=0.0)
+                    # center = st.number_input(f"CENTER, мм #{i+1}", min_value=0.0, step=10.0, key=f"center_{i}", value=0.0)
+                    # right = st.number_input(f"RIGHT, мм #{i+1}", min_value=0.0, step=10.0, key=f"right_{i}", value=0.0)
+                    # top = st.number_input(f"TOP, мм #{i+1}", min_value=0.0, step=10.0, key=f"top_{i}", value=0.0)
+                    
+                    default_leaves = 1 if dtype == "Одностворчатая" else 2
+                    n_leaves = st.number_input(f"Кол-во створок #{i+1}", min_value=1, value=default_leaves, key=f"n_leaves_{i}")
+
+                    leaves = []
+                    for L in range(int(n_leaves)):
+                        st.markdown(f"**Створка {L+1}**")
+                        lw = st.number_input(f"Ширина створки {L+1} (мм) — блок {i+1}", min_value=0.0, step=10.0, key=f"leaf_w_{i}_{L}")
+                        lh = st.number_input(f"Высота створки {L+1} (мм) — блок {i+1}", min_value=0.0, step=10.0, key=f"leaf_h_{i}_{L}")
+                        fill = st.selectbox(f"Заполнение створки {L+1} — блок {i+1}", options=filling_options_for_panels, index=2, key=f"leaf_fill_{i}_{L}")
+                        leaves.append({"width_mm": lw, "height_mm": lh, "filling": fill})
+
+                    if st.button(f"Добавить/обновить дверной блок #{i+1} в секциях", key=f"save_door_{i}"):
+                        new_section = {
+                            "kind": "door",
+                            "block_name": name,
+                            "frame_width_mm": frame_w,
+                            "frame_height_mm": frame_h,
+                            "left_mm": 0.0, "center_mm": 0.0, "right_mm": 0.0, "top_mm": 0.0,
+                            "n_leaves": int(n_leaves),
+                            "leaves": leaves,
+                            "Nwin": int(count),
+                            "filling": glass_type # Основной тип заполнения для дверной рамы
+                        }
+                        st.session_state["sections_inputs"].append(new_section)
+                        st.success(f"Дверной блок '{name}' добавлен/обновлён.")
+            
+            # Глухие секции (панели)
+            for i in range(st.session_state.get("tam_panel_count", 0)):
+                with st.expander(f"Глухая секция #{i+1}", expanded=False):
+                    name = st.text_input(f"Название панели #{i+1}", value=f"Панель {i+1}", key=f"panel_name_{i}")
+                    count = st.number_input(f"Кол-во одинаковых панелей #{i+1}", min_value=1, value=1, key=f"panel_count_{i}")
+                    p1, p2 = st.columns(2)
+                    w = p1.number_input(f"Ширина панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_w_{i}")
+                    h = p2.number_input(f"Высота панели, мм #{i+1}", min_value=0.0, step=10.0, key=f"panel_h_{i}")
+                    fill = st.selectbox(f"Заполнение панели #{i+1}", options=filling_options_for_panels, index=0, key=f"panel_fill_{i}")
+
+                    if st.button(f"Добавить/обновить панель #{i+1} в секциях", key=f"save_panel_{i}"):
+                        new_section = {
+                            "kind": "panel",
+                            "block_name": name,
+                            "width_mm": w,
+                            "height_mm": h,
+                            "left_mm": 0.0, "center_mm": 0.0, "right_mm": 0.0, "top_mm": 0.0,
+                            "filling": fill,
+                            "Nwin": int(count)
+                        }
+                        st.session_state["sections_inputs"].append(new_section)
+                        st.success(f"Панель '{name}' добавлена/обновлена.")
+                        
+            st.markdown("**Текущие секции Тамбура:**")
+            if st.session_state["sections_inputs"]:
+                 for idx, s in enumerate(st.session_state["sections_inputs"], start=1):
+                    st.write(f"**{idx}. {s.get('kind').capitalize()}** ({s.get('block_name')}) — {s.get('width_mm', s.get('frame_width_mm'))}x{s.get('height_mm', s.get('frame_height_mm'))}, N={s.get('Nwin',1)}")
+            else:
+                 st.info("Нет добавленных секций.")
+        # --- Конец динамического блока Тамбура ---
         
         st.markdown("---")
 
@@ -1220,6 +1263,7 @@ def main():
             sections = []
             
             if product_type != "Тамбур":
+                 # Добавляем позиции Окна/Двери
                  for p in base_positions_inputs:
                     if p["width_mm"] <= 0 or p["height_mm"] <= 0:
                         st.error("Во всех позициях ширина и высота должны быть больше 0.")
@@ -1227,13 +1271,31 @@ def main():
                     area_m2 = (p["width_mm"] * p["height_mm"]) / 1_000_000.0
                     perimeter_m = 2 * (p["width_mm"] + p["height_mm"]) / 1000.0
                     sections.append({**p, "area_m2": area_m2, "perimeter_m": perimeter_m})
+                 
+                 # Добавляем дополнительные панели (Ламбри/Сэндвич)
+                 for p in lambr_positions_inputs:
+                    if p["width_mm"] > 0 and p["height_mm"] > 0:
+                        area_m2 = (p["width_mm"] * p["height_mm"]) / 1_000_000.0
+                        perimeter_m = 2 * (p["width_mm"] + p["height_mm"]) / 1000.0
+                        sections.append({**p, "area_m2": area_m2, "perimeter_m": perimeter_m, "kind": "panel"})
 
-            for p in lambr_positions_inputs:
-                if p["width_mm"] > 0 and p["height_mm"] > 0:
-                    area_m2 = (p["width_mm"] * p["height_mm"]) / 1_000_000.0
-                    perimeter_m = 2 * (p["width_mm"] + p["height_mm"]) / 1000.0
-                    sections.append({**p, "area_m2": area_m2, "perimeter_m": perimeter_m, "kind": "panel"})
-
+            else:
+                 # Для Тамбура: используем только данные из динамического блока sections_inputs
+                 sections = st.session_state["sections_inputs"]
+                 for s in sections:
+                    if s.get("kind") == "door":
+                        fw = s.get("frame_width_mm", 0.0)
+                        fh = s.get("frame_height_mm", 0.0)
+                        area_m2 = (fw * fh) / 1_000_000.0
+                        perimeter_m = 2 * (fw + fh) / 1000.0
+                        s.update({"area_m2": area_m2, "perimeter_m": perimeter_m})
+                    elif s.get("kind") == "panel":
+                        w = s.get("width_mm", 0.0)
+                        h = s.get("height_mm", 0.0)
+                        area_m2 = (w * h) / 1_000_000.0
+                        perimeter_m = 2 * (w + h) / 1000.0
+                        s.update({"area_m2": area_m2, "perimeter_m": perimeter_m})
+            
             if not sections:
                 st.error("Необходимо задать хотя бы одну позицию с габаритами > 0.")
                 st.stop()
@@ -1255,13 +1317,18 @@ def main():
             
             for s in sections:
                 area = s.get("area_m2", 0.0) * s.get("Nwin", 1)
-                fill_name = str(s.get("filling") or "").strip().lower()
-
-                # 1. Площадь остекления
-                if fill_name == glass_type.lower() or fill_name == "стеклопакет":
-                    total_area_glass += area
                 
+                # 1. Площадь остекления
+                if s.get("kind") in ["window", "panel"] and str(s.get("filling") or "").strip().lower() == "стеклопакет":
+                    total_area_glass += area
+                elif s.get("kind") == "door":
+                    # Проверяем заполнение створок внутри двери
+                    for leaf in s.get("leaves", []):
+                        if str(leaf.get("filling","")).strip().lower() == "стеклопакет":
+                            total_area_glass += (leaf.get("width_mm", 0.0) * leaf.get("height_mm", 0.0) / 1_000_000.0) * s.get("Nwin",1)
+
                 # 2. Стоимость Ламбри
+                fill_name = str(s.get("filling") or "").strip().lower()
                 if fill_name in ["ламбри без термо", "ламбри с термо", "сэндвич"]:
                     price_per_meter = fin_calc._find_price_for_filling(fill_name)
                     perimeter_s = s.get("perimeter_m", 0.0) * s.get("Nwin", 1)
@@ -1273,10 +1340,14 @@ def main():
             handles_count = 0
             closer_count = 0
             if product_type == "Дверь" or product_type == "Тамбур":
-                total_frames = sum(s.get("Nwin", 1) for s in sections)
-                handles_count = total_frames
+                # Считаем ручки/доводчики по количеству рам (Nwin) * (n_leaves)
+                for s in sections:
+                    if s.get("kind") == "door" or (product_type == "Дверь" and s.get("kind") == "door"):
+                         nleaves = int(s.get("n_leaves", len(s.get("leaves", [])) or 1))
+                         handles_count += nleaves * s.get("Nwin", 1)
+                
                 if door_closer.lower() == "есть":
-                    closer_count = total_frames
+                    closer_count = handles_count # 1 доводчик на створку
                     
             # --- Final Calculation ---
             final_rows, total_sum, ensure_sum = fin_calc.calculate(
