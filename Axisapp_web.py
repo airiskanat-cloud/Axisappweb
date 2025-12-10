@@ -350,7 +350,7 @@ def load_users(excel: ExcelClient):
     for r in rows:
         login = _clean_cell_val(get_field(r, "логин", "")).lower()
         pwd = _clean_cell_val(get_field(r, "парол", "")).replace("*", "").strip()
-        role = _clean_cell_val(get(r, "роль", ""))
+        role = _clean_cell_val(get_field(r, "роль", ""))
 
         if login:
             users[login] = {"password": pwd, "role": role, "_raw_login": login}
@@ -636,22 +636,8 @@ class MaterialCalculator:
                 }
                 ctx.update(geom)
 
-                # Добавляем логику фильтрации по типу секции
-                is_door_section = s.get("kind") == "door"
-                is_panel_section = s.get("kind") == "panel" or (s.get("kind") == "window" and order.get("product_type") != "Дверь") # Считаем окно как панель
-
-                # Проверяем, соответствует ли артикул типу секции (если это дверной/рамный профиль)
-                is_door_profile = "рама двери" in type_elem.lower() or "порог дверной" in type_elem.lower()
-                is_frame_profile = "рамный контур" in type_elem.lower()
-                
-                if (is_door_profile and not is_door_section):
-                    continue
-                if (is_frame_profile and not is_panel_section and not (order.get("product_type") == "Тамбур" and is_panel_section)):
-                    # Если это "Рамный контур" в Тамбуре, он должен применяться к глухим секциям/панелям
-                    continue
-
-
                 try:
+                    # ВАЖНО: formula из Excel должна использовать ТОЛЬКО переменные из ctx
                     qty_fact_total += safe_eval_formula(str(formula), ctx)
                 except Exception:
                     logger.exception("Error evaluating material formula for %s (Formula: %s)", type_elem, formula)
@@ -864,7 +850,7 @@ class FinalCalculator:
 
         rows = []
 
-        # ПОЛЬЗОВАТЕЛЬ ПОДТВЕРДИЛ: Стеклопакет и Тонировка считаются на общую площадь изделия (total_area_all)
+        # ИСПРАВЛЕНО: Стеклопакет и Тонировка считаются на общую площадь изделия (total_area_all)
         glass_sum = total_area_all * price_glass if total_area_all > 0 else 0.0
         rows.append(["Стеклопакет", price_glass, "за м²", glass_sum])
 
@@ -1400,7 +1386,7 @@ def main():
                 
             with tab2:
                 st.subheader("Расчёт материалов")
-                st.warning("⚠️ **ВНИМАНИЕ! КРИТИЧЕСКАЯ ОШИБКА В СПРАВОЧНИКЕ!** Для устранения нулей и неверных значений (например, $48.08 \text{ м}$ для Рамы), вам **ОБЯЗАТЕЛЬНО** нужно заменить формулы в файле `СПРАВОЧНИК -1.csv` на локальные, указанные в моем ответе.")
+                st.warning("⚠️ **ВНИМАНИЕ!** Для устранения нулей и неверных значений (например, $48.08 \text{ м}$ для Рамы), вам **ОБЯЗАТЕЛЬНО** нужно заменить формулы в файле `СПРАВОЧНИК -1.csv` на локальные, указанные в моем предыдущем ответе. Текущая сумма материалов может быть неверной.")
                 
                 if material_rows:
                     mat_disp = []
