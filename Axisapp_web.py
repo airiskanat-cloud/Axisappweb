@@ -455,55 +455,54 @@ class GabaritCalculator:
                 continue
             total_value = 0.0
 
-            # --- SAFETY FIX: ensure 'sections' exists ---
+# SAFETY FIX — определить sections, если нет
 if "sections" not in globals():
     sections = []
-# -------------------------------------------
 
+for s in sections:
+    if s.get("kind") == "door":
+        width = s.get("frame_width_mm", 0.0)
+        height = s.get("frame_height_mm", 0.0)
+        sash_w = s.get("leaves", [{}])[0].get("width_mm", width) if s.get("leaves") else width
+        sash_h = s.get("leaves", [{}])[0].get("height_mm", height) if s.get("leaves") else height
+    else:
+        width = s.get("width_mm", 0.0)
+        height = s.get("height_mm", 0.0)
+        sash_w = s.get("sash_width_mm", width)
+        sash_h = s.get("sash_height_mm", height)
 
-            for s in sections:
-                if s.get("kind") == "door":
-                    width = s.get("frame_width_mm", 0.0)
-                    height = s.get("frame_height_mm", 0.0)
-                    sash_w = s.get("leaves", [{}])[0].get("width_mm", width) if s.get("leaves") else width
-                    sash_h = s.get("leaves", [{}])[0].get("height_mm", height) if s.get("leaves") else height
-                else:
-                    width = s.get("width_mm", 0.0)
-                    height = s.get("height_mm", 0.0)
-                    sash_w = s.get("sash_width_mm", width)
-                    sash_h = s.get("sash_height_mm", height)
+    left = s.get("left_mm", 0.0)
+    center = s.get("center_mm", 0.0)
+    right = s.get("right_mm", 0.0)
+    top = s.get("top_mm", 0.0)
+    area = s.get("area_m2", 0.0)
+    perimeter = s.get("perimeter_m", 0.0)
+    qty = s.get("Nwin", 1)
 
-                left = s.get("left_mm", 0.0)
-                center = s.get("center_mm", 0.0)
-                right = s.get("right_mm", 0.0)
-                top = s.get("top_mm", 0.0)
-                area = s.get("area_m2", 0.0)
-                perimeter = s.get("perimeter_m", 0.0)
-                qty = s.get("Nwin", 1)
+    geom = self.calc_imposts_context(width, height, left, center, right, top)
+    nsash = s.get("n_leaves", len(s.get("leaves", [])) or 1)
 
-                geom = self._calc_imposts_context(width, height, left, center, right, top)
+    ctx = {
+        "width": width,
+        "height": height,
+        "left": left,
+        "center": center,
+        "right": right,
+        "top": top,
+        "sash_w": sash_w,
+        "sash_h": sash_h,
+        "area": area,
+        "perimeter": perimeter,
+        "qty": qty,
+        "n_sash": nsash,
+        "n_sash_active": 1 if nsash >= 1 else 0,
+        "n_sash_passive": max(nsash - 1, 0),
+        "hinges_per_sash": 3,
+    }
 
-                nsash = s.get("n_leaves", len(s.get("leaves", [])) or 1)
-                ctx = {
-                    "width": width,
-                    "height": height,
-                    "left": left,
-                    "center": center,
-                    "right": right,
-                    "top": top,
-                    "sash_width": sash_w,
-                    "sash_height": sash_h,
-                    "area": area,
-                    "perimeter": perimeter,
-                    "qty": qty,
-                    "nsash": nsash,
-                    "n_sash_active": 1 if nsash >= 1 else 0,
-                    "n_sash_passive": max(nsash - 1, 0),
-                    "hinges_per_sash": 3,
-                }
-                ctx.update(geom)
-                total_value += safe_eval_formula(str(formula), ctx)
-            gabarit_values.append([type_elem, total_value])
+    ctx.update(geom)
+    total_value += safe_eval_formula(str(formula), ctx)
+gabarit_values.append([type_elem, total_value])
 
         self.excel.clear_and_write(SHEET_GABARITS, self.HEADER, gabarit_values)
         return gabarit_values, total_area, total_perimeter
