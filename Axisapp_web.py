@@ -195,20 +195,26 @@ def safe_eval_formula(formula: str, context: Dict[str, Any]) -> float:
     }
 
     try:
-        # Для обработки логических выражений (например, в условии 'if' формулы)
-        if formula.startswith("if "):
-            # Находим индекс первого 'else'
-            if_part, else_part = formula.split(" else ", 1)
-            # Вычисляем условие
-            condition_str = if_part[3:].strip()
-            # Условие должно быть 'eval'
-            condition = bool(_eval_ast(ast.parse(condition_str, mode="eval"), names))
-            
-            # Вычисляем 'true' и 'false' части (должны быть 'eval')
-            if condition:
-                return float(_eval_ast(ast.parse(if_part.split(" then ", 1)[1].strip(), mode="eval"), names))
+        # Обработка условных выражений (if ... then ... else ...)
+        formula_lower = formula.lower()
+        if formula_lower.startswith("if "):
+            if " then " not in formula_lower or " else " not in formula_lower:
+                 # Если не полный синтаксис, считаем это обычной формулой
+                 pass 
             else:
-                return float(_eval_ast(ast.parse(else_part.strip(), mode="eval"), names))
+                if_part, else_part = formula_lower.split(" else ", 1)
+                condition_str = if_part[3:].split(" then ", 1)[0].strip()
+                true_result_str = if_part[3:].split(" then ", 1)[1].strip()
+                false_result_str = else_part.strip()
+
+                # Вычисляем условие
+                condition = bool(_eval_ast(ast.parse(condition_str, mode="eval"), names))
+                
+                # Вычисляем 'true' и 'false' части
+                if condition:
+                    return float(_eval_ast(ast.parse(true_result_str, mode="eval"), names))
+                else:
+                    return float(_eval_ast(ast.parse(false_result_str, mode="eval"), names))
 
         # Стандартное вычисление (math expression)
         node = ast.parse(formula, mode="eval")
@@ -397,30 +403,21 @@ def fallback_formula_eval(
     order_context: Dict[str, Any]
 ) -> float:
     """
-    Вычисляет формулу, используя контекст секции и заказа, 
-    с поддержкой "fallback" логики по group.
-    
-    :param formula: Строка формулы для вычисления.
-    :param formula_group: Группа, к которой относится формула (для fallback).
-    :param section: Контекст отдельной секции (ширина, высота, nwin, area, perimeter и т.д.).
-    :param order_context: Общий контекст заказа (product_type, profile_system).
-    :return: Результат вычисления.
+    Вычисляет формулу, используя контекст секции и заказа.
     """
     
     # 1. Формирование контекста для формулы:
-    # Переменные секции (width, height, area, perimeter, qty и т.д.)
-    # Должны быть в мм для размеров и в м2/м для площади/периметра
     width = safe_float(section.get("width_mm", section.get("frame_width_mm", 0.0)))
     height = safe_float(section.get("height_mm", section.get("frame_height_mm", 0.0)))
     qty = safe_int(section.get("Nwin", 1))
 
-    # Рассчитываем параметры импостов для текущей секции
+    # Габариты импостов
     left = safe_float(section.get("left_mm", 0.0))
     center = safe_float(section.get("center_mm", 0.0))
     right = safe_float(section.get("right_mm", 0.0))
     top = safe_float(section.get("top_mm", 0.0))
     
-    # Логика для подсчета импостов (восстановлено из исходного кода)
+    # Логика для подсчета импостов
     n_sections_vert = (1 if left > 0 else 0) + (1 if center > 0 else 0) + (1 if right > 0 else 0)
     n_imp_vert = max(0, n_sections_vert - 1)
     n_imp_hor = 1 if top > 0 else 0
@@ -437,40 +434,25 @@ def fallback_formula_eval(
 
     # Контекст, который будет доступен в формуле
     context_data = {
-        # Размеры
-        "width": width, "height": height,
-        "w": width, "h": height, # Дубликаты
-        "sash_width": sash_w, "sash_height": sash_h,
-        "sash_w": sash_w, "sash_h": sash_h, # Дубликаты
+        "width": width, "height": height, "w": width, "h": height,
+        "sash_width": sash_w, "sash_height": sash_h, "sash_w": sash_w, "sash_h": sash_h,
         "left": left, "center": center, "right": right, "top": top,
         
-        # Площадь/периметр
         "area": safe_float(section.get("area_m2", 0.0)),
         "perimeter": safe_float(section.get("perimeter_m", 0.0)),
-        "qty": qty, # Количество идентичных рам/блоков (Nwin)
+        "qty": qty, 
         
-        # Счетчики импостов/прямоугольников
-        "n_imp_vert": n_imp_vert, "n_imp_hor": n_imp_hor,
-        "n_impost": n_impost, "n_frame_rect": n_frame_rect,
-        "n_rect": n_rect, "n_corners": n_corners,
+        "n_imp_vert": n_imp_vert, "n_imp_hor": n_imp_hor, "n_impost": n_impost,
+        "n_frame_rect": n_frame_rect, "n_rect": n_rect, "n_corners": n_corners,
         
-        # Счетчики створок (для фурнитуры)
-        "n_leaves": n_leaves,
-        "n_sash": n_leaves, # Дубликат
+        "n_leaves": n_leaves, "n_sash": n_leaves,
         "n_sash_active": 1 if n_leaves >= 1 else 0,
         "n_sash_passive": max(n_leaves - 1, 0),
-        "hinges_per_sash": 3, # Предполагаемый дефолт
+        "hinges_per_sash": 3,
     }
     
     # 2. Вычисление
     result = safe_eval_formula(formula, {**order_context, **context_data})
-    
-    # 3. Fallback (здесь можно добавить логику замены/коррекции, если результат == 0.0)
-    # Например, если 'Рама двери' не сработала, попробовать 'Рамный контур'
-    if result == 0.0:
-        if "рама двери" in formula_group.lower() or "створочный" in formula_group.lower():
-            # Если это элемент двери/створки, но результат 0, может быть, это окно/панель?
-            pass # Пока не применяем сложный fallback, чтобы не дублировать логику фильтрации
     
     return result
 
@@ -517,7 +499,7 @@ class OrderProcessor:
 
         # 4. Фильтрация по типу секции (для Тамбура)
         is_door_item = any(k in type_elem for k in ["рама двери", "створочный", "петля", "замок", "цилиндр", "ручка", "доводчик"])
-        is_panel_frame = any(k in type_elem for k in ["рамный контур", "импост", "сухарь усилительный", "усилитель"])
+        is_panel_frame = any(k in type_elem for k in ["рамный контур", "импост", "сухарь усилительный", "усилитель", "стеклопакет", "заполнение"]) # Добавим стеклопакет/заполнение сюда, т.к. они могут быть в панели
         
         if order_type == "тамбур":
             if section_kind == "door":
@@ -526,12 +508,10 @@ class OrderProcessor:
                     return False
             elif section_kind == "panel":
                 # В секции-панели мы ищем элементы рамы и импостов (не двери)
-                if is_door_item and "сухарь усилительный" not in type_elem: # Сухарь может быть и в панели
+                if is_door_item and "сухарь усилительный" not in type_elem:
                     return False
-                if not is_panel_frame and not is_door_item: # Должен быть либо рамный, либо дверной элемент (чтобы отсечь лишнюю фурнитуру)
-                    # Если элемент не профильный и не фурнитура (напр., стеклопакет), пропустить здесь
-                    if not any(k in type_elem for k in ["стеклопакет", "заполнение"]):
-                        pass 
+                if not is_panel_frame and not is_door_item:
+                     return False
                     
         return True
 
@@ -603,14 +583,18 @@ class OrderProcessor:
             effective_qty = qty_fact_total
             
             if norm_per_pack > 0:
-                # Если это профильная группа (длина/шт.), округляем вверх до упаковки
-                # Проверить, что тип элемента относится к профильным/длинным/штучным, для которых нужна упаковка
+                # Определяем, требуется ли округление до упаковки
                 is_profile = any(g in normalize_key(item_data["Тип элемента"]) for g in self.PROFILE_GROUPS)
 
+                # Если это профиль (длина) или штучный товар
                 if is_profile or "шт" in normalize_key(item_data["Ед. к отгрузке"]):
-                    qty_to_ship = math.ceil(qty_fact_total / norm_per_pack)
-                    effective_qty = qty_to_ship * norm_per_pack
-                # Иначе (для площади/объема) - просто факт. расход
+                    qty_to_ship = math.ceil(qty_fact_total / norm_per_pack) * norm_per_pack
+                    # Уточнение: в оригинальном коде qty_to_ship - это количество упаковок, 
+                    # effective_qty - общее количество товара
+                    
+                    qty_packs = math.ceil(qty_fact_total / norm_per_pack)
+                    qty_to_ship = qty_packs # Количество упаковок к отгрузке
+                    effective_qty = qty_packs * norm_per_pack # Общее количество товара (суммируется)
                 else:
                     qty_to_ship = qty_fact_total
                     effective_qty = qty_fact_total
@@ -676,7 +660,7 @@ class OrderProcessor:
         material_total = safe_float(material_df["Сумма"].sum())
         
         # Поиск стоимости Ламбри/Сэндвич (по периметру/погонный метр)
-        lambr_cost = self._calculate_lambr_cost(order, self.ref2_records, total_area_all)
+        lambr_cost = self._calculate_lambr_cost(order, self.ref2_records)
         
         # Подсчет фурнитуры/штучных элементов (Ручки/Доводчики)
         handles_qty = order.get("n_doors_total", 0) # 1 ручка на дверной блок
@@ -738,18 +722,13 @@ class OrderProcessor:
         
         return df, total_sum, ensure_sum
         
-    def _calculate_lambr_cost(self, order: Dict[str, Any], ref2_records: List[Dict[str, Any]], total_area_all: float) -> float:
+    def _calculate_lambr_cost(self, order: Dict[str, Any], ref2_records: List[Dict[str, Any]]) -> float:
         """
-        Отдельный расчет стоимости Ламбри/Сэндвич (предположительно, по периметру/пог. метру).
-        
-        ВАЖНО: В исходном коде цена Ламбри берется из СПРАВОЧНИК-2 по названию filling
-        и умножается на 6.0 (длина хлыста), а затем умножается на math.ceil(perimeter / 6.0).
-        Это означает, что цена в СПРАВОЧНИК-2 должна быть ценой за метр, а не за хлыст.
-        
+        Расчет стоимости Ламбри/Сэндвич (по периметру/пог. метру).
         """
         final_calc = FinalCalculator(ref2_records)
         lambr_cost = 0.0
-        sections = order.get("sections_inputs", []) # Используем секции из сессии
+        sections = order.get("sections_inputs", [])
         
         for section in sections:
             qty_nwin = safe_int(section.get("Nwin", 1))
@@ -759,19 +738,13 @@ class OrderProcessor:
                 fill_name = normalize_key(section.get("filling", ""))
                 price_per_meter = final_calc._find_price_for_filling(fill_name)
                 
-                if price_per_meter > 0.0:
+                if price_per_meter > 0.0 and ("ламбри" in fill_name or "сэндвич" in fill_name):
                     perimeter_s = safe_float(section.get("perimeter_m", 0.0))
                     
-                    if "ламбри" in fill_name or "сэндвич" in fill_name:
-                        # Логика расчета по хлыстам (6м)
-                        count_hlyst = math.ceil(perimeter_s / 6.0) if perimeter_s > 0 else 0
-                        price_per_hlyst = price_per_meter * 6.0
-                        lambr_cost += count_hlyst * price_per_hlyst * qty_nwin
-                    else:
-                        # Если не Ламбри/Сэндвич, но цена есть, считаем по площади?
-                        # В исходном коде вся фурнитура/дополнительные услуги считаются в FinalCalculator
-                        # Оставим только логику Ламбри/Сэндвич здесь, т.к. она привязана к периметру/хлыстам
-                        pass
+                    # Логика расчета по хлыстам (6м)
+                    count_hlyst = math.ceil(perimeter_s / 6.0) if perimeter_s > 0 else 0
+                    price_per_hlyst = price_per_meter * 6.0
+                    lambr_cost += count_hlyst * price_per_hlyst * qty_nwin
 
             # 2. Секция - дверной блок с наполнением створок
             elif section.get("kind") == "door":
@@ -787,7 +760,7 @@ class OrderProcessor:
                         
                         count_hlyst = math.ceil(perimeter_leaf / 6.0) if perimeter_leaf > 0 else 0
                         price_per_hlyst = price_per_meter * 6.0
-                        lambr_cost += count_hlyst * price_per_hlyst * qty_nwin # Умножаем на Nwin
+                        lambr_cost += count_hlyst * price_per_hlyst * qty_nwin
 
         return lambr_cost
 
@@ -802,7 +775,6 @@ class MaterialCalculator:
         "Кол-во факт. расхода", "Норма к упаковке", "Ед. к отгрузке",
         "Кол-во к отгрузке", "Сумма"
     ]
-    # Тело класса интегрировано в OrderProcessor.calculate_materials
     
 class FinalCalculator:
     """Утилиты для поиска цен из СПРАВОЧНИК-2."""
@@ -832,7 +804,6 @@ class FinalCalculator:
     def _find_price_for_filling(self, filling_value: str) -> float:
         """Цена за м.п. для Ламбри/Сэндвич."""
         if not filling_value: return 0.0
-        # Ищем строку, где в колонке "панел"/"заполн" есть наше значение, и берем "стоимость"
         f_val = normalize_key(filling_value)
         
         for r in self.ref2_records:
@@ -845,7 +816,6 @@ class FinalCalculator:
                         break
             
             if found_filling:
-                # Нашли нужную строку, ищем в ней цену
                 for k in r.keys():
                     nk = normalize_key(k)
                     if nk and "стоимость" in nk:
@@ -859,9 +829,9 @@ class FinalCalculator:
     def _find_price_for_glass_by_type(self, glass_type: str) -> float:
         """Цена стеклопакета по типу."""
         if not glass_type: return 0.0
-        # Ищем в колонке "тип стеклопак" значение, и берем "стоимость"
         f_val = normalize_key(glass_type)
         
+        # Ищем точное совпадение
         for r in self.ref2_records:
             for k in r.keys():
                 nk = normalize_key(k)
@@ -883,7 +853,6 @@ class FinalCalculator:
     def _find_price_for_handles(self, handle_type: str) -> float:
         """Цена ручки."""
         if not handle_type: return 0.0
-        # В отличие от остальных, цена на ручки может быть общей
         return self._find_price("ручк")
 
     def _find_price_for_closer(self, closer_type: str) -> float:
@@ -1051,7 +1020,8 @@ def login_form(excel: ExcelClient) -> Union[Dict[str, str], None]:
                 pass
 
             st.sidebar.success(f"Привет, {user['_raw_login']}!")
-            st.experimental_rerun() # Перезапускаем для очистки формы входа
+            # ИСПРАВЛЕНИЕ: Заменено st.experimental_rerun() на st.rerun()
+            st.rerun()
             return st.session_state["current_user"]
 
         st.sidebar.error("Неверный логин или пароль")
@@ -1141,7 +1111,8 @@ def main():
             for k in list(st.session_state.keys()):
                 if k.startswith(("w_","h_","l_","r_","c_","t_","sw_","sh_","nwin_","leaf_","door_","panel_")) or k in ["tam_door_count", "tam_panel_count", "sections_inputs", "selected_duplicates", "last_calculation"]:
                     st.session_state.pop(k, None)
-            st.experimental_rerun()
+            # ИСПРАВЛЕНИЕ: Заменено st.experimental_rerun() на st.rerun()
+            st.rerun()
 
     # --- Главная колонка: ввод позиций ---
     col_left, col_right = st.columns([2, 1])
@@ -1240,7 +1211,7 @@ def main():
                             st.session_state["sections_inputs"] = [s for s in st.session_state["sections_inputs"] if not (s.get("block_name") == name and s.get("kind") == "door")]
                             st.session_state["sections_inputs"].append(new_section)
                             st.success(f"Дверной блок '{name}' добавлен/обновлён.")
-                            st.experimental_rerun()
+                            st.rerun() # Обновляем для показа добавленной секции
                 
             # Глухие секции (панели)
             for i in range(st.session_state.get("tam_panel_count", 0)):
@@ -1278,7 +1249,7 @@ def main():
                             st.session_state["sections_inputs"] = [s for s in st.session_state["sections_inputs"] if not (s.get("block_name") == name and s.get("kind") == "panel")]
                             st.session_state["sections_inputs"].append(new_section)
                             st.success(f"Панель '{name}' добавлена/обновлена.")
-                            st.experimental_rerun()
+                            st.rerun() # Обновляем для показа добавленной секции
                             
             st.markdown("**Текущие секции Тамбура:**")
             if st.session_state["sections_inputs"]:
@@ -1392,22 +1363,18 @@ def main():
         rows_for_form: List[List[Any]] = []
         for pos_index, p in enumerate(st.session_state["sections_inputs"], start=1):
             
-            # Определение вида изделия: 'Дверь'/'Окно'/'Панель'
+            # Определение вида изделия
             kind_item = p.get("kind", "")
-            if kind_item == "panel": # Глухая секция в тамбуре
-                 kind_name = "Глухая секция"
-            elif kind_item == "door" and product_type == "Тамбур": # Дверь в тамбуре
-                 kind_name = "Дверной блок"
-            elif kind_item == "door": # Отдельная дверь
-                 kind_name = "Дверь"
-            else: # Окно
-                 kind_name = "Окно"
+            if kind_item == "panel": kind_name = "Глухая секция"
+            elif kind_item == "door" and product_type == "Тамбур": kind_name = "Дверной блок"
+            elif kind_item == "door": kind_name = "Дверь"
+            else: kind_name = "Окно"
                  
-            # Ширина/высота: для дверей - рама, для окон/панелей - само изделие
+            # Ширина/высота
             width_f = p.get("frame_width_mm", p.get("width_mm", 0.0))
             height_f = p.get("frame_height_mm", p.get("height_mm", 0.0))
             
-            # Ширина/высота створки: для дверей - первая створка, для окон - створка
+            # Ширина/высота створки
             sash_w_f = p.get("sash_width_mm", 0.0)
             sash_h_f = p.get("sash_height_mm", 0.0)
 
@@ -1451,7 +1418,7 @@ def main():
             # Логирование нулевых строк:
             zero_rows = calc_data['material_df'][calc_data['material_df']['Кол-во факт. расхода'] == 0.0]
             if not zero_rows.empty:
-                st.warning(f"⚠️ **{len(zero_rows)} строк** в расчете материалов имеют нулевой расход.")
+                st.warning(f"⚠️ **{len(zero_rows)} строк** в расчете материалов имеют нулевой расход. Проверьте формулы в СПРАВОЧНИК-1.")
                 for _, row in zero_rows.iterrows():
                     logger.warning("Zero material consumption: %s - %s", row['Тип элемента'], row['Товар'])
             
@@ -1533,8 +1500,7 @@ def main():
                 os.remove(SESSION_FILE)
         except Exception:
             pass
-        st.experimental_rerun()
-
+        st.rerun() # ИСПРАВЛЕНИЕ: Заменено st.experimental_rerun() на st.rerun()
 
 if __name__ == "__main__":
     main()
