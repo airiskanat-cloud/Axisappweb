@@ -575,7 +575,8 @@ class MaterialCalculator:
             row_profile = get_field(row, "система проф", "")
             type_elem = get_field(row, "тип элемент", "")
             product_name = str(get_field(row, "товар", "") or "")
-
+            
+            # --- Фильтрация по изделию и системе ---
             if row_type:
                 if str(row_type).strip().lower() != order.get("product_type", "").strip().lower():
                     continue
@@ -588,7 +589,8 @@ class MaterialCalculator:
                 chosen_names = selected_duplicates[type_elem]
                 if product_name not in chosen_names:
                     continue
-
+            
+            # --- Определение формулы ---
             formula = get_field(row, "формула_python", "")
             if not formula:
                 formula = get_field(row, "формула фактического расхода", "")
@@ -596,11 +598,16 @@ class MaterialCalculator:
                 continue
 
             qty_fact_total = 0.0
-
+            
+            # --- Итерация по всем секциям заказа ---
             for s in sections:
-                if s.get("kind") == "door":
-                    width = s.get("frame_width_mm", 0.0) or s.get("width_mm", 0.0)
-                    height = s.get("frame_height_mm", 0.0) or s.get("height_mm", 0.0)
+                # 1. Сбор габаритов
+                is_door_section = s.get("kind") == "door"
+                is_panel_section = s.get("kind") == "panel"
+                
+                if is_door_section:
+                    width = s.get("frame_width_mm", 0.0)
+                    height = s.get("frame_height_mm", 0.0)
                 else:
                     width = s.get("width_mm", 0.0)
                     height = s.get("height_mm", 0.0)
@@ -636,8 +643,23 @@ class MaterialCalculator:
                 }
                 ctx.update(geom)
 
+                # 2. ФИЛЬТРАЦИЯ: Применяем профиль только к нужным секциям
+                
+                # Профили для глухих/панелей
+                is_panel_frame = "рамный контур" in type_elem.lower() or "импост" in type_elem.lower()
+                # Профили для дверей (рамы/пороги/створки)
+                is_door_item = ("рама двери" in type_elem.lower() or "порог дверной" in type_elem.lower() or "створочный профиль" in type_elem.lower() or "петля" in type_elem.lower() or "замок" in type_elem.lower() or "цилиндр" in type_elem.lower() or "ручка" in type_elem.lower())
+                
+                if order.get("product_type") == "Тамбур":
+                    # Если это рамный профиль/импост и секция - дверь, то пропускаем
+                    if is_panel_frame and is_door_section:
+                        continue
+                    # Если это дверной элемент и секция - глухая панель, то пропускаем
+                    if is_door_item and is_panel_section:
+                        continue
+                
+                # В остальных случаях (Окно/Дверь/Глухие секции Тамбура) применяем формулу
                 try:
-                    # ВАЖНО: formula из Excel должна использовать ТОЛЬКО переменные из ctx
                     qty_fact_total += safe_eval_formula(str(formula), ctx)
                 except Exception:
                     logger.exception("Error evaluating material formula for %s (Formula: %s)", type_elem, formula)
@@ -814,9 +836,7 @@ class FinalCalculator:
     def calculate(self,
                   order: dict,
                   total_area_all: float,
-                  total_area_glass: float,
                   material_total: float,
-                  door_blocks: int = 0,
                   lambr_cost: float = 0.0,
                   handles_qty: int = 0,
                   closer_qty: int = 0):
@@ -865,7 +885,7 @@ class FinalCalculator:
 
         rows.append(["Материал", "-", "-", material_total])
         
-        # Панели (Ламбри/Сэндвич) считаются, только если стоимость > 0
+        # ВАЖНО: Панели (Ламбри/Сэндвич) добавляются в итоговый расчет только если их стоимость > 0
         if lambr_cost > 0.0:
             rows.append(["Панели (Ламбри/Сэндвич)", "-", "-", lambr_cost])
 
@@ -1087,15 +1107,6 @@ def main():
             st.experimental_rerun()
             
     col_left, col_right = st.columns([2, 1])
-
-    with col_right:
-        st.header("Информация")
-        st.info("Тамбур детализируется отдельными секциями: дверные блоки и глухие панели.")
-        if not is_probably_xlsx(EXCEL_FILE):
-            st.warning("Excel-файл справочников может быть не в порядке — проверь СПРАВОЧНИК-2/1/3.")
-        if DEBUG:
-            st.write("DEBUG ref2:", ref2_records[:5])
-            st.write("DEBUG sections_inputs:", st.session_state.get("sections_inputs", []))
 
     with col_left:
         st.header("Позиции (окна/двери)")
@@ -1326,7 +1337,6 @@ def main():
             
             # --- Intermediate Sums for FinalCalc ---
             total_area_all = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
-            total_area_glass = total_area_all 
             lambr_cost = 0.0
             
             fin_calc = FinalCalculator(excel)
@@ -1369,7 +1379,6 @@ def main():
                     "door_closer": door_closer
                 },
                 total_area_all=total_area_all,
-                total_area_glass=total_area_all, 
                 material_total=material_total,
                 lambr_cost=lambr_cost,
                 handles_qty=handles_count,
@@ -1391,7 +1400,7 @@ def main():
                 
             with tab2:
                 st.subheader("Расчёт материалов")
-                st.warning("⚠️ **ВНИМАНИЕ!** Для получения корректных результатов необходимо **ОБЯЗАТЕЛЬНО** заменить формулы в файле `СПРАВОЧНИК -1.csv` на локальные, согласно таблице выше. Ваши текущие формулы в CSV дают неверные значения (например, $48.08 \text{ м}$ для Рамы вместо $\sim 12 \text{ м}$).")
+                st.warning("⚠️ **ВНИМАНИЕ! КРИТИЧЕСКАЯ ОШИБКА В СПРАВОЧНИКЕ!** Для устранения нулей и неверных значений (например, $48.08 \text{ м}$ для Рамы), вам **ОБЯЗАТЕЛЬНО** нужно заменить формулы в файле `СПРАВОЧНИК -1.csv` на локальные, согласно таблице выше. Текущая сумма материалов может быть неверной.")
                 
                 if material_rows:
                     mat_disp = []
