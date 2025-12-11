@@ -599,12 +599,35 @@ class MaterialCalculator:
 
             qty_fact_total = 0.0
             
+            # --- Определение типов элементов для фильтрации ---
+            
+            # Профили для глухих/панелей и общие элементы (для Тамбура)
+            is_panel_frame = "рамный контур" in type_elem.lower() or "импост" in type_elem.lower() or "сухарь усилительный" in type_elem.lower()
+            
+            # Профили и фурнитура только для дверей/створок
+            is_door_item = ("рама двери" in type_elem.lower() or "порог дверной" in type_elem.lower() or "створочный профиль" in type_elem.lower() or "петля" in type_elem.lower() or "замок" in type_elem.lower() or "цилиндр" in type_elem.lower() or "ручка" in type_elem.lower() or "фиксатор" in type_elem.lower() or "доводчик" in type_elem.lower())
+
             # --- Итерация по всем секциям заказа ---
             for s in sections:
                 # 1. Сбор габаритов
                 is_door_section = s.get("kind") == "door"
-                is_panel_section = s.get("kind") == "panel"
+                is_panel_section = s.get("kind") == "panel" or s.get("kind") == "window"
                 
+                # --- ЛОГИКА ФИЛЬТРАЦИИ ДЛЯ ТАМБУРА И ДВЕРЕЙ/ОКОН ---
+                
+                # Если изделие - Тамбур, применяем строгую фильтрацию по типу секции
+                if order.get("product_type") == "Тамбур":
+                    # Если это дверной элемент, но секция - глухая панель, пропускаем
+                    if is_door_item and is_panel_section:
+                        continue
+                    
+                    # Если это рамный/импостный профиль (не для дверей), но секция - дверь, пропускаем
+                    if is_panel_frame and is_door_section and "рама двери" not in type_elem.lower():
+                        # Профиль Рама двери, Порог и Створочный профиль (is_door_item) пройдет в дверную секцию
+                        # Рамный контур (is_panel_frame) пройдет в глухую секцию
+                        continue
+                        
+                # 2. Определение контекста (габариты и счетчики)
                 if is_door_section:
                     width = s.get("frame_width_mm", 0.0)
                     height = s.get("frame_height_mm", 0.0)
@@ -616,8 +639,11 @@ class MaterialCalculator:
                 center = s.get("center_mm", 0.0)
                 right = s.get("right_mm", 0.0)
                 top = s.get("top_mm", 0.0)
+                
+                # sash_width/height нужны для створочных профилей
                 sash_w = s.get("sash_width_mm", width)
                 sash_h = s.get("sash_height_mm", height)
+                
                 area = s.get("area_m2", 0.0)
                 perimeter = s.get("perimeter_m", 0.0)
                 qty = s.get("Nwin", 1)
@@ -625,40 +651,18 @@ class MaterialCalculator:
                 geom = self._calc_imposts_context(width, height, left, center, right, top)
 
                 ctx = {
-                    "width": width,
-                    "height": height,
-                    "left": left,
-                    "center": center,
-                    "right": right,
-                    "top": top,
-                    "sash_width": sash_w,
-                    "sash_height": sash_h,
-                    "area": area,
-                    "perimeter": perimeter,
-                    "qty": qty,
+                    "width": width, "height": height, "left": left, "center": center, "right": right, "top": top,
+                    "sash_width": sash_w, "sash_height": sash_h, "sash_w": sash_w, "sash_h": sash_h,
+                    "area": area, "perimeter": perimeter, "qty": qty,
                     "nsash": s.get("n_leaves", len(s.get("leaves", [])) or 1),
+                    "n_sash": s.get("n_leaves", len(s.get("leaves", [])) or 1), # Дубликат для совместимости
                     "n_sash_active": 1 if s.get("n_leaves", len(s.get("leaves", [])) or 1) >= 1 else 0,
                     "n_sash_passive": max(s.get("n_leaves", len(s.get("leaves", [])) or 1) - 1, 0),
                     "hinges_per_sash": 3,
                 }
                 ctx.update(geom)
 
-                # 2. ФИЛЬТРАЦИЯ: Применяем профиль только к нужным секциям
-                
-                # Профили для глухих/панелей
-                is_panel_frame = "рамный контур" in type_elem.lower() or "импост" in type_elem.lower()
-                # Профили для дверей (рамы/пороги/створки)
-                is_door_item = ("рама двери" in type_elem.lower() or "порог дверной" in type_elem.lower() or "створочный профиль" in type_elem.lower() or "петля" in type_elem.lower() or "замок" in type_elem.lower() or "цилиндр" in type_elem.lower() or "ручка" in type_elem.lower())
-                
-                if order.get("product_type") == "Тамбур":
-                    # Если это рамный профиль/импост и секция - дверь, то пропускаем
-                    if is_panel_frame and is_door_section:
-                        continue
-                    # Если это дверной элемент и секция - глухая панель, то пропускаем
-                    if is_door_item and is_panel_section:
-                        continue
-                
-                # В остальных случаях (Окно/Дверь/Глухие секции Тамбура) применяем формулу
+                # 3. Применяем формулу
                 try:
                     qty_fact_total += safe_eval_formula(str(formula), ctx)
                 except Exception:
@@ -1400,7 +1404,7 @@ def main():
                 
             with tab2:
                 st.subheader("Расчёт материалов")
-                st.warning("⚠️ **ВНИМАНИЕ! КРИТИЧЕСКАЯ ОШИБКА В СПРАВОЧНИКЕ!** Для устранения нулей и неверных значений (например, $48.08 \text{ м}$ для Рамы), вам **ОБЯЗАТЕЛЬНО** нужно заменить формулы в файле `СПРАВОЧНИК -1.csv` на локальные, согласно таблице выше. Текущая сумма материалов может быть неверной.")
+                st.warning("⚠️ **ВНИМАНИЕ!** Если вы видите неверные или нулевые расходы, это означает, что вы не исправили формулы в `СПРАВОЧНИК -1.csv`. **Проверьте, что формула для Створочного профиля и Порога использует локальные переменные: `2*(sash_width+sash_height)/1000 * n_sash * qty` и `width/1000 * qty`**.")
                 
                 if material_rows:
                     mat_disp = []
