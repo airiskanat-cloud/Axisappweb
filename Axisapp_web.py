@@ -850,7 +850,7 @@ class FinalCalculator:
 
         rows = []
 
-        # ИСПРАВЛЕНО: Стеклопакет и Тонировка считаются на общую площадь изделия (total_area_all)
+        # Стеклопакет и Тонировка считаются на общую площадь изделия (total_area_all)
         glass_sum = total_area_all * price_glass if total_area_all > 0 else 0.0
         rows.append(["Стеклопакет", price_glass, "за м²", glass_sum])
 
@@ -864,7 +864,10 @@ class FinalCalculator:
         rows.append(["Монтаж (" + str(montage) + ")", price_montage, "за м²", montage_sum])
 
         rows.append(["Материал", "-", "-", material_total])
-        rows.append(["Панели (Ламбри/Сэндвич)", "-", "-", lambr_cost])
+        
+        # Панели (Ламбри/Сэндвич) считаются, только если стоимость > 0
+        if lambr_cost > 0.0:
+            rows.append(["Панели (Ламбри/Сэндвич)", "-", "-", lambr_cost])
 
         # Ручки и Доводчики: 1 шт на дверной блок (согласно фактическому расчету)
         handles_sum = price_handles * handles_qty if handles_qty > 0 else 0.0
@@ -1334,8 +1337,10 @@ def main():
                 if fill_name in ["ламбри без термо", "ламбри с термо", "сэндвич"]:
                     price_per_meter = fin_calc._find_price_for_filling(fill_name)
                     perimeter_s = s.get("perimeter_m", 0.0) * s.get("Nwin", 1)
+                    # Ламбри считается по хлыстам (6 м), поэтому нужна цена за метр в хлысте
                     count_hlyst = math.ceil(perimeter_s / 6.0) if perimeter_s > 0 else 0
-                    price_per_hlyst = price_per_meter * 6.0
+                    # Цена за хлыст 6 м = Цена за 1 м * 6
+                    price_per_hlyst = price_per_meter * 6.0 
                     lambr_cost += count_hlyst * price_per_hlyst
             
             # --- Handles / Door Closer Counts (1 шт на дверной блок) ---
@@ -1386,7 +1391,7 @@ def main():
                 
             with tab2:
                 st.subheader("Расчёт материалов")
-                st.warning("⚠️ **ВНИМАНИЕ!** Для устранения нулей и неверных значений (например, $48.08 \text{ м}$ для Рамы), вам **ОБЯЗАТЕЛЬНО** нужно заменить формулы в файле `СПРАВОЧНИК -1.csv` на локальные, указанные в моем предыдущем ответе. Текущая сумма материалов может быть неверной.")
+                st.warning("⚠️ **ВНИМАНИЕ!** Для получения корректных результатов необходимо **ОБЯЗАТЕЛЬНО** заменить формулы в файле `СПРАВОЧНИК -1.csv` на локальные, согласно таблице выше. Ваши текущие формулы в CSV дают неверные значения (например, $48.08 \text{ м}$ для Рамы вместо $\sim 12 \text{ м}$).")
                 
                 if material_rows:
                     mat_disp = []
