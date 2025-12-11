@@ -202,10 +202,19 @@ def safe_eval_formula(formula: str, context: Dict[str, Any]) -> float:
                  # Если не полный синтаксис, считаем это обычной формулой
                  pass 
             else:
-                if_part, else_part = formula_lower.split(" else ", 1)
-                condition_str = if_part[3:].split(" then ", 1)[0].strip()
-                true_result_str = if_part[3:].split(" then ", 1)[1].strip()
-                false_result_str = else_part.strip()
+                # Берем оригинальный регистр для формулы, чтобы сохранить имена переменных
+                original_parts = formula.split(" else ", 1)
+                if len(original_parts) < 2:
+                    raise ValueError("Неполный синтаксис if-then-else")
+
+                if_then_part = original_parts[0]
+                false_result_str = original_parts[1].strip()
+
+                if " then " not in if_then_part.lower():
+                    raise ValueError("Неполный синтаксис if-then-else")
+                
+                condition_str = if_then_part[3:].split(" then ", 1)[0].strip()
+                true_result_str = if_then_part[3:].split(" then ", 1)[1].strip()
 
                 # Вычисляем условие
                 condition = bool(_eval_ast(ast.parse(condition_str, mode="eval"), names))
@@ -347,8 +356,8 @@ def process_catalog_ref1(ref1_records: List[Dict[str, Any]]) -> Dict[Tuple[str, 
     """Обрабатывает СПРАВОЧНИК-1, создавая уникальные ключи для поиска."""
     catalog = {}
     for row in ref1_records:
-        product_type = normalize_key(get_field(row, "тип издел", "universal"))
-        profile_system = normalize_key(get_field(row, "система проф", "universal"))
+        product_type = normalize_key(get_field(row, "тип издел", "")) or "universal"
+        profile_system = normalize_key(get_field(row, "система проф", "")) or "universal"
         element_type = normalize_key(get_field(row, "тип элемент", ""))
         product_name = normalize_key(get_field(row, "товар", ""))
         
@@ -475,8 +484,8 @@ class OrderProcessor:
     def _is_relevant(self, row: Dict[str, Any], order_ctx: Dict[str, Any], section: Dict[str, Any], selected_duplicates: Dict[str, Set[str]]) -> bool:
         """Определяет, применим ли элемент справочника к текущему заказу и секции."""
         
-        row_type = normalize_key(get_field(row, "тип издел", ""))
-        row_profile = normalize_key(get_field(row, "система проф", ""))
+        row_type = normalize_key(get_field(row, "тип издел", "")) or "universal"
+        row_profile = normalize_key(get_field(row, "система проф", "")) or "universal"
         type_elem = normalize_key(get_field(row, "тип элемент", ""))
         product_name = normalize_key(get_field(row, "товар", ""))
         
@@ -484,12 +493,12 @@ class OrderProcessor:
         order_profile = order_ctx.get("profile_system", "")
         section_kind = section.get("kind", "") # window, door, panel
 
-        # 1. Фильтрация по Типу изделия
-        if row_type and row_type != "universal" and row_type != order_type:
+        # 1. Фильтрация по Типу изделия (Улучшено: 'universal' и пустые поля считаются совпадением)
+        if row_type != "universal" and row_type != order_type:
             return False
 
-        # 2. Фильтрация по Системе профиля
-        if row_profile and row_profile != "universal" and row_profile != order_profile:
+        # 2. Фильтрация по Системе профиля (Улучшено: 'universal' и пустые поля считаются совпадением)
+        if row_profile != "universal" and row_profile != order_profile:
             return False
 
         # 3. Фильтрация по дубликатам (если выбраны конкретные товары)
@@ -499,15 +508,14 @@ class OrderProcessor:
 
         # 4. Фильтрация по типу секции (для Тамбура)
         is_door_item = any(k in type_elem for k in ["рама двери", "створочный", "петля", "замок", "цилиндр", "ручка", "доводчик"])
-        is_panel_frame = any(k in type_elem for k in ["рамный контур", "импост", "сухарь усилительный", "усилитель", "стеклопакет", "заполнение"]) # Добавим стеклопакет/заполнение сюда, т.к. они могут быть в панели
+        is_panel_frame = any(k in type_elem for k in ["рамный контур", "импост", "сухарь усилительный", "усилитель", "стеклопакет", "заполнение"])
         
         if order_type == "тамбур":
             if section_kind == "door":
-                # В секции-двери мы ищем элементы двери, рамы и импостов
                 if not is_door_item and not is_panel_frame:
                     return False
             elif section_kind == "panel":
-                # В секции-панели мы ищем элементы рамы и импостов (не двери)
+                # В панели ищем рамные/импостные элементы и заполнение, но исключаем чистую фурнитуру
                 if is_door_item and "сухарь усилительный" not in type_elem:
                     return False
                 if not is_panel_frame and not is_door_item:
@@ -520,7 +528,6 @@ class OrderProcessor:
         order_ctx = ensure_defaults(order, sections)
         material_results: Dict[str, Dict[str, Any]] = {} # Ключ: (Тип элемента, Товар)
         
-        # Инициализация агрегаторов
         total_sum = 0.0
         total_area = order_ctx.get("total_area", 0.0)
 
@@ -542,7 +549,6 @@ class OrderProcessor:
                 try:
                     qty_fact_for_section = fallback_formula_eval(formula, element_type, section, order_ctx)
                     
-                    # Умножаем на Nwin (количество идентичных рам/блоков)
                     qty_fact_total_for_item += qty_fact_for_section * safe_int(section.get("Nwin", 1))
                 except Exception as e:
                     logger.error("Error in formula for %s (%s): %s", product_name, formula, e)
@@ -552,7 +558,6 @@ class OrderProcessor:
             if qty_fact_total_for_item > 0.0:
                 key = (element_type, product_name)
                 
-                # Поиск в агрегированных результатах
                 item_data = material_results.setdefault(key, {
                     "Тип изделия": get_field(row, "тип издел", ""),
                     "Система профиля": get_field(row, "система проф", ""),
@@ -583,15 +588,9 @@ class OrderProcessor:
             effective_qty = qty_fact_total
             
             if norm_per_pack > 0:
-                # Определяем, требуется ли округление до упаковки
                 is_profile = any(g in normalize_key(item_data["Тип элемента"]) for g in self.PROFILE_GROUPS)
 
-                # Если это профиль (длина) или штучный товар
                 if is_profile or "шт" in normalize_key(item_data["Ед. к отгрузке"]):
-                    qty_to_ship = math.ceil(qty_fact_total / norm_per_pack) * norm_per_pack
-                    # Уточнение: в оригинальном коде qty_to_ship - это количество упаковок, 
-                    # effective_qty - общее количество товара
-                    
                     qty_packs = math.ceil(qty_fact_total / norm_per_pack)
                     qty_to_ship = qty_packs # Количество упаковок к отгрузке
                     effective_qty = qty_packs * norm_per_pack # Общее количество товара (суммируется)
@@ -1020,8 +1019,7 @@ def login_form(excel: ExcelClient) -> Union[Dict[str, str], None]:
                 pass
 
             st.sidebar.success(f"Привет, {user['_raw_login']}!")
-            # ИСПРАВЛЕНИЕ: Заменено st.experimental_rerun() на st.rerun()
-            st.rerun()
+            st.rerun() # ИСПРАВЛЕНО
             return st.session_state["current_user"]
 
         st.sidebar.error("Неверный логин или пароль")
@@ -1111,8 +1109,7 @@ def main():
             for k in list(st.session_state.keys()):
                 if k.startswith(("w_","h_","l_","r_","c_","t_","sw_","sh_","nwin_","leaf_","door_","panel_")) or k in ["tam_door_count", "tam_panel_count", "sections_inputs", "selected_duplicates", "last_calculation"]:
                     st.session_state.pop(k, None)
-            # ИСПРАВЛЕНИЕ: Заменено st.experimental_rerun() на st.rerun()
-            st.rerun()
+            st.rerun() # ИСПРАВЛЕНО
 
     # --- Главная колонка: ввод позиций ---
     col_left, col_right = st.columns([2, 1])
@@ -1282,13 +1279,13 @@ def main():
         
         # Собираем дубликаты для текущего типа изделия/профиля
         for row in ref1:
-            row_type = normalize_key(get_field(row, "тип издел", ""))
-            row_profile = normalize_key(get_field(row, "система проф", ""))
+            row_type = normalize_key(get_field(row, "тип издел", "")) or "universal"
+            row_profile = normalize_key(get_field(row, "система проф", "")) or "universal"
             type_elem = normalize_key(get_field(row, "тип элемент", ""))
             product_name = normalize_key(get_field(row, "товар", ""))
 
-            if row_type and row_type != normalize_key(product_type): continue
-            if row_profile and row_profile != normalize_key(profile_system): continue
+            if row_type != normalize_key(product_type) and row_type != "universal": continue
+            if row_profile != normalize_key(profile_system) and row_profile != "universal": continue
             if not type_elem or not product_name: continue
 
             groups.setdefault(type_elem, set()).add(product_name)
@@ -1440,7 +1437,7 @@ def main():
                 Сумма_группы=('Сумма', 'sum')
             ).reset_index()
             
-            # Дополнительная агрегация по типу профиля
+            # Агрегация по типу профиля
             group_summary_profile = calc_data['material_df'].groupby(['Тип изделия', 'Система профиля']).agg(
                 Сумма_профиля=('Сумма', 'sum')
             ).reset_index()
@@ -1500,7 +1497,7 @@ def main():
                 os.remove(SESSION_FILE)
         except Exception:
             pass
-        st.rerun() # ИСПРАВЛЕНИЕ: Заменено st.experimental_rerun() на st.rerun()
+        st.rerun() # ИСПРАВЛЕНО
 
 if __name__ == "__main__":
     main()
