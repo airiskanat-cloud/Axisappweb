@@ -405,7 +405,7 @@ def login_form(excel: ExcelClient):
     return None
 
 # =========================
-# CALCULATORS (Без изменений)
+# CALCULATORS (С ДОБАВЛЕНИЕМ is_door)
 # =========================
 
 class GabaritCalculator:
@@ -424,7 +424,6 @@ class GabaritCalculator:
             n_sections_vert += 1
         
         # FIX: The number of vertical imposts should be the number of vertical sections minus 1
-        # ИСПРАВЛЕНИЕ: Количество вертикальных импостов должно быть равно количеству вертикальных секций минус 1
         n_imp_vert = max(0, n_sections_vert - 1)
 
         # ВОССТАНОВЛЕННАЯ ЛОГИКА ДЛЯ ГОРИЗОНТАЛЬНОГО ИМПОСТА
@@ -468,7 +467,7 @@ class GabaritCalculator:
             for s in sections:
                 
                 # 1. Сбор габаритов
-                is_door_section = s.get("kind") == "door"
+                is_door_section = s.get("kind") == "door" # <--- ДОБАВЛЕНО
                 is_non_tamur_section = s.get("kind") in ["window", "door"] and order.get("product_type") != "Тамбур"
 
                 if is_door_section:
@@ -498,18 +497,14 @@ class GabaritCalculator:
                     
                     # 1. Корректировка sash_w (ширины створки)
                     if sash_w <= 0.0:
-                        # Если есть деление (left/center/right), считаем, что створка занимает оставшееся место
                         if left > 0 and center == 0 and right == 0:
-                            # Пример: Одно деление слева L|SASH. Створка занимает оставшееся место.
                             sash_w = max(0.0, width - left - C_DED)
                         else:
-                            # Если делений нет (или сложная компоновка), принимаем полную ширину
                             sash_w = width
                     
                     # 2. Корректировка sash_h (высоты створки)
                     if sash_h <= 0.0:
                         if top > 0:
-                            # Одно горизонтальное деление: TOP|SASH. Створка занимает нижнюю часть.
                             sash_h = max(0.0, height - top - C_DED)
                         else:
                             sash_h = height # Полная высота
@@ -539,6 +534,7 @@ class GabaritCalculator:
                     "n_sash_active": 1 if nsash >= 1 else 0,
                     "n_sash_passive": max(nsash - 1, 0),
                     "hinges_per_sash": 3,
+                    "is_door": 1 if is_door_section else 0, # <--- ДОБАВЛЕНО
                 }
 
                 try:
@@ -579,7 +575,6 @@ class MaterialCalculator:
             n_sections_vert += 1
         
         # FIX: The number of vertical imposts should be the number of vertical sections minus 1
-        # ИСПРАВЛЕНИЕ: Количество вертикальных импостов должно быть равно количеству вертикальных секций минус 1
         n_imp_vert = max(0, n_sections_vert - 1)
 
         # ВОССТАНОВЛЕННАЯ ЛОГИКА ДЛЯ ГОРИЗОНТАЛЬНОГО ИМПОСТА
@@ -642,7 +637,6 @@ class MaterialCalculator:
             # --- Определение типов элементов для фильтрации ---
             
             # Профили для глухих/панелей и общие элементы (для Тамбура)
-            # Сухарь усилительный считается для всех прямоугольников, включая импосты, в любой секции
             is_panel_frame = "рамный контур" in type_elem.lower() or "импост" in type_elem.lower() or "сухарь усилительный" in type_elem.lower()
             
             # Профили и фурнитура только для дверей/створок
@@ -694,18 +688,14 @@ class MaterialCalculator:
                     
                     # 1. Корректировка sash_w (ширины створки)
                     if sash_w <= 0.0:
-                        # Если есть деление (left/center/right), считаем, что створка занимает оставшееся место
                         if left > 0 and center == 0 and right == 0:
-                            # Пример: Одно деление слева L|SASH. Створка занимает оставшееся место.
                             sash_w = max(0.0, width - left - C_DED)
                         else:
-                            # Если делений нет (или сложная компоновка), принимаем полную ширину
                             sash_w = width
                     
                     # 2. Корректировка sash_h (высоты створки)
                     if sash_h <= 0.0:
                         if top > 0:
-                            # Одно горизонтальное деление: TOP|SASH. Створка занимает нижнюю часть.
                             sash_h = max(0.0, height - top - C_DED)
                         else:
                             sash_h = height # Полная высота
@@ -728,6 +718,7 @@ class MaterialCalculator:
                     "n_sash_active": 1 if nsash >= 1 else 0,
                     "n_sash_passive": max(nsash - 1, 0),
                     "hinges_per_sash": 3,
+                    "is_door": 1 if is_door_section else 0, # <--- ДОБАВЛЕНО
                 }
                 ctx.update(geom)
 
