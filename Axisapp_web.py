@@ -189,8 +189,6 @@ def _eval_ast(node, names):
             args = [_eval_ast(a, names) for a in node.args]
             return globals()[func.id](*args)
 
-        raise ValueError("Разрешены только math.*, max, min")
-
     if isinstance(node, ast.Compare):
         if len(node.ops) != 1:
             raise ValueError("Сложные сравнения запрещены")
@@ -358,6 +356,8 @@ def load_users(excel: ExcelClient):
     return users
 
 def login_form(excel: ExcelClient):
+    # УДАЛЕНИЕ КНОПКИ "ВЫЙТИ" / "НОВЫЙ РАСЧЕТ" - СЕССИЯ СОХРАНЯЕТСЯ ТОЛЬКО ЧЕРЕЗ SESSION_FILE
+
     if "current_user" in st.session_state:
         return st.session_state["current_user"]
 
@@ -422,11 +422,10 @@ class GabaritCalculator:
         if right > 0:
             n_sections_vert += 1
         
-        # FIX: The number of vertical imposts should be the number of vertical sections minus 1
-        # ИСПРАВЛЕНИЕ: Количество вертикальных импостов должно быть равно количеству вертикальных секций минус 1
+        # Количество вертикальных импостов должно быть равно количеству вертикальных секций минус 1
         n_imp_vert = max(0, n_sections_vert - 1)
 
-        # ВОССТАНОВЛЕННАЯ ЛОГИКА ДЛЯ ГОРИЗОНТАЛЬНОГО ИМПОСТА
+        # Логика для горизонтального импоста
         n_imp_hor = 0
         if top > 0:
             n_imp_hor += 1
@@ -473,6 +472,8 @@ class GabaritCalculator:
                 if is_door_section:
                     width = s.get("frame_width_mm", 0.0) or s.get("width_mm", 0.0)
                     height = s.get("frame_height_mm", 0.0) or s.get("height_mm", 0.0)
+                    
+                    # Для дверей (включая тамбур): берем размеры первой створки
                     if s.get("leaves"):
                         first_leaf = s.get("leaves", [{}])[0]
                         sash_w = first_leaf.get("width_mm", 0.0)
@@ -483,8 +484,15 @@ class GabaritCalculator:
                 else:
                     width = s.get("width_mm", 0.0)
                     height = s.get("height_mm", 0.0)
-                    sash_w = s.get("sash_width_mm", 0.0)
-                    sash_h = s.get("sash_height_mm", 0.0)
+                    
+                    # Для окон: берем размеры первой створки из листа leaves (если есть)
+                    if s.get("leaves"):
+                        first_leaf = s.get("leaves", [{}])[0]
+                        sash_w = first_leaf.get("width_mm", 0.0)
+                        sash_h = first_leaf.get("height_mm", 0.0)
+                    else:
+                        sash_w = 0.0
+                        sash_h = 0.0
                 
                 left = s.get("left_mm", 0.0)
                 center = s.get("center_mm", 0.0)
@@ -492,33 +500,28 @@ class GabaritCalculator:
                 top = s.get("top_mm", 0.0)
                 
                 # --- ИНЖЕНЕРНАЯ КОРРЕКТИРОВКА ГАБАРИТОВ СТВОРКИ (ДЛЯ ОКОН/ДВЕРЕЙ, ЕСЛИ РАЗМЕРЫ СТВОРКИ НЕ ВВЕДЕНЫ) ---
-                if is_non_tamur_section and (sash_w <= 0.0 or sash_h <= 0.0):
-                    C_DED = 60.0 # Вычет на ширину профиля/импоста (в мм)
+                if is_non_tamur_section and (sash_w <= 0.0 or sash_h <= 0.0) and s.get("n_leaves", 0) > 0:
+                    # Эта логика теперь менее важна, так как мы запрашиваем sash_w/h явно
+                    C_DED = 60.0
                     
-                    # 1. Корректировка sash_w (ширины створки)
                     if sash_w <= 0.0:
-                        # Если есть деление (left/center/right), считаем, что створка занимает оставшееся место
                         if left > 0 and center == 0 and right == 0:
-                            # Пример: Одно деление слева L|SASH. Створка занимает оставшееся место.
                             sash_w = max(0.0, width - left - C_DED)
                         else:
-                            # Если делений нет (или сложная компоновка), принимаем полную ширину
                             sash_w = width
                     
-                    # 2. Корректировка sash_h (высоты створки)
                     if sash_h <= 0.0:
                         if top > 0:
-                            # Одно горизонтальное деление: TOP|SASH. Створка занимает нижнюю часть.
                             sash_h = max(0.0, height - top - C_DED)
                         else:
-                            sash_h = height # Полная высота
+                            sash_h = height
                 # ----------------------------------------------------
 
                 area = s.get("area_m2", 0.0)
                 perimeter = s.get("perimeter_m", 0.0)
                 qty = s.get("Nwin", 1)
 
-                nsash = s.get("n_leaves", len(s.get("leaves", [])) or 1)
+                nsash = s.get("n_leaves", len(s.get("leaves", [])) or 0) # Используем n_leaves из формы. Если leaves есть (тамбур), берем их кол-во.
 
                 ctx = {
                     "width": width,
@@ -538,7 +541,7 @@ class GabaritCalculator:
                     "n_sash_active": 1 if nsash >= 1 else 0,
                     "n_sash_passive": max(nsash - 1, 0),
                     "hinges_per_sash": 3,
-                    "is_door": 1 if is_door_section else 0, # <--- ДОБАВЛЕНО is_door
+                    "is_door": 1 if is_door_section else 0,
                 }
 
                 try:
@@ -578,11 +581,10 @@ class MaterialCalculator:
         if right > 0:
             n_sections_vert += 1
         
-        # FIX: The number of vertical imposts should be the number of vertical sections minus 1
-        # ИСПРАВЛЕНИЕ: Количество вертикальных импостов должно быть равно количеству вертикальных секций минус 1
+        # Количество вертикальных импостов должно быть равно количеству вертикальных секций минус 1
         n_imp_vert = max(0, n_sections_vert - 1)
 
-        # ВОССТАНОВЛЕННАЯ ЛОГИКА ДЛЯ ГОРИЗОНТАЛЬНОГО ИМПОСТА
+        # Логика для горизонтального импоста
         n_imp_hor = 0
         if top > 0:
             n_imp_hor += 1
@@ -641,11 +643,7 @@ class MaterialCalculator:
             
             # --- Определение типов элементов для фильтрации ---
             
-            # Профили для глухих/панелей и общие элементы (для Тамбура)
-            # Сухарь усилительный считается для всех прямоугольников, включая импосты, в любой секции
             is_panel_frame = "рамный контур" in type_elem.lower() or "импост" in type_elem.lower() or "сухарь усилительный" in type_elem.lower()
-            
-            # Профили и фурнитура только для дверей/створок
             is_door_item = ("рама двери" in type_elem.lower() or "порог дверной" in type_elem.lower() or "створочный профиль" in type_elem.lower() or "петля" in type_elem.lower() or "замок" in type_elem.lower() or "цилиндр" in type_elem.lower() or "ручка" in type_elem.lower() or "фиксатор" in type_elem.lower() or "доводчик" in type_elem.lower())
 
             # --- Итерация по всем секциям заказа ---
@@ -655,14 +653,12 @@ class MaterialCalculator:
                 is_panel_section = s.get("kind") == "panel" or s.get("kind") == "window"
                 is_non_tamur_section = s.get("kind") in ["window", "door"] and order.get("product_type") != "Тамбур"
                 
-                # --- ЛОГИКА ФИЛЬТРАЦИИ ДЛЯ ТАМБУРА И ДВЕРЕЙ/ОКОН (УСТРАНЯЕТ 48.08м и 0м) ---
+                # --- ЛОГИКА ФИЛЬТРАЦИИ ДЛЯ ТАМБУРА ---
                 
                 if order.get("product_type") == "Тамбур":
-                    # 1. Если это дверной элемент, но секция - глухая панель, пропускаем
                     if is_door_item and is_panel_section and "сухарь усилительный" not in type_elem.lower():
                         continue
                     
-                    # 2. Если это рамный/импостный профиль (не для дверей), но секция - дверь, пропускаем
                     if is_panel_frame and is_door_section and "рама двери" not in type_elem.lower() and "сухарь усилительный" not in type_elem.lower():
                         continue
                         
@@ -679,36 +675,32 @@ class MaterialCalculator:
                 right = s.get("right_mm", 0.0)
                 top = s.get("top_mm", 0.0)
                 
-                # sash_width/height нужны для створочных профилей
-                if is_door_section and s.get("leaves"):
+                # sash_width/height (размеры первой створки)
+                nsash = s.get("n_leaves", len(s.get("leaves", [])) or 0)
+                sash_w = 0.0
+                sash_h = 0.0
+
+                if nsash > 0 and s.get("leaves"):
+                    # Берем размеры первой створки, независимо от типа изделия (Окно, Дверь, Тамбур)
                     first_leaf = s.get("leaves", [{}])[0]
                     sash_w = first_leaf.get("width_mm", 0.0)
                     sash_h = first_leaf.get("height_mm", 0.0)
-                else:
-                    sash_w = s.get("sash_width_mm", 0.0)
-                    sash_h = s.get("sash_height_mm", 0.0)
                 
-                # --- ИНЖЕНЕРНАЯ КОРРЕКТИРОВКА ГАБАРИТОВ СТВОРКИ (ДЛЯ ОКОН/ДВЕРЕЙ, ЕСЛИ РАЗМЕРЫ СТВОРКИ НЕ ВВЕДЕНЫ) ---
-                if is_non_tamur_section and (sash_w <= 0.0 or sash_h <= 0.0):
-                    C_DED = 60.0 # Типичный вычет на ширину профиля/импоста (в мм)
+                # --- ИНЖЕНЕРНАЯ КОРРЕКТИРОВКА ГАБАРИТОВ СТВОРКИ (ТОЛЬКО ДЛЯ ОКОН/ДВЕРЕЙ, ЕСЛИ ВВЕДЕНЫ 0, НО N_SASH > 0) ---
+                if is_non_tamur_section and nsash > 0 and (sash_w <= 0.0 or sash_h <= 0.0):
+                    C_DED = 60.0 
                     
-                    # 1. Корректировка sash_w (ширины створки)
                     if sash_w <= 0.0:
-                        # Если есть деление (left/center/right), считаем, что створка занимает оставшееся место
                         if left > 0 and center == 0 and right == 0:
-                            # Пример: Одно деление слева L|SASH. Створка занимает оставшееся место.
                             sash_w = max(0.0, width - left - C_DED)
                         else:
-                            # Если делений нет (или сложная компоновка), принимаем полную ширину
                             sash_w = width
                     
-                    # 2. Корректировка sash_h (высоты створки)
                     if sash_h <= 0.0:
                         if top > 0:
-                            # Одно горизонтальное деление: TOP|SASH. Створка занимает нижнюю часть.
                             sash_h = max(0.0, height - top - C_DED)
                         else:
-                            sash_h = height # Полная высота
+                            sash_h = height
                 # ----------------------------------------------------
                 
                 area = s.get("area_m2", 0.0)
@@ -717,18 +709,16 @@ class MaterialCalculator:
 
                 geom = self._calc_imposts_context(width, height, left, center, right, top)
                 
-                nsash = s.get("n_leaves", len(s.get("leaves", [])) or 1)
-
                 ctx = {
                     "width": width, "height": height, "left": left, "center": center, "right": right, "top": top,
                     "sash_width": sash_w, "sash_height": sash_h, "sash_w": sash_w, "sash_h": sash_h,
                     "area": area, "perimeter": perimeter, "qty": qty,
                     "nsash": nsash,
-                    "n_sash": nsash, # Дубликат для совместимости
+                    "n_sash": nsash, 
                     "n_sash_active": 1 if nsash >= 1 else 0,
                     "n_sash_passive": max(nsash - 1, 0),
                     "hinges_per_sash": 3,
-                    "is_door": 1 if is_door_section else 0, # <--- ДОБАВЛЕНО is_door
+                    "is_door": 1 if is_door_section else 0,
                 }
                 ctx.update(geom)
 
@@ -1044,6 +1034,7 @@ def build_smeta_workbook(order: dict,
     for idx, p in enumerate(base_positions, start=1):
         w = p.get('width_mm', p.get('frame_width_mm', 0))
         h = p.get('height_mm', p.get('frame_height_mm', 0))
+        # Извлекаем заполнение для первой створки или заполнение панели
         fill = p.get('filling', '') or (p.get('leaves', [{}])[0].get('filling', '') if p.get('leaves') else '')
         ws.cell(row=current_row, column=1, value=f"Позиция {idx}: {order.get('product_type','')}, {w} × {h} мм, N = {p.get('Nwin',1)}, filling={fill}")
         current_row += 1
@@ -1079,12 +1070,16 @@ def build_smeta_workbook(order: dict,
 # =========================
 
 def ensure_session_state():
+    # Состояние для Тамбура сохраняем, чтобы не вводить все секции заново
     if "tam_door_count" not in st.session_state:
         st.session_state["tam_door_count"] = 0
     if "tam_panel_count" not in st.session_state:
         st.session_state["tam_panel_count"] = 0
     if "sections_inputs" not in st.session_state:
         st.session_state["sections_inputs"] = []
+        
+    # Состояние для Окно/Дверь теперь сохраняется через виджеты, но нужно очистить старые ключи sash_w/h
+    # (Удалено: очистка всех полей при обновлении - теперь они сохраняются через ключи виджетов)
 
 def main():
     st.set_page_config(page_title="Axis Pro GF • Калькулятор", layout="wide") 
@@ -1135,7 +1130,6 @@ def main():
         if g:
             glass_types_set.add(g)
 
-    # ВАЖНО: Используем 'Стеклопакет' как опцию для заполнения панелей
     filling_options_for_panels = sorted(list(filling_types_set))
     if 'Стеклопакет' not in filling_options_for_panels:
          filling_options_for_panels.append('Стеклопакет')
@@ -1178,15 +1172,10 @@ def main():
         montage = st.selectbox("Монтаж (из СПРАВОЧНИК-2)", montage_options, index=0)
         handle_type = st.selectbox("Тип ручек", handle_types, index=0)
         door_closer = st.selectbox("Доводчик", ["Нет", "Есть"])
+        
+        # КНОПКА "НОВЫЙ РАСЧЕТ / ОЧИСТИТЬ ФОРМУ" УДАЛЕНА.
+        # Обнуление происходит при обновлении страницы (F5)
 
-        if st.button("✨ Новый расчёт / Очистить форму"):
-            for k in list(st.session_state.keys()):
-                if k.startswith(("w_","h_","l_","r_","c_","t_","sw_","sh_","nwin_","ls_w_","ls_h_","ls_q_","ls_fill_","door_","panel_","leaf_","tam_")):
-                    st.session_state.pop(k, None)
-            st.session_state["sections_inputs"] = []
-            st.session_state["tam_door_count"] = 0
-            st.session_state["tam_panel_count"] = 0
-            st.experimental_rerun()
             
     col_left, col_right = st.columns([2, 1])
 
@@ -1197,24 +1186,47 @@ def main():
         lambr_positions_inputs = []
 
         if product_type != "Тамбур":
-            positions_count = st.number_input("Количество позиций (Окно/Дверь)", min_value=1, max_value=10, value=1, step=1)
+            # --- ЕДИНАЯ ФОРМА ДЛЯ ОКНО / ДВЕРЬ (РАСШИРЕННАЯ) ---
+            positions_count = st.number_input("Количество позиций (Окно/Дверь)", min_value=1, max_value=10, value=st.session_state.get('pos_count', 1), step=1, key='pos_count')
             
             for i in range(int(positions_count)):
                 st.subheader(f"Позиция {i+1}")
-                c1, c2, c3, c4 = st.columns(4)
-                width_mm = c1.number_input(f"Ширина, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"w_{i}")
-                height_mm = c2.number_input(f"Высота, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"h_{i}")
-                left_mm = c3.number_input(f"LEFT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"l_{i}")
-                right_mm = c4.number_input(f"RIGHT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"r_{i}")
+                st.markdown("**Габариты рамы/изделия**")
+                c1, c2, c_nwin = st.columns(3)
+                width_mm = c1.number_input(f"Ширина изделия, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"w_{i}")
+                height_mm = c2.number_input(f"Высота изделия, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"h_{i}")
+                nwin = c_nwin.number_input(f"Кол-во идентичных рам (N) (поз. {i+1})", min_value=1, value=1, step=1, key=f"nwin_{i}")
+                
+                st.markdown("**Размеры импостов (для деления)**")
+                c_l, c_c, c_r, c_t = st.columns(4)
+                left_mm = c_l.number_input(f"LEFT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"l_{i}", value=0.0)
+                center_mm = c_c.number_input(f"CENTER, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"c_{i}", value=0.0)
+                right_mm = c_r.number_input(f"RIGHT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"r_{i}", value=0.0)
+                top_mm = c_t.number_input(f"TOP, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"t_{i}", value=0.0)
+                
+                # --- НОВАЯ ЛОГИКА ДЛЯ N_SASH И РАЗМЕРОВ СТВОРКИ ---
+                st.markdown("**Створки и фурнитура**")
+                n_leaves = st.number_input(f"Общее количество створок (N_sash) (поз. {i+1})", min_value=0, value=0, step=1, key=f"nleaves_{i}")
 
-                c5, c6, c7, c8 = st.columns(4)
-                center_mm = c5.number_input(f"CENTER, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"c_{i}")
-                top_mm = c6.number_input(f"TOP, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"t_{i}")
-                sash_width_mm = c7.number_input(f"Ширина створки, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sw_{i}")
-                sash_height_mm = c8.number_input(f"Высота створки, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sh_{i}")
+                leaves_data = []
+                if n_leaves > 0:
+                    for L in range(int(n_leaves)):
+                        st.markdown(f"**Размеры створки {L+1}**")
+                        c_sash_w, c_sash_h = st.columns(2)
+                        sash_width_mm = c_sash_w.number_input(f"Ширина створки {L+1}, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sw_{i}_{L}")
+                        sash_height_mm = c_sash_h.number_input(f"Высота створки {L+1}, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sh_{i}_{L}")
+                        
+                        leaves_data.append({
+                            "width_mm": sash_width_mm, 
+                            "height_mm": sash_height_mm,
+                            "filling": glass_type # Заполнение створки по умолчанию = Тип стеклопакета
+                        })
 
-                nwin = st.number_input(f"Кол-во идентичных рам (N) (поз. {i+1})", min_value=1, value=1, step=1, key=f"nwin_{i}")
-
+                # --- Сборка данных для калькулятора ---
+                # Для окон/дверей берем размеры створки из первого листа в leaves_data
+                first_sash_w = leaves_data[0]['width_mm'] if leaves_data else 0.0
+                first_sash_h = leaves_data[0]['height_mm'] if leaves_data else 0.0
+                
                 base_positions_inputs.append({
                     "width_mm": width_mm,
                     "height_mm": height_mm,
@@ -1222,14 +1234,17 @@ def main():
                     "center_mm": center_mm,
                     "right_mm": right_mm,
                     "top_mm": top_mm,
-                    "sash_width_mm": sash_width_mm, 
-                    "sash_height_mm": sash_height_mm, 
+                    # Эти поля нужны для GabaritCalc и MaterialCalc
+                    "sash_width_mm": first_sash_w,
+                    "sash_height_mm": first_sash_h,
                     "Nwin": nwin,
                     "filling": glass_type,
-                    "kind": "window" if product_type == "Окно" else "door"
+                    "kind": "window" if product_type == "Окно" else "door",
+                    "n_leaves": n_leaves,
+                    "leaves": leaves_data # Сохраняем все створки, но Gabarit/Material используют первую
                 })
         else:
-            # --- Динамический блок для Тамбура ---
+            # --- Динамический блок для Тамбура (без изменений, кроме очистки) ---
             st.header("Параметры тамбура (дверные блоки и глухие панели)")
 
             c_add = st.columns([1,1,6])
@@ -1278,6 +1293,7 @@ def main():
                             "Nwin": int(count),
                             "filling": glass_type 
                         }
+                        # Логика очистки старой секции перед добавлением/обновлением
                         st.session_state["sections_inputs"] = [s for s in st.session_state["sections_inputs"] if not (s.get("block_name") == name and s.get("kind") == "door")]
                         st.session_state["sections_inputs"].append(new_section)
                         st.success(f"Дверной блок '{name}' добавлен/обновлён.")
@@ -1382,6 +1398,7 @@ def main():
         sections = []
         
         if product_type != "Тамбур":
+             # Собираем данные из единой формы для Окно/Дверь
              for p in base_positions_inputs:
                 if p["width_mm"] <= 0 or p["height_mm"] <= 0:
                     st.error("Во всех позициях ширина и высота должны быть больше 0.")
@@ -1397,17 +1414,29 @@ def main():
                     sections.append({**p, "area_m2": area_m2, "perimeter_m": perimeter_m, "kind": "panel"})
 
         else:
+             # Данные Тамбура берутся из st.session_state["sections_inputs"]
              sections = st.session_state["sections_inputs"]
+             
+             if not sections:
+                 st.error("Для Тамбура необходимо добавить хотя бы одну секцию.")
+                 st.stop()
+                 
              for s in sections:
                 if s.get("kind") == "door":
                     fw = s.get("frame_width_mm", 0.0)
                     fh = s.get("frame_height_mm", 0.0)
+                    if fw <= 0 or fh <= 0:
+                        st.error(f"В дверном блоке '{s.get('block_name')}' ширина или высота рамы должна быть > 0.")
+                        st.stop()
                     area_m2 = (fw * fh) / 1_000_000.0
                     perimeter_m = 2 * (fw + fh) / 1000.0
                     s.update({"area_m2": area_m2, "perimeter_m": perimeter_m})
                 elif s.get("kind") == "panel":
                     w = s.get("width_mm", 0.0)
                     h = s.get("height_mm", 0.0)
+                    if w <= 0 or h <= 0:
+                        st.error(f"В глухой секции '{s.get('block_name')}' ширина или высота панели должна быть > 0.")
+                        st.stop()
                     area_m2 = (w * h) / 1_000_000.0
                     perimeter_m = 2 * (w + h) / 1000.0
                     s.update({"area_m2": area_m2, "perimeter_m": perimeter_m})
@@ -1434,7 +1463,6 @@ def main():
             # Стоимость Ламбри (если применяется к глухим секциям/панелям)
             fill_name = str(s.get("filling") or "").strip().lower()
             
-            # НОВОЕ ИСПРАВЛЕНИЕ: Панели рассчитываются только если выбраны Ламбри/Сэндвич
             if fill_name in ["ламбри без термо", "ламбри с термо", "сэндвич"]:
                 price_per_meter = fin_calc._find_price_for_filling(fill_name)
                 
@@ -1443,13 +1471,12 @@ def main():
                     for leaf in s.get("leaves", []):
                         leaf_fill = str(leaf.get("filling") or "").strip().lower()
                         if leaf_fill in ["ламбри без термо", "ламбри с термо", "сэндвич"]:
-                            # Если створка заполнена Ламбри, считаем ее периметр
                             leaf_w = leaf.get("width_mm", 0.0)
                             leaf_h = leaf.get("height_mm", 0.0)
                             perimeter_leaf = 2 * (leaf_w + leaf_h) / 1000.0
                             count_hlyst = math.ceil(perimeter_leaf / 6.0) if perimeter_leaf > 0 else 0
                             price_per_hlyst = price_per_meter * 6.0
-                            lambr_cost += count_hlyst * price_per_hlyst * s.get("Nwin", 1) # Умножаем на кол-во блоков
+                            lambr_cost += count_hlyst * price_per_hlyst * s.get("Nwin", 1) 
                 
                 # Если секция - глухая панель/окно
                 elif s.get("kind") in ["panel", "window"]:
@@ -1464,7 +1491,7 @@ def main():
         closer_count = 0
         if product_type == "Дверь" or product_type == "Тамбур":
             for s in sections:
-                if s.get("kind") == "door" or (product_type == "Дверь" and s.get("kind") == "door"):
+                if s.get("kind") == "door":
                      # Ручки: 1 ручка на дверной блок (Nwin), независимо от количества створок
                      handles_count += s.get("Nwin", 1)
                      
@@ -1545,22 +1572,34 @@ def main():
             st.write(f"Обеспечение (60%): **{ensure_sum:.2f}**")
             st.write(f"ИТОГО к оплате: **{total_sum:.2f}**")
 
-        # --- Сохраняем в ЗАПРОСЫ ---
+        # --- Сохраняем в ЗАПРОСЫ (обновлено) ---
         rows_for_form = []
         pos_index = 1
         
         for p in sections:
             
+            # Извлечение размеров первой створки для сохранения в Excel (для унификации)
+            sash_w = p.get("sash_width_mm", 0.0)
+            sash_h = p.get("sash_height_mm", 0.0)
+            if p.get("leaves"):
+                first_leaf = p["leaves"][0]
+                sash_w = first_leaf.get("width_mm", 0.0)
+                sash_h = first_leaf.get("height_mm", 0.0)
+            
+            # Определяем ширину/высоту изделия (для Тамбура это frame_width/height)
+            width_val = p.get("width_mm", 0.0) if p.get("kind") != "door" else p.get("frame_width_mm", 0.0)
+            height_val = p.get("height_mm", 0.0) if p.get("kind") != "door" else p.get("frame_height_mm", 0.0)
+
             rows_for_form.append([
                 order_number, pos_index, product_type,
                 p.get("kind", ""), 
-                p.get("n_leaves", 1) if p.get("kind") == "door" else 0,
+                p.get("n_leaves", 0), # Кол-во створок
                 profile_system, glass_type, p.get("filling",""),
-                p.get("width_mm", 0.0) if not p.get("frame_width_mm") else p.get("frame_width_mm", 0.0), 
-                p.get("height_mm", 0.0) if not p.get("frame_height_mm") else p.get("frame_height_mm", 0.0),
+                width_val, 
+                height_val,
                 p.get("left_mm", 0.0), p.get("center_mm", 0.0), p.get("right_mm", 0.0), p.get("top_mm", 0.0),
-                p.get("sash_width_mm", 0.0), 
-                p.get("sash_height_mm", 0.0),
+                sash_w, 
+                sash_h, 
                 p.get("Nwin", 1),
                 toning, assembly, montage, handle_type, door_closer,
             ])
