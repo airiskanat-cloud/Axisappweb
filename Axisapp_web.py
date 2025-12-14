@@ -224,8 +224,8 @@ class GoogleSheetsClient:
     import json
     import os
     import gspread
-    from google.oauth2.service_account import Credentials
     import streamlit as st
+    from google.oauth2.service_account import Credentials
 
     key_b64 = os.environ.get("GCP_SA_KEYFILE_JSON_BASE64")
     if not key_b64:
@@ -251,6 +251,7 @@ class GoogleSheetsClient:
     except Exception as e:
         st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
         st.stop()
+
 
     def load(self):
         """Загружает рабочую книгу по ID."""
