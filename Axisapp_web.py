@@ -15,7 +15,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 from openpyxl import Workbook
-from openpyxl.drawing.image import Image as XLImage 
+from openpyxl.drawing.image import Image as XLImage
 
 # =========================
 # КОНСТАНТЫ / НАСТРОЙКИ
@@ -33,7 +33,7 @@ logger.setLevel(logging.INFO)
 # Удаляем resource_path, так как аутентификация через ENV
 
 # --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НОВЫЙ, ВЕРНЫЙ ID ТАБЛИЦЫ ---
-GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8" 
+GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8"
 # --------------------------------------------------------
 
 # Листы
@@ -220,37 +220,38 @@ class GoogleSheetsClient:
 
     @st.cache_resource
     def _auth(self):
-    import base64
-    import json
-    import os
-    import gspread
-    import streamlit as st
-    from google.oauth2.service_account import Credentials
+        # *** ИСПРАВЛЕНИЕ: Добавлены отступы для всего тела функции. ***
+        import base64
+        import json
+        import os
+        import gspread
+        import streamlit as st
+        from google.oauth2.service_account import Credentials
 
-    key_b64 = os.environ.get("GCP_SA_KEYFILE_JSON_BASE64")
-    if not key_b64:
-        st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON_BASE64 не найдена. Проверьте Render → Environment.")
-        st.stop()
+        key_b64 = os.environ.get("GCP_SA_KEYFILE_JSON_BASE64")
+        if not key_b64:
+            st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON_BASE64 не найдена. Проверьте Render → Environment.")
+            st.stop()
 
-    try:
-        key_json = base64.b64decode(key_b64).decode("utf-8")
-        info = json.loads(key_json)
-    except Exception as e:
-        st.error(f"❌ Ошибка декодирования service account key: {e}")
-        st.stop()
+        try:
+            key_json = base64.b64decode(key_b64).decode("utf-8")
+            info = json.loads(key_json)
+        except Exception as e:
+            st.error(f"❌ Ошибка декодирования service account key: {e}")
+            st.stop()
 
-    try:
-        creds = Credentials.from_service_account_info(
-            info,
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive",
-            ],
-        )
-        return gspread.authorize(creds)
-    except Exception as e:
-        st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
-        st.stop()
+        try:
+            creds = Credentials.from_service_account_info(
+                info,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive",
+                ],
+            )
+            return gspread.authorize(creds)
+        except Exception as e:
+            st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
+            st.stop()
 
 
     def load(self):
@@ -381,7 +382,7 @@ def login_form(excel: GoogleSheetsClient):
                     "role": user["role"],
                 }
                 st.sidebar.success(f"Привет, {user['_raw_login']}!")
-                st.rerun() 
+                st.rerun()
                 return st.session_state["current_user"]
 
         st.sidebar.error("Неверный логин или пароль")
@@ -454,7 +455,7 @@ class GabaritCalculator:
                 else:
                     width = s.get("width_mm", 0.0)
                     height = s.get("height_mm", 0.0)
-                
+
                 sash_w = 0.0
                 sash_h = 0.0
 
@@ -871,11 +872,10 @@ def build_smeta_workbook(order: dict,
     ws = wb.active
     ws.title = "Коммерческое предложение"
 
-    # LOGO_FILENAME = "logo_axis.png" # Предполагаем, что изображение логотипа не используется или доступно
-    current_row = 1
-
     # ... Пропускаем логику вставки логотипа, так как ресурс недоступен ...
-
+    current_row = 1
+    
+    # Контакты
     contact_col = 3
     ws.cell(row=current_row, column=contact_col, value=COMPANY_NAME); current_row += 1
     ws.cell(row=current_row, column=contact_col, value=COMPANY_CITY); current_row += 1
@@ -885,12 +885,17 @@ def build_smeta_workbook(order: dict,
         ws.cell(row=current_row, column=contact_col, value=f"Сайт: {COMPANY_SITE}"); current_row += 1
 
     current_row += 1
-    ws.cell(row=current_row, column=1, value="Коммерческое предложение"); current_row += 2
+    ws.cell(row=current_row, column=1, value="Коммерческое предложение").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 2
 
     # Общая информация о заказе
     filling_mode_val = order.get('filling_mode', '')
     if not filling_mode_val and base_positions:
-        filling_mode_val = base_positions[0].get('filling', '')
+        # Попытка получить заполнение из первой позиции, если не задано общее
+        fill_val = base_positions[0].get('filling', '')
+        if fill_val == order.get('glass_type', ''):
+            filling_mode_val = f"Стеклопакет ({fill_val})"
+        else:
+             filling_mode_val = fill_val # Используем заполнение из первой позиции
 
     
     ws.cell(row=current_row, column=1, value=f"Заказ № {order.get('order_number','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
@@ -959,7 +964,7 @@ def ensure_session_state():
     if "sections_inputs" not in st.session_state:
         st.session_state["sections_inputs"] = []
     if 'pos_count' not in st.session_state:
-         st.session_state['pos_count'] = 1
+        st.session_state['pos_count'] = 1
 
 def _calculate_lambr_cost(sections: list, fin_calc: FinalCalculator):
     """
@@ -975,8 +980,8 @@ def _calculate_lambr_cost(sections: list, fin_calc: FinalCalculator):
             for leaf in s["leaves"]:
                 fills.append((str(leaf.get("filling") or "").strip().lower(), leaf.get("width_mm", 0.0), leaf.get("height_mm", 0.0), s.get("Nwin", 1)))
         elif s.get("kind") in ["panel", "window"]:
-             fills.append((str(s.get("filling") or "").strip().lower(), s.get("width_mm", 0.0), s.get("height_mm", 0.0), s.get("Nwin", 1)))
-             
+            fills.append((str(s.get("filling") or "").strip().lower(), s.get("width_mm", 0.0), s.get("height_mm", 0.0), s.get("Nwin", 1)))
+            
         for fill_name, w_mm, h_mm, nwin in fills:
             if fill_name in ["ламбри без термо", "ламбри с термо", "сэндвич"]:
                 price_per_meter = fin_calc._find_price_for_filling(fill_name)
@@ -984,6 +989,7 @@ def _calculate_lambr_cost(sections: list, fin_calc: FinalCalculator):
                 if price_per_meter > 0:
                     perimeter_m = 2 * (w_mm + h_mm) / 1000.0
                     
+                    # Расчет количества 6-метровых хлыстов, округление вверх
                     count_hlyst = math.ceil(perimeter_m / 6.0) if perimeter_m > 0 else 0
                     price_per_hlyst = price_per_meter * 6.0
                     
@@ -1031,13 +1037,17 @@ def main():
     filling_options_for_panels = sorted(list(filling_types_set))
     if 'Стеклопакет' not in filling_options_for_panels:
         filling_options_for_panels.append('Стеклопакет')
-    default_panel_fill_index = filling_options_for_panels.index('Стеклопакет') if 'Стеклопакет' in filling_options_for_panels else 0
-    if 'Ламбри без термо' in filling_options_for_panels:
+    
+    default_panel_fill_index = 0
+    if 'Стеклопакет' in filling_options_for_panels:
+        default_panel_fill_index = filling_options_for_panels.index('Стеклопакет')
+    elif 'Ламбри без термо' in filling_options_for_panels:
         default_panel_fill_index = filling_options_for_panels.index('Ламбри без термо')
 
     montage_options = sorted(list(montage_types_set)) if montage_types_set else ["Есть", "Нет"]
     if "Нет" not in montage_options: montage_options.append("Нет")
-    montage_options.insert(0, montage_options.pop(montage_options.index("Нет")))
+    if "Нет" in montage_options:
+        montage_options.insert(0, montage_options.pop(montage_options.index("Нет")))
 
     handle_types = sorted(list(handle_types_set)) if handle_types_set else [""]
     glass_types = sorted(list(glass_types_set)) if glass_types_set else ["двойной"]
@@ -1160,7 +1170,7 @@ def main():
                         default_fill_idx = filling_options_for_panels.index(existing_leaf.get("filling", glass_type)) if existing_leaf.get("filling") in filling_options_for_panels else (filling_options_for_panels.index(glass_type) if glass_type in filling_options_for_panels else 0)
                         fill = st.selectbox(f"Заполнение створки {L+1} — блок {i+1}", options=filling_options_for_panels, index=default_fill_idx, key=f"leaf_fill_{i}_{L}")
                         leaves.append({"width_mm": lw, "height_mm": lh, "filling": fill})
-                    
+                        
                     c_save, c_del = st.columns(2)
                     if c_save.button(f"✅ Обновить ДБ #{i+1}", key=f"save_door_{i}"):
                         new_section = {
@@ -1229,13 +1239,13 @@ def main():
             
             st.markdown("**Текущие секции Тамбура:**")
             if st.session_state["sections_inputs"]:
-                 for idx, s in enumerate(st.session_state["sections_inputs"], start=1):
+                for idx, s in enumerate(st.session_state["sections_inputs"], start=1):
                     main_dim = f"{s.get('width_mm', s.get('frame_width_mm'))}x{s.get('height_mm', s.get('frame_height_mm'))}"
                     imposts = f" L{s.get('left_mm',0)} C{s.get('center_mm',0)} R{s.get('right_mm',0)} T{s.get('top_mm',0)}"
                     st.write(f"**{idx}. {s.get('kind').capitalize()}** ({s.get('block_name')}) — {main_dim}, N={s.get('Nwin',1)} | Заполнение: {s.get('filling', glass_type)} | Импосты:{imposts}")
             else:
-                 st.info("Нет добавленных секций.")
-        
+                st.info("Нет добавленных секций.")
+            
         st.markdown("---")
 
     with col_right:
@@ -1318,11 +1328,13 @@ def main():
             
         # --- Gabarit Calculation ---
         gab_calc = GabaritCalculator(excel)
-        gabarit_rows, total_area_gab, total_perimeter_gab = gab_calc.calculate({"product_type": product_type}, sections)
+        gab_calc_order_data = {"product_type": product_type}
+        gabarit_rows, total_area_gab, total_perimeter_gab = gab_calc.calculate(gab_calc_order_data, sections)
 
         # --- Material Calculation ---
         mat_calc = MaterialCalculator(excel)
-        material_rows, material_total, total_area_mat = mat_calc.calculate({"product_type": product_type, "profile_system": profile_system}, sections, selected_duplicates)
+        mat_calc_order_data = {"product_type": product_type, "profile_system": profile_system}
+        material_rows, material_total, total_area_mat = mat_calc.calculate(mat_calc_order_data, sections, selected_duplicates)
         
         # --- Intermediate Sums for FinalCalc ---
         total_area_all = total_area_gab
@@ -1342,11 +1354,12 @@ def main():
                         closer_count += s.get("Nwin", 1) 
                         
         # --- Final Calculation ---
+        final_calc_order_data = {
+            "product_type": product_type, "glass_type": glass_type, "toning": toning,
+            "assembly": assembly, "montage": montage, "handle_type": handle_type, "door_closer": door_closer
+        }
         final_rows, total_sum, ensure_sum = fin_calc.calculate(
-            {
-                "product_type": product_type, "glass_type": glass_type, "toning": toning,
-                "assembly": assembly, "montage": montage, "handle_type": handle_type, "door_closer": door_closer
-            },
+            final_calc_order_data,
             total_area_all=total_area_all, material_total=material_total,
             lambr_cost=lambr_cost, handles_qty=handles_count, closer_qty=closer_count
         )
