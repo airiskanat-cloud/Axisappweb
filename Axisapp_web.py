@@ -212,26 +212,24 @@ class GoogleSheetsClient:
         self.load() # Убедитесь, что load() существует
 
     def _auth(self):
-        # 1. Загрузка ключа из переменной окружения/секрета Render
-        gcp_keyfile_content = os.getenv("GCP_SA_KEYFILE")
-        if not gcp_keyfile_content:
-            st.error("Ошибка: Ключ сервисного аккаунта GCP_SA_KEYFILE не найден в секретах Render. Расчет невозможен.")
+        # 1. ПУТЬ к Secret File на Render
+        key_file_path = "/etc/secrets/gcp-key.json"
+        
+        if not os.path.exists(key_file_path):
+            st.error("Ошибка: Файл ключа gcp-key.json не найден в секретах Render. Проверьте настройки Secret Files.")
             st.stop()
         
-        # 2. Обработка JSON и аутентификация (Исправлены ошибки scope и creds_data)
+        # 2. Аутентификация через Secret File
         try:
-            # Сначала загружаем JSON-данные (была ошибка name 'creds_data' is not defined)
-            creds_data = json.loads(gcp_keyfile_content)
-            
-            # ВТОРОЕ ИСПРАВЛЕНИЕ: Используем 'scopes' вместо 'scope'
-            creds = ServiceAccountCredentials.from_json_keyfile_dict(
-                creds_data,
+            # Используем from_service_account_json для прямого чтения файла
+            creds = ServiceAccountCredentials.from_service_account_json(
+                key_file_path,
                 scopes=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive'] 
             )
             return gspread.authorize(creds)
             
         except Exception as e:
-            st.error(f"Ошибка аутентификации Google Sheets. Проверьте формат GCP_SA_KEYFILE. {e}")
+            st.error(f"Критическая ошибка аутентификации Google Sheets. {e}")
             st.stop()
 
     # УБЕДИТЕСЬ, ЧТО ЭТОТ МЕТОД ПРИСУТСТВУЕТ В КЛАССЕ (была ошибка AttributeError)
