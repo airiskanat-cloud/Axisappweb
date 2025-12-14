@@ -206,40 +206,40 @@ def safe_eval_formula(formula: str, context: dict) -> float:
 # =========================
 
 class GoogleSheetsClient:
+
     def __init__(self, sheet_id: str):
         self.sheet_id = sheet_id
-        self._worksheets_cache = {} 
-        self.load() # Убедитесь, что load() существует
+        self._worksheets_cache = {}
+        self.load()
 
     def _auth(self):
-    key_file_path = "/etc/secrets/gcp-key.json"
+        key_file_path = "/etc/secrets/gcp-key.json"
 
-    if not os.path.exists(key_file_path):
-        st.error("❌ Файл gcp-key.json не найден в Render Secrets")
-        st.stop()
+        if not os.path.exists(key_file_path):
+            st.error("❌ Файл gcp-key.json не найден в Render Secrets")
+            st.stop()
 
-    try:
-        creds = Credentials.from_service_account_file(
-            key_file_path,
-            scopes=[
-                "https://www.googleapis.com/auth/spreadsheets",
-                "https://www.googleapis.com/auth/drive"
-            ]
-        )
-        return gspread.authorize(creds)
+        try:
+            creds = Credentials.from_service_account_file(
+                key_file_path,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive"
+                ]
+            )
+            return gspread.authorize(creds)
 
-    except Exception as e:
-        st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
-        st.stop()
+        except Exception as e:
+            st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
+            st.stop()
 
-    # УБЕДИТЕСЬ, ЧТО ЭТОТ МЕТОД ПРИСУТСТВУЕТ В КЛАССЕ (была ошибка AttributeError)
     def load(self):
         try:
             client = self._auth()
             self.wb = client.open_by_key(self.sheet_id)
             logger.info("Успешно подключен к Google Sheets.")
         except Exception as e:
-            st.error(f"Критическая ошибка при подключении к Google Sheets. Проверьте ID и права доступа. {e}")
+            st.error(f"Критическая ошибка при подключении к Google Sheets. {e}")
             st.stop()
             
     # ... остальные методы (ws, read_records, clear_and_write, append_form_row) ...
