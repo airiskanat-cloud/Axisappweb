@@ -15,7 +15,7 @@ from openpyxl.drawing.image import Image as XLImage
 
 # --- НОВЫЕ ИМПОРТЫ ДЛЯ GOOGLE SHEETS ---
 import gspread
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 import pandas as pd
 # ----------------------------------------
 
@@ -212,27 +212,25 @@ class GoogleSheetsClient:
         self.load() # Убедитесь, что load() существует
 
     def _auth(self):
-        # 1. ПУТЬ к Secret File на Render
-        key_file_path = "/etc/secrets/gcp-key.json"
-        
-        # Проверяем, существует ли файл
-        if not os.path.exists(key_file_path):
-            st.error("Ошибка: Файл ключа gcp-key.json не найден в секретах Render. Проверьте настройки Secret Files.")
-            st.stop()
-        
-        # 2. Аутентификация через Secret File
-        try:
-            # Используем from_service_account_json для прямого чтения файла
-            # (Это более надежно, чем парсинг строки JSON)
-            creds = ServiceAccountCredentials.from_service_account_json(
-                key_file_path,
-                scopes=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive'] 
-            )
-            return gspread.authorize(creds)
-            
-        except Exception as e:
-            st.error(f"Критическая ошибка аутентификации Google Sheets. {e}")
-            st.stop()
+    key_file_path = "/etc/secrets/gcp-key.json"
+
+    if not os.path.exists(key_file_path):
+        st.error("❌ Файл gcp-key.json не найден в Render Secrets")
+        st.stop()
+
+    try:
+        creds = Credentials.from_service_account_file(
+            key_file_path,
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive"
+            ]
+        )
+        return gspread.authorize(creds)
+
+    except Exception as e:
+        st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
+        st.stop()
 
     # УБЕДИТЕСЬ, ЧТО ЭТОТ МЕТОД ПРИСУТСТВУЕТ В КЛАССЕ (была ошибка AttributeError)
     def load(self):
