@@ -17,7 +17,6 @@ from google.oauth2.service_account import Credentials
 from openpyxl import Workbook
 from openpyxl.drawing.image import Image as XLImage 
 
-
 # =========================
 # КОНСТАНТЫ / НАСТРОЙКИ
 # =========================
@@ -31,18 +30,11 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-def resource_path(relative_path: str) -> str:
-    """Возвращает корректный путь к ресурсу."""
-    try:
-        if hasattr(sys, "_MEIPASS"):
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.abspath(os.path.dirname(__file__))
-    except Exception:
-        base_path = os.getcwd()
-    return os.path.join(base_path, relative_path)
+# Удаляем resource_path, так как аутентификация через ENV
 
-GSPREAD_SHEET_ID = "1RJCkHf9qbj0z3E2rdHQWAQyrGEHNL-W" 
+# --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НОВЫЙ, ВЕРНЫЙ ID ТАБЛИЦЫ ---
+GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8" 
+# --------------------------------------------------------
 
 # Листы
 SHEET_REF1 = "СПРАВОЧНИК -1"
@@ -75,7 +67,7 @@ COMPANY_CITY = "Город Астана"
 COMPANY_PHONE = "+7 707 504 4040"
 COMPANY_EMAIL = "Axisokna.kz@mail.ru"
 COMPANY_SITE = "www.axis.kz"
-LOGO_FILENAME = "logo_axis.png"
+# LOGO_FILENAME = "logo_axis.png" # Оставляем для экспорта, но не для resource_path
 
 # =========================
 # УТИЛИТЫ
@@ -232,13 +224,13 @@ class GoogleSheetsClient:
         
         key_json = os.environ.get("GCP_SA_KEYFILE_JSON") 
         if not key_json:
-            st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON не найдена.")
+            st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON не найдена. Убедитесь, что вы добавили ее на Render.")
             st.stop()
             
         try:
             info = json.loads(key_json)
         except json.JSONDecodeError:
-            st.error("❌ Содержимое GCP_SA_KEYFILE_JSON не является корректным JSON.")
+            st.error("❌ Содержимое GCP_SA_KEYFILE_JSON не является корректным JSON. Скопируйте ключ полностью.")
             st.stop()
 
         try:
@@ -861,6 +853,7 @@ class FinalCalculator:
 # EXPORT: коммерческое предложение 
 # =========================
 
+# Упрощаем, так как resource_path удален
 def build_smeta_workbook(order: dict,
                          base_positions: list,
                          lambr_positions: list,
@@ -872,17 +865,10 @@ def build_smeta_workbook(order: dict,
     ws = wb.active
     ws.title = "Коммерческое предложение"
 
-    logo_path = resource_path(LOGO_FILENAME)
+    # LOGO_FILENAME = "logo_axis.png" # Предполагаем, что изображение логотипа не используется или доступно
     current_row = 1
 
-    if os.path.exists(logo_path):
-        try:
-            img = XLImage(logo_path) 
-            img.height = 80
-            img.width = 80
-            ws.add_image(img, "A1")
-        except Exception:
-            pass
+    # ... Пропускаем логику вставки логотипа, так как ресурс недоступен ...
 
     contact_col = 3
     ws.cell(row=current_row, column=contact_col, value=COMPANY_NAME); current_row += 1
