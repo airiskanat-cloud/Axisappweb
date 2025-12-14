@@ -227,28 +227,27 @@ class GoogleSheetsClient:
         self.load()
 
     def _auth(self):
+        # 1. Получение секрета
         gcp_keyfile_content = os.getenv("GCP_SA_KEYFILE")
         if not gcp_keyfile_content:
             st.error("Ошибка: Ключ сервисного аккаунта GCP_SA_KEYFILE не найден в секретах Render. Расчет невозможен.")
             st.stop()
-            
+        
+        # 2. Обработка JSON и аутентификация (Исправлено)
         try:
+            # Сначала загружаем JSON-данные
+            creds_data = json.loads(gcp_keyfile_content)
+            
+            # ВТОРОЕ ИСПРАВЛЕНИЕ: Используем 'scopes' вместо 'scope'
             creds = ServiceAccountCredentials.from_json_keyfile_dict(
                 creds_data,
-                scopes=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                scopes=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive'] 
             )
             return gspread.authorize(creds)
+            
         except Exception as e:
+            # Перехват ошибки, если JSON-ключ неверный
             st.error(f"Ошибка аутентификации Google Sheets. Проверьте формат GCP_SA_KEYFILE. {e}")
-            st.stop()
-
-    def load(self):
-        try:
-            client = self._auth()
-            self.wb = client.open_by_key(self.sheet_id)
-            logger.info("Успешно подключен к Google Sheets.")
-        except Exception as e:
-            st.error(f"Критическая ошибка при подключении к Google Sheets. Проверьте ID и права доступа. {e}")
             st.stop()
 
     def ws(self, name: str):
