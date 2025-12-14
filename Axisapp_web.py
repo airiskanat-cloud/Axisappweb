@@ -233,10 +233,9 @@ class GoogleSheetsClient:
             st.stop()
             
         try:
-            creds_data = json.loads(gcp_keyfile_content)
             creds = ServiceAccountCredentials.from_json_keyfile_dict(
                 creds_data,
-                scope=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+                scopes=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
             )
             return gspread.authorize(creds)
         except Exception as e:
