@@ -10,13 +10,15 @@ import ast
 import operator as op
 
 import streamlit as st
-from openpyxl.workbook import Workbook
-from openpyxl.drawing.image import Image as XLImage
-
-# --- НОВЫЕ ИМПОРТЫ ДЛЯ GOOGLE SHEETS ---
+import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-import pandas as pd
+import os
+import logging
+
+GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8"
+
+
 # ----------------------------------------
 
 # =========================
