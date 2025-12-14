@@ -220,7 +220,7 @@ class GoogleSheetsClient:
 
     @st.cache_resource
     def _auth(self):
-        # *** ИСПРАВЛЕНИЕ: Добавлены отступы для всего тела функции. ***
+        # *** ИСПРАВЛЕННЫЙ БЛОК: Устранена ошибка отступа (IndentationError) ***
         import base64
         import json
         import os
@@ -252,6 +252,7 @@ class GoogleSheetsClient:
         except Exception as e:
             st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
             st.stop()
+        # *** КОНЕЦ ИСПРАВЛЕННОГО БЛОКА ***
 
 
     def load(self):
