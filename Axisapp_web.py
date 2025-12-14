@@ -75,14 +75,14 @@ COMPANY_SITE = "www.axis.kz"
 LOGO_FILENAME = "logo_axis.png"
 
 # =========================
-# УТИЛИТЫ
+# УТИЛИТЫ (Исправлен U+00A0)
 # =========================
 
 def normalize_key(k):
     if k is None:
         return None
     s = str(k)
-    s = s.replace("\xa0", " ") # Устранение U+00A0
+    s = s.replace("\xa0", " ")
     s = " ".join(s.split())
     return s.strip()
 
@@ -90,14 +90,13 @@ def _clean_cell_val(v):
     if v is None:
         return ""
     s = str(v)
-    s = s.replace("\xa0", " ").strip() # Устранение U+00A0
+    s = s.replace("\xa0", " ").strip()
     return s
 
 def safe_float(value, default=0.0):
     try:
         if value is None:
             return default
-        # Устранение U+00A0
         s = str(value).replace("\xa0", "").replace(" ", "").replace(",", ".")
         if s == "":
             return default
@@ -109,7 +108,6 @@ def safe_int(value, default=0):
     try:
         if value is None:
             return default
-        # Устранение U+00A0
         s = str(value).replace("\xa0", "").replace(" ", "").replace(",", ".")
         if s == "":
             return default
@@ -125,27 +123,15 @@ def get_field(row: dict, needle: str, default=None):
     return default
 
 # =========================
-# БЕЗОПАСНЫЙ EVAL (ФОРМУЛЫ)
+# БЕЗОПАСНЫЙ EVAL (ФОРМУЛЫ) (Исправлен U+00A0)
 # =========================
 
 _allowed_ops = {
-    ast.Add: op.add,
-    ast.Sub: op.sub,
-    ast.Mult: op.mul,
-    ast.Div: op.truediv,
-    ast.Pow: op.pow,
-    ast.USub: op.neg,
-    ast.UAdd: op.pos,
-    ast.Mod: op.mod,
-    ast.FloorDiv: op.floordiv,
-    ast.Lt: op.lt,
-    ast.Gt: op.gt,
-    ast.LtE: op.le,
-    ast.GtE: op.ge,
-    ast.Eq: op.eq,
-    ast.NotEq: op.ne,
-    ast.And: lambda a,b: a and b,
-    ast.Or:  lambda a,b: a or b,
+    ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv,
+    ast.Pow: op.pow, ast.USub: op.neg, ast.UAdd: op.pos, ast.Mod: op.mod,
+    ast.FloorDiv: op.floordiv, ast.Lt: op.lt, ast.Gt: op.gt, ast.LtE: op.le,
+    ast.GtE: op.ge, ast.Eq: op.eq, ast.NotEq: op.ne,
+    ast.And: lambda a,b: a and b, ast.Or:  lambda a,b: a or b,
 }
 
 def _eval_ast(node, names):
@@ -198,7 +184,7 @@ def safe_eval_formula(formula: str, context: dict) -> float:
     if not formula:
         return 0.0
 
-    # Заменяем все неразрывные пробелы в формуле, если они есть
+    # Заменяем все неразрывные пробелы в формуле
     formula = formula.replace('\xa0', ' ')
 
     names = {
@@ -212,30 +198,29 @@ def safe_eval_formula(formula: str, context: dict) -> float:
         node = ast.parse(formula, mode="eval")
         return float(_eval_ast(node, names))
     except Exception:
-        # Логируем ошибку, чтобы потом можно было найти проблемную формулу
         logger.exception("Ошибка вычисления формулы: %s", formula)
         return 0.0
 
 # =========================
-# GOOGLE SHEETS CLIENT (ЗАМЕНА ExcelClient)
+# GOOGLE SHEETS CLIENT (КЛЮЧЕВЫЕ ИСПРАВЛЕНИЯ)
 # =========================
 
 class GoogleSheetsClient:
     def __init__(self, sheet_id: str):
         self.sheet_id = sheet_id
         self._worksheets_cache = {} 
-        self.load()
+        self.load() # Убедитесь, что load() существует
 
     def _auth(self):
-        # 1. Получение секрета
+        # 1. Загрузка ключа из переменной окружения/секрета Render
         gcp_keyfile_content = os.getenv("GCP_SA_KEYFILE")
         if not gcp_keyfile_content:
             st.error("Ошибка: Ключ сервисного аккаунта GCP_SA_KEYFILE не найден в секретах Render. Расчет невозможен.")
             st.stop()
         
-        # 2. Обработка JSON и аутентификация (Исправлено)
+        # 2. Обработка JSON и аутентификация (Исправлены ошибки scope и creds_data)
         try:
-            # Сначала загружаем JSON-данные
+            # Сначала загружаем JSON-данные (была ошибка name 'creds_data' is not defined)
             creds_data = json.loads(gcp_keyfile_content)
             
             # ВТОРОЕ ИСПРАВЛЕНИЕ: Используем 'scopes' вместо 'scope'
@@ -246,10 +231,22 @@ class GoogleSheetsClient:
             return gspread.authorize(creds)
             
         except Exception as e:
-            # Перехват ошибки, если JSON-ключ неверный
             st.error(f"Ошибка аутентификации Google Sheets. Проверьте формат GCP_SA_KEYFILE. {e}")
             st.stop()
 
+    # УБЕДИТЕСЬ, ЧТО ЭТОТ МЕТОД ПРИСУТСТВУЕТ В КЛАССЕ (была ошибка AttributeError)
+    def load(self):
+        try:
+            client = self._auth()
+            self.wb = client.open_by_key(self.sheet_id)
+            logger.info("Успешно подключен к Google Sheets.")
+        except Exception as e:
+            st.error(f"Критическая ошибка при подключении к Google Sheets. Проверьте ID и права доступа. {e}")
+            st.stop()
+            
+    # ... остальные методы (ws, read_records, clear_and_write, append_form_row) ...
+    # ... (продолжение кода ниже) ...
+    
     def ws(self, name: str):
         if name in self._worksheets_cache:
             return self._worksheets_cache[name]
@@ -310,7 +307,7 @@ class GoogleSheetsClient:
         logger.info("Строка успешно добавлена в лист ЗАПРОСЫ.")
 
 # =========================
-# ПОЛЬЗОВАТЕЛИ (ЛОГИН)
+# ПОЛЬЗОВАТЕЛИ (ЛОГИН) (Без логики SESSION_FILE)
 # =========================
 
 def load_users(excel: GoogleSheetsClient):
@@ -329,7 +326,6 @@ def load_users(excel: GoogleSheetsClient):
     return users
 
 def login_form(excel: GoogleSheetsClient):
-    # Логика работы с SESSION_FILE удалена
     if "current_user" in st.session_state:
         return st.session_state["current_user"]
 
@@ -354,8 +350,6 @@ def login_form(excel: GoogleSheetsClient):
                     "login": user["_raw_login"],
                     "role": user["role"],
                 }
-                # Логика сохранения в SESSION_FILE удалена
-
                 st.sidebar.success(f"Привет, {user['_raw_login']}!")
                 return st.session_state["current_user"]
 
@@ -364,7 +358,7 @@ def login_form(excel: GoogleSheetsClient):
     return None
 
 # =========================
-# CALCULATORS (Без изменений, кроме устранения U+00A0 в строках)
+# CALCULATORS (Без изменений, кроме устранения U+00A0)
 # =========================
 
 class GabaritCalculator:
@@ -690,14 +684,14 @@ class FinalCalculator:
     def _find_price_for_filling(self, filling_value):
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
-        fv = str(filling_value or "").strip().lower() # Устранение U+00A0
+        fv = str(filling_value or "").strip().lower()
         for r in ref2:
             for k in r.keys():
                 if k is None: continue
                 if "панел" in str(k).lower() or "заполн" in str(k).lower():
                     v = r[k]
                     if v is None: continue
-                    if str(v).strip().lower() == fv: # Устранение U+00A0
+                    if str(v).strip().lower() == fv:
                         for kk in r.keys():
                             if kk is None: continue
                             if "стоимость" in str(kk).lower():
@@ -708,7 +702,7 @@ class FinalCalculator:
         if not montage_type: return 0.0
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
-        mt = str(montage_type or "").strip().lower() # Устранение U+00A0
+        mt = str(montage_type or "").strip().lower()
         for r in ref2:
             for k in r.keys():
                 if k is None: continue
@@ -719,7 +713,7 @@ class FinalCalculator:
     def _find_price_for_glass_by_type(self, glass_type):
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
-        gt = str(glass_type or "").strip().lower() # Устранение U+00A0
+        gt = str(glass_type or "").strip().lower()
         chosen = None
         for r in ref2:
             for k in r.keys():
@@ -857,7 +851,7 @@ class FinalCalculator:
 
 
 # =========================
-# EXPORT: коммерческое предложение (Без изменений, кроме устранения U+00A0 в строках)
+# EXPORT: коммерческое предложение (Без изменений, кроме устранения U+00A0)
 # =========================
 
 def build_smeta_workbook(order: dict,
@@ -893,16 +887,16 @@ def build_smeta_workbook(order: dict,
     current_row += 1
     ws.cell(row=current_row, column=1, value="Коммерческое предложение"); current_row += 2
 
-    ws.cell(row=current_row, column=1, value=f"Заказ № {order.get('order_number','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип изделия: {order.get('product_type','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Профильная система: {order.get('profile_system','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип заполнения (панели): {order.get('filling_mode','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип стеклопакета: {order.get('glass_type','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тонировка: {order.get('toning','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Сборка: {order.get('assembly','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Монтаж: {order.get('montage','')}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип ручек: {order.get('handle_type','') or '—'}".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Доводчик: {order.get('door_closer','')}".replace('\xa0', ' ')); current_row += 2
+    ws.cell(row=current_row, column=1, value=f"Заказ № {order.get('order_number','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Тип изделия: {order.get('product_type','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Профильная система: {order.get('profile_system','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Тип заполнения (панели): {order.get('filling_mode','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Тип стеклопакета: {order.get('glass_type','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Тонировка: {order.get('toning','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Сборка: {order.get('assembly','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Монтаж: {order.get('montage','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Тип ручек: {order.get('handle_type','') or '—'}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Доводчик: {order.get('door_closer','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 2
 
     ws.cell(row=current_row, column=1, value="Состав позиции:"); current_row += 1
 
@@ -910,7 +904,7 @@ def build_smeta_workbook(order: dict,
         w = p.get('width_mm', p.get('frame_width_mm', 0))
         h = p.get('height_mm', p.get('frame_height_mm', 0))
         fill = p.get('filling', '') or (p.get('leaves', [{}])[0].get('filling', '') if p.get('leaves') else '')
-        ws.cell(row=current_row, column=1, value=f"Позиция {idx}: {order.get('product_type','')}, {w} × {h} мм, N = {p.get('Nwin',1)}, filling={fill}".replace('\xa0', ' '))
+        ws.cell(row=current_row, column=1, value=f"Позиция {idx}: {order.get('product_type','')}, {w} × {h} мм, N = {p.get('Nwin',1)}, filling={fill}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' ')
         current_row += 1
 
     if lambr_positions:
@@ -919,13 +913,13 @@ def build_smeta_workbook(order: dict,
         for idx, p in enumerate(lambr_positions, start=1):
             w = p.get('width_mm', p.get('frame_width_mm', 0))
             h = p.get('height_mm', p.get('frame_height_mm', 0))
-            ws.cell(row=current_row, column=1, value=f"Панель {idx}: {w} × {h} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','')}".replace('\xa0', ' '))
+            ws.cell(row=current_row, column=1, value=f"Панель {idx}: {w} × {h} мм, N = {p.get('Nwin',1)}, filling={p.get('filling','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' ')
             current_row += 1
 
     current_row += 2
-    ws.cell(row=current_row, column=1, value=f"Общая площадь: {total_area:.3f} м²".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Суммарный периметр: {total_perimeter:.3f} м".replace('\xa0', ' ')); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"ИТОГО к оплате: {total_sum:.2f}".replace('\xa0', ' '))
+    ws.cell(row=current_row, column=1, value=f"Общая площадь: {total_area:.3f} м²").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"Суммарный периметр: {total_perimeter:.3f} м").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
+    ws.cell(row=current_row, column=1, value=f"ИТОГО к оплате: {total_sum:.2f}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' ')
 
     try:
         for col in ['A','B','C','D','E','F']:
@@ -960,7 +954,6 @@ def main():
     excel = GoogleSheetsClient(GSPREAD_SHEET_ID)
     # -----------------------------------------
 
-    # Логика загрузки сессии из локального файла удалена
     user = login_form(excel)
     if not user:
         st.stop()
@@ -1036,7 +1029,7 @@ def main():
         st.header("Позиции (окна/двери)")
         
         base_positions_inputs = []
-        lambr_positions_inputs = [] # Эта часть кода не используется для Окно/Дверь в текущей логике
+        lambr_positions_inputs = [] 
 
         if product_type != "Тамбур":
             positions_count = st.number_input("Количество позиций (Окно/Дверь)", min_value=1, max_value=10, value=st.session_state.get('pos_count', 1), step=1, key='pos_count')
@@ -1176,7 +1169,6 @@ def main():
     with col_right:
         st.header("Информация")
         st.info("Тамбур детализируется отдельными секциями: дверные блоки и глухие панели.")
-        # Проверка XLSX удалена, так как мы используем Sheets.
         st.info("Справочники загружаются из Google Sheets (GCP_SA_KEYFILE).")
 
         # ---------- Выбор материалов при дублях ----------
@@ -1236,8 +1228,6 @@ def main():
                 perimeter_m = 2 * (p["width_mm"] + p["height_mm"]) / 1000.0
                 sections.append({**p, "area_m2": area_m2, "perimeter_m": perimeter_m})
             
-            # Ламбри/Сэндвич как отдельные позиции не поддерживаются в этой логике для Окно/Дверь
-            # Если нужно, их нужно добавить в виде отдельного типа позиции (kind: 'panel')
         else:
             sections = st.session_state["sections_inputs"]
             
