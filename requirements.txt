@@ -1,5 +1,5 @@
 streamlit
 pandas
-openpyxl  # (возможно, уже есть, но лучше оставить для совместимости)
+openpyxl 
 gspread
 oauth2client
