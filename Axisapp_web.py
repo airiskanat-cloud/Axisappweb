@@ -215,6 +215,7 @@ class GoogleSheetsClient:
         # 1. ПУТЬ к Secret File на Render
         key_file_path = "/etc/secrets/gcp-key.json"
         
+        # Проверяем, существует ли файл
         if not os.path.exists(key_file_path):
             st.error("Ошибка: Файл ключа gcp-key.json не найден в секретах Render. Проверьте настройки Secret Files.")
             st.stop()
@@ -222,6 +223,7 @@ class GoogleSheetsClient:
         # 2. Аутентификация через Secret File
         try:
             # Используем from_service_account_json для прямого чтения файла
+            # (Это более надежно, чем парсинг строки JSON)
             creds = ServiceAccountCredentials.from_service_account_json(
                 key_file_path,
                 scopes=['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive'] 
