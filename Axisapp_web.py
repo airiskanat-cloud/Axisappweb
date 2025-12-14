@@ -219,33 +219,38 @@ class GoogleSheetsClient:
         self.load()
 
     @st.cache_resource
-    def _auth(_self):
-        """Авторизация gspread через переменную окружения GCP_SA_KEYFILE_JSON."""
-        
-        key_json = os.environ.get("GCP_SA_KEYFILE_JSON") 
-        if not key_json:
-            st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON не найдена. Убедитесь, что вы добавили ее на Render.")
-            st.stop()
-            
-        try:
-            info = json.loads(key_json)
-        except json.JSONDecodeError:
-            st.error("❌ Содержимое GCP_SA_KEYFILE_JSON не является корректным JSON. Скопируйте ключ полностью.")
-            st.stop()
+    def _auth(self):
+    import base64
+    import json
+    import os
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import streamlit as st
 
-        try:
-            creds = Credentials.from_service_account_info(
-                info,
-                scopes=[
-                    "https://www.googleapis.com/auth/spreadsheets",
-                    "https://www.googleapis.com/auth/drive"
-                ]
-            )
-            return gspread.authorize(creds)
+    key_b64 = os.environ.get("GCP_SA_KEYFILE_JSON_BASE64")
+    if not key_b64:
+        st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON_BASE64 не найдена. Проверьте Render → Environment.")
+        st.stop()
 
-        except Exception as e:
-            st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
-            st.stop()
+    try:
+        key_json = base64.b64decode(key_b64).decode("utf-8")
+        info = json.loads(key_json)
+    except Exception as e:
+        st.error(f"❌ Ошибка декодирования service account key: {e}")
+        st.stop()
+
+    try:
+        creds = Credentials.from_service_account_info(
+            info,
+            scopes=[
+                "https://www.googleapis.com/auth/spreadsheets",
+                "https://www.googleapis.com/auth/drive",
+            ],
+        )
+        return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
+        st.stop()
 
     def load(self):
         """Загружает рабочую книгу по ID."""
