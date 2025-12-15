@@ -219,8 +219,7 @@ class GoogleSheetsClient:
         self.load()
 
     @st.cache_resource
-    def _auth(self):
-        # *** ИСПРАВЛЕННЫЙ БЛОК: Устранен IndentationError и добавлена обработка ошибок ***
+    def _auth(_self): # <- ИСПРАВЛЕНО: аргумент 'self' заменен на '_self'
         import base64
         import json
         import os
@@ -252,16 +251,17 @@ class GoogleSheetsClient:
         except Exception as e:
             st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
             st.stop()
-        # *** КОНЕЦ ИСПРАВЛЕННОГО БЛОКА ***
 
 
     def load(self):
         """Загружает рабочую книгу по ID."""
         try:
-            client = self._auth()
+            # Вызов _auth происходит без явной передачи self, так как Streamlit обрабатывает это
+            client = self._auth() 
             self.wb = client.open_by_key(self.sheet_id)
             logger.info("Успешно подключен к Google Sheets.")
         except Exception as e:
+            # Вся критическая обработка ошибок перемещена в _auth для правильной работы кэширования
             st.error(f"Критическая ошибка при подключении к Google Sheets. Проблема с ID таблицы или с авторизацией. {e}")
             st.stop()
             
