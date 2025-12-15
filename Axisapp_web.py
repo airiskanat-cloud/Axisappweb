@@ -685,12 +685,17 @@ class FinalCalculator:
             for k in r.keys():
                 if k is None: continue
                 hk = str(k).lower()
+                
+                # УСИЛЕНО: Добавлена строгая проверка, чтобы не схватить цену от ручек/доводчиков
+                is_service_or_area_price = any(term in hk for term in ["за м", "за м²", "стоимость"]) 
+                is_excluded_item = any(exc in hk for exc in ["ручк", "доводчик"])
+                
+                if not is_service_or_area_price or is_excluded_item:
+                    continue
+
                 for needle in needle_list:
-                    # УСИЛЕНИЕ ЛОГИКИ: Ищем точное совпадение слова или проверяем, что это не ручка/доводчик
-                    if needle in hk and "стоимость" in hk:
-                        if any(exc in hk for exc in ["ручк", "доводчик"]):
-                            continue # Пропускаем, если ищем общую цену, но нашли ручку/доводчик
-                        return safe_float(r[k], default)
+                    if needle in hk:
+                        return safe_float(r.get(k), default)
         return default
 
     def _find_price_for_filling(self, filling_value):
@@ -717,7 +722,6 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_montage(self, montage_type):
-        # Ищем монтаж
         return self._find_price_by_header_match(["монтаж", "стоимость", "за м"], 0.0)
 
     def _find_price_for_glass_by_type(self, glass_type):
@@ -742,14 +746,14 @@ class FinalCalculator:
                     if k is None: continue
                     hk = str(k).lower()
                     if "стоимость" in hk and ("стеклопак" in hk or "за м" in hk):
-                        return safe_float(r[k], 0.0)
+                        return safe_float(r.get(k), 0.0)
             return 0.0
         
         for k in chosen.keys():
             if k is None: continue
             hk = str(k).lower()
             if "стоимость" in hk and ("стеклопак" in hk or "за м" in hk or "за м²" in hk):
-                return safe_float(chosen[k], 0.0)
+                return safe_float(chosen.get(k), 0.0)
         return 0.0
 
     def _find_price_for_toning(self):
@@ -759,10 +763,30 @@ class FinalCalculator:
         return self._find_price_by_header_match(["сбор", "стоимость", "за м"], 0.0)
 
     def _find_price_for_handles(self):
-        return self._find_price_by_header_match(["ручк", "стоимость", "шт"], 0.0)
-
+        # Строгий поиск ручек (за штуку)
+        ref2 = self._lookup_ref2_rows()
+        if not ref2: return 0.0
+        
+        for r in ref2:
+            for k in r.keys():
+                if k is None: continue
+                hk = str(k).lower()
+                if "ручк" in hk and ("стоимость" in hk or "цена" in hk) and "шт" in hk:
+                    return safe_float(r.get(k), 0.0)
+        return 0.0
+    
     def _find_price_for_closer(self):
-        return self._find_price_by_header_match(["доводчик", "стоимость", "шт"], 0.0)
+        # Строгий поиск доводчиков (за штуку)
+        ref2 = self._lookup_ref2_rows()
+        if not ref2: return 0.0
+        
+        for r in ref2:
+            for k in r.keys():
+                if k is None: continue
+                hk = str(k).lower()
+                if "доводчик" in hk and ("стоимость" in hk or "цена" in hk) and "шт" in hk:
+                    return safe_float(r.get(k), 0.0)
+        return 0.0
 
 
     def calculate(self, order: dict, total_area_all: float, material_total: float, lambr_cost: float = 0.0, handles_qty: int = 0, closer_qty: int = 0):
@@ -850,7 +874,7 @@ def build_smeta_workbook(order: dict,
         ws.cell(row=current_row, column=contact_col, value=f"Сайт: {COMPANY_SITE}"); current_row += 1
 
     current_row += 1
-    # ИСПРАВЛЕНИЕ: Гарантируем, что значение ячейки - это строка перед replace
+    # ИСПРАВЛЕНО: Безопасная запись значения (для устранения NoneType)
     cell = ws.cell(row=current_row, column=1, value="Коммерческое предложение")
     cell.value = str(cell.value).replace('\xa0', ' ')
     current_row += 2
@@ -864,17 +888,44 @@ def build_smeta_workbook(order: dict,
         else:
              filling_mode_val = fill_val 
 
+    # ИСПРАВЛЕНО: Безопасная запись значения для Заказ №
+    cell = ws.cell(row=current_row, column=1, value=f"Заказ № {order.get('order_number','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
     
-    ws.cell(row=current_row, column=1, value=f"Заказ № {order.get('order_number','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип изделия: {order.get('product_type','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Профильная система: {order.get('profile_system','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип заполнения (панели): {filling_mode_val or '—'}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип стеклопакета: {order.get('glass_type','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тонировка: {order.get('toning','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Сборка: {order.get('assembly','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Монтаж: {order.get('montage','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Тип ручек: {order.get('handle_type','') or '—'}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Доводчик: {order.get('door_closer','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 2
+    # ИСПРАВЛЕНО: Безопасная запись значения для Тип изделия
+    cell = ws.cell(row=current_row, column=1, value=f"Тип изделия: {order.get('product_type','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Профильная система
+    cell = ws.cell(row=current_row, column=1, value=f"Профильная система: {order.get('profile_system','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Тип заполнения
+    cell = ws.cell(row=current_row, column=1, value=f"Тип заполнения (панели): {filling_mode_val or '—'}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Тип стеклопакета
+    cell = ws.cell(row=current_row, column=1, value=f"Тип стеклопакета: {order.get('glass_type','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Тонировка
+    cell = ws.cell(row=current_row, column=1, value=f"Тонировка: {order.get('toning','')}").value = str(ws.cell(row=current_row, column=1).value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Сборка
+    cell = ws.cell(row=current_row, column=1, value=f"Сборка: {order.get('assembly','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Монтаж
+    cell = ws.cell(row=current_row, column=1, value=f"Монтаж: {order.get('montage','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Тип ручек
+    cell = ws.cell(row=current_row, column=1, value=f"Тип ручек: {order.get('handle_type','') or '—'}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    
+    # ИСПРАВЛЕНО: Безопасная запись значения для Доводчик
+    cell = ws.cell(row=current_row, column=1, value=f"Доводчик: {order.get('door_closer','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 2
 
     ws.cell(row=current_row, column=1, value="Состав позиции:"); current_row += 1
 
@@ -889,7 +940,8 @@ def build_smeta_workbook(order: dict,
             
         fill = p.get('filling', '') or (p.get('leaves', [{}])[0].get('filling', '') if p.get('leaves') else '')
         
-        ws.cell(row=current_row, column=1, value=f"Позиция {idx}: {p.get('kind','').capitalize()}, {w} × {h} мм, N = {p.get('Nwin',1)}, заполнение={fill}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' ')
+        cell = ws.cell(row=current_row, column=1, value=f"Позиция {idx}: {p.get('kind','').capitalize()}, {w} × {h} мм, N = {p.get('Nwin',1)}, заполнение={fill}")
+        cell.value = str(cell.value).replace('\xa0', ' ')
         current_row += 1
 
     if lambr_positions:
@@ -898,13 +950,17 @@ def build_smeta_workbook(order: dict,
         for idx, p in enumerate(lambr_positions, start=1):
             w = p.get('width_mm', 0)
             h = p.get('height_mm', 0)
-            ws.cell(row=current_row, column=1, value=f"Панель {idx}: {w} × {h} мм, N = {p.get('Nwin',1)}, заполнение={p.get('filling','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' ')
+            cell = ws.cell(row=current_row, column=1, value=f"Панель {idx}: {w} × {h} мм, N = {p.get('Nwin',1)}, заполнение={p.get('filling','')}").value = str(ws.cell(row=current_row, column=1).value).replace('\xa0', ' ')
+            cell.value = str(cell.value).replace('\xa0', ' ')
             current_row += 1
 
     current_row += 2
-    ws.cell(row=current_row, column=1, value=f"Общая площадь: {total_area:.3f} м²").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"Суммарный периметр: {total_perimeter:.3f} м").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
-    ws.cell(row=current_row, column=1, value=f"ИТОГО к оплате: {total_sum:.2f}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' ')
+    cell = ws.cell(row=current_row, column=1, value=f"Общая площадь: {total_area:.3f} м²")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    cell = ws.cell(row=current_row, column=1, value=f"Суммарный периметр: {total_perimeter:.3f} м")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
+    cell = ws.cell(row=current_row, column=1, value=f"ИТОГО к оплате: {total_sum:.2f}")
+    cell.value = str(cell.value).replace('\xa0', ' ')
 
     try:
         for col in ['A','B','C','D','E','F']:
@@ -1043,8 +1099,6 @@ def main():
             
             for i in range(int(positions_count)):
                 st.subheader(f"Позиция {i+1}")
-                
-                # --- ИСПРАВЛЕНИЕ ФОРМЫ ВВОДА ДЛЯ ДВЕРИ/ОКНА ---
                 
                 # Поля габаритов рамы/изделия
                 st.markdown("**Габариты рамы/изделия**")
