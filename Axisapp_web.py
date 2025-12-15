@@ -106,6 +106,9 @@ def safe_int(value, default=0):
         return default
 
 def get_field(row: dict, needle: str, default=None):
+    # ИСПРАВЛЕНО: Добавлена проверка, что row - это словарь
+    if not isinstance(row, dict):
+        return default
     needle = (needle or "").lower().strip()
     for k, v in row.items():
         if k and needle in str(k).lower():
@@ -170,6 +173,7 @@ def _eval_ast(node, names):
     raise ValueError(f"Недопустимый элемент формулы: {type(node).__name__}")
 
 def safe_eval_formula(formula: str, context: dict) -> float:
+    # ИСПРАВЛЕНО: Добавлена проверка, что formula - это строка
     formula = (formula or "").strip()
     if not formula:
         return 0.0
@@ -691,6 +695,7 @@ class FinalCalculator:
     def _find_price_for_filling(self, filling_value):
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
+        # ИСПРАВЛЕНО: Убедиться, что fv - это строка
         fv = str(filling_value or "").strip().lower()
         
         for r in ref2:
@@ -699,7 +704,8 @@ class FinalCalculator:
             for k in r.keys():
                 if k is None: continue
                 if "панел" in str(k).lower() or "заполн" in str(k).lower():
-                    if str(r[k] or "").strip().lower() == fv:
+                    # ИСПРАВЛЕНО: Убедиться, что r[k] - это строка
+                    if str(r.get(k) or "").strip().lower() == fv:
                         fill_key_found = r[k]
                         break
             
@@ -717,6 +723,7 @@ class FinalCalculator:
     def _find_price_for_glass_by_type(self, glass_type):
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
+        # ИСПРАВЛЕНО: Убедиться, что gt - это строка
         gt = str(glass_type or "").strip().lower()
         
         chosen = None
@@ -724,7 +731,8 @@ class FinalCalculator:
             for k in r.keys():
                 if k is None: continue
                 if "тип стеклопак" in str(k).lower():
-                    v = r[k]
+                    v = r.get(k)
+                    # ИСПРАВЛЕНО: Убедиться, что v - это строка
                     if v and str(v).strip().lower() == gt:
                         chosen = r
                         break
@@ -1041,7 +1049,6 @@ def main():
                 st.markdown("**Габариты рамы/изделия**")
                 c1, c2, c_nwin = st.columns(3)
                 
-                # Установка минимального значения, чтобы избежать ошибки 0.0
                 min_gabarit = 100.0 if product_type == "Дверь" else 100.0
                 
                 width_mm = c1.number_input(f"Ширина изделия, мм (поз. {i+1})", min_value=min_gabarit, step=10.0, key=f"w_{i}")
@@ -1050,13 +1057,12 @@ def main():
                 
                 # Выбор типа створки/двери
                 kind_val = "window"
+                default_leaves_count = 0
                 if product_type == "Дверь":
                     kind_val = "door"
                     st.markdown("**Тип дверного полотна**")
                     door_type = st.selectbox(f"Вид изделия (поз. {i+1})", ["Одностворчатая", "Двухстворчатая"], key=f"dtype_{i}")
                     default_leaves_count = 1 if door_type == "Одностворчатая" else 2
-                else:
-                    default_leaves_count = 0
                 
                 # Размеры импостов
                 st.markdown("**Размеры импостов (для деления)**")
@@ -1069,10 +1075,9 @@ def main():
                 # Створки и фурнитура
                 st.markdown("**Створки и фурнитура**")
                 
-                # Если Дверь, по умолчанию N_sash = 1 или 2 (если двустворчатая)
                 if kind_val == "door":
                      n_leaves = st.number_input(f"Общее количество створок (N_sash) (поз. {i+1})", min_value=1, value=default_leaves_count, step=1, key=f"nleaves_{i}")
-                else: # Окно
+                else:
                      n_leaves = st.number_input(f"Общее количество створок (N_sash) (поз. {i+1})", min_value=0, value=default_leaves_count, step=1, key=f"nleaves_{i}")
 
 
@@ -1081,7 +1086,7 @@ def main():
                     for L in range(int(n_leaves)):
                         st.markdown(f"**Размеры створки {L+1}**")
                         c_sash_w, c_sash_h = st.columns(2)
-                        # Минимальное значение для створки
+                        
                         min_sash_gabarit = 400.0 if product_type == "Дверь" else 200.0
                         
                         sash_width_mm = c_sash_w.number_input(f"Ширина створки {L+1}, мм (поз. {i+1})", min_value=min_sash_gabarit, step=10.0, key=f"sw_{i}_{L}")
@@ -1096,18 +1101,17 @@ def main():
                 first_sash_w = leaves_data[0]['width_mm'] if leaves_data else 0.0
                 first_sash_h = leaves_data[0]['height_mm'] if leaves_data else 0.0
                 
-                # Если Дверь, сохраняем габариты в frame_width_mm / frame_height_mm
                 if kind_val == "door":
                     data_to_append = {
                         "frame_width_mm": width_mm, "frame_height_mm": height_mm,
-                        "width_mm": width_mm, "height_mm": height_mm, # Сохраняем и в width/height
+                        "width_mm": width_mm, "height_mm": height_mm,
                         "left_mm": left_mm, "center_mm": center_mm, "right_mm": right_mm, "top_mm": top_mm,
                         "sash_width_mm": first_sash_w, "sash_height_mm": first_sash_h,
                         "Nwin": nwin, "filling": glass_type,
                         "kind": kind_val,
                         "n_leaves": n_leaves, "leaves": leaves_data 
                     }
-                else: # Окно
+                else:
                     data_to_append = {
                         "width_mm": width_mm, "height_mm": height_mm,
                         "left_mm": left_mm, "center_mm": center_mm, "right_mm": right_mm, "top_mm": top_mm,
@@ -1118,7 +1122,6 @@ def main():
                     }
 
                 base_positions_inputs.append(data_to_append)
-                # --- КОНЕЦ ИСПРАВЛЕНИЯ ФОРМЫ ---
         else:
             # Динамический блок для Тамбура (без изменений, т.к. там форма была верна)
             st.header("Параметры тамбура (дверные блоки и глухие панели)")
@@ -1314,7 +1317,6 @@ def main():
         # Валидация габаритов и расчет площади/периметра
         valid_sections = []
         for p in sections:
-            # Для Окна: width_mm/height_mm. Для Двери/Тамбура: frame_width_mm/frame_height_mm
             w_val = p.get("width_mm", 0.0) if p.get("kind") == "window" else p.get("frame_width_mm", 0.0)
             h_val = p.get("height_mm", 0.0) if p.get("kind") == "window" else p.get("frame_height_mm", 0.0)
             
