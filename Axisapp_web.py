@@ -686,15 +686,17 @@ class FinalCalculator:
                 if k is None: continue
                 hk = str(k).lower()
                 
-                # УСИЛЕНО: Добавлена строгая проверка, чтобы не схватить цену от ручек/доводчиков
-                is_service_or_area_price = any(term in hk for term in ["за м", "за м²", "стоимость"]) 
-                is_excluded_item = any(exc in hk for exc in ["ручк", "доводчик"])
+                # УСИЛЕНО: Теперь ищем четкое совпадение иглой (needle)
+                # И исключаем явные счетчики (шт)
+                is_area_price = any(term in hk for term in ["за м", "за м²"])
+                is_excluded_item = any(exc in hk for exc in ["ручк", "доводчик", "шт"])
                 
-                if not is_service_or_area_price or is_excluded_item:
+                if is_excluded_item and not is_area_price:
                     continue
 
                 for needle in needle_list:
-                    if needle in hk:
+                    # Ищем совпадение иглы И обязательно ищем слово 'стоимость' или 'цена'
+                    if needle in hk and any(p in hk for p in ["стоимость", "цена"]):
                         return safe_float(r.get(k), default)
         return default
 
@@ -722,7 +724,9 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_montage(self, montage_type):
-        return self._find_price_by_header_match(["монтаж", "стоимость", "за м"], 0.0)
+        # Ищем монтаж
+        # Иглы: ['монтаж', 'стоимость', 'за м']
+        return self._find_price_by_header_match(["монтаж", "за м"], 0.0)
 
     def _find_price_for_glass_by_type(self, glass_type):
         ref2 = self._lookup_ref2_rows()
@@ -757,10 +761,12 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_toning(self):
-        return self._find_price_by_header_match(["тониров", "стоимость", "за м"], 0.0)
+        # Иглы: ['тониров', 'стоимость', 'за м']
+        return self._find_price_by_header_match(["тониров", "за м"], 0.0)
 
     def _find_price_for_assembly(self):
-        return self._find_price_by_header_match(["сбор", "стоимость", "за м"], 0.0)
+        # Иглы: ['сбор', 'стоимость', 'за м']
+        return self._find_price_by_header_match(["сбор", "за м"], 0.0)
 
     def _find_price_for_handles(self):
         # Строгий поиск ручек (за штуку)
@@ -909,7 +915,8 @@ def build_smeta_workbook(order: dict,
     cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
     
     # ИСПРАВЛЕНО: Безопасная запись значения для Тонировка
-    cell = ws.cell(row=current_row, column=1, value=f"Тонировка: {order.get('toning','')}").value = str(ws.cell(row=current_row, column=1).value).replace('\xa0', ' '); current_row += 1
+    cell = ws.cell(row=current_row, column=1, value=f"Тонировка: {order.get('toning','')}")
+    cell.value = str(cell.value).replace('\xa0', ' '); current_row += 1
     
     # ИСПРАВЛЕНО: Безопасная запись значения для Сборка
     cell = ws.cell(row=current_row, column=1, value=f"Сборка: {order.get('assembly','')}")
@@ -950,8 +957,8 @@ def build_smeta_workbook(order: dict,
         for idx, p in enumerate(lambr_positions, start=1):
             w = p.get('width_mm', 0)
             h = p.get('height_mm', 0)
-            cell = ws.cell(row=current_row, column=1, value=f"Панель {idx}: {w} × {h} мм, N = {p.get('Nwin',1)}, заполнение={p.get('filling','')}").value = str(ws.cell(row=current_row, column=1).value).replace('\xa0', ' ')
-            cell.value = str(cell.value).replace('\xa0', ' ')
+            cell = ws.cell(row=current_row, column=1, value=f"Панель {idx}: {w} × {h} мм, N = {p.get('Nwin',1)}, заполнение={p.get('filling','')}").value
+            cell = str(cell).replace('\xa0', ' ')
             current_row += 1
 
     current_row += 2
