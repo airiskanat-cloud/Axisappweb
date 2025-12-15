@@ -30,11 +30,7 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-# Удаляем resource_path, так как аутентификация через ENV
-
-# --- КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: НОВЫЙ, ВЕРНЫЙ ID ТАБЛИЦЫ ---
 GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8"
-# --------------------------------------------------------
 
 # Листы
 SHEET_REF1 = "СПРАВОЧНИК -1"
@@ -67,14 +63,12 @@ COMPANY_CITY = "Город Астана"
 COMPANY_PHONE = "+7 707 504 4040"
 COMPANY_EMAIL = "Axisokna.kz@mail.ru"
 COMPANY_SITE = "www.axis.kz"
-# LOGO_FILENAME = "logo_axis.png" # Оставляем для экспорта, но не для resource_path
 
 # =========================
 # УТИЛИТЫ
 # =========================
 
 def normalize_key(k):
-    """Очищает ключ заголовка: удаляет неразрывные пробелы и нормализует."""
     if k is None:
         return None
     s = str(k)
@@ -83,7 +77,6 @@ def normalize_key(k):
     return s.strip().lower()
 
 def _clean_cell_val(v):
-    """Очищает строковое значение ячейки."""
     if v is None:
         return ""
     s = str(v)
@@ -91,7 +84,6 @@ def _clean_cell_val(v):
     return s
 
 def safe_float(value, default=0.0):
-    """Безопасное преобразование в float."""
     try:
         if value is None:
             return default
@@ -103,7 +95,6 @@ def safe_float(value, default=0.0):
         return default
 
 def safe_int(value, default=0):
-    """Безопасное преобразование в int."""
     try:
         if value is None:
             return default
@@ -115,7 +106,6 @@ def safe_int(value, default=0):
         return default
 
 def get_field(row: dict, needle: str, default=None):
-    """Получает значение поля, используя частичное совпадение в нижнем регистре."""
     needle = (needle or "").lower().strip()
     for k, v in row.items():
         if k and needle in str(k).lower():
@@ -135,7 +125,6 @@ _allowed_ops = {
 }
 
 def _eval_ast(node, names):
-    """Рекурсивная безопасная оценка AST-узла."""
     if isinstance(node, ast.Expression):
         return _eval_ast(node.body, names)
 
@@ -160,7 +149,6 @@ def _eval_ast(node, names):
 
     if isinstance(node, ast.Call):
         func = node.func
-        # Разрешаем math.func() и min()/max()
         if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == "math":
             fname = func.attr
             if hasattr(math, fname):
@@ -182,7 +170,6 @@ def _eval_ast(node, names):
     raise ValueError(f"Недопустимый элемент формулы: {type(node).__name__}")
 
 def safe_eval_formula(formula: str, context: dict) -> float:
-    """Безопасно вычисляет формулу из строки с заданным контекстом переменных."""
     formula = (formula or "").strip()
     if not formula:
         return 0.0
@@ -197,7 +184,6 @@ def safe_eval_formula(formula: str, context: dict) -> float:
     }
 
     try:
-        # Преобразование контекста в числа перед вычислением
         safe_context = {k: safe_float(v, 0.0) if not isinstance(v, (int, float)) else v for k, v in names.items()}
         
         node = ast.parse(formula, mode="eval")
@@ -219,7 +205,7 @@ class GoogleSheetsClient:
         self.load()
 
     @st.cache_resource
-    def _auth_v3(_self): # <- ИСПРАВЛЕНО И ПЕРЕИМЕНОВАНО: Принудительный сброс кэша
+    def _auth_v3(_self):
         import base64
         import json
         import os
@@ -254,19 +240,15 @@ class GoogleSheetsClient:
 
 
     def load(self):
-        """Загружает рабочую книгу по ID."""
         try:
-            # ИСПРАВЛЕНО: Вызываем новую функцию для сброса кэша
             client = self._auth_v3() 
             self.wb = client.open_by_key(self.sheet_id)
             logger.info("Успешно подключен к Google Sheets.")
         except Exception as e:
-            # Если _auth_v3() выполнилось успешно, но здесь что-то пошло не так (например, ошибка ID таблицы)
             st.error(f"Критическая ошибка при подключении к Google Sheets. Проблема с ID таблицы или с авторизацией. {e}")
             st.stop()
             
     def ws(self, name: str):
-        """Получает рабочий лист по имени, создавая его, если это SHEET_FORM."""
         if name in self._worksheets_cache:
             return self._worksheets_cache[name]
         try:
@@ -285,7 +267,6 @@ class GoogleSheetsClient:
 
     @st.cache_data(ttl=3600)
     def read_records(_self, sheet_name: str):
-        """Читает записи из листа, используя заголовок первой строки как ключи."""
         ws = _self.ws(sheet_name)
         rows = ws.get_all_values()
         
@@ -324,11 +305,9 @@ class GoogleSheetsClient:
         return records
 
     def clear_and_write(self, sheet_name: str, header: list, rows: list):
-        """Отключено для промежуточных расчетов."""
         pass
 
     def append_form_row(self, row: list):
-        """Добавляет строку в лист ЗАПРОСЫ."""
         try:
             ws = self.ws(SHEET_FORM)
             ws.append_row(row, value_input_option='USER_ENTERED')
@@ -342,7 +321,6 @@ class GoogleSheetsClient:
 # =========================
 
 def load_users(excel: GoogleSheetsClient):
-    """Загружает пользователей для аутентификации."""
     rows = excel.read_records(SHEET_USERS)
     users = {}
 
@@ -357,7 +335,6 @@ def load_users(excel: GoogleSheetsClient):
     return users
 
 def login_form(excel: GoogleSheetsClient):
-    """Форма входа в Streamlit."""
     if "current_user" in st.session_state:
         return st.session_state["current_user"]
 
@@ -401,7 +378,6 @@ class GabaritCalculator:
         self.excel = excel_client
 
     def _calc_imposts_context(self, width, height, left, center, right, top):
-        """Рассчитывает количество импостов и прямоугольников."""
         n_sections_vert = 0
         if left > 0: n_sections_vert += 1
         if center > 0: n_sections_vert += 1
@@ -426,7 +402,6 @@ class GabaritCalculator:
         }
 
     def calculate(self, order: dict, sections: list):
-        """Вычисляет габариты (длины, штуки) по формулам из СПРАВОЧНИК-3."""
         ref_rows = self.excel.read_records(SHEET_REF3)
 
         total_area = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
@@ -470,7 +445,6 @@ class GabaritCalculator:
                 right = s.get("right_mm", 0.0)
                 top = s.get("top_mm", 0.0)
                 
-                # Логика инженерной корректировки габаритов створки
                 if is_non_tamur_section and (sash_w <= 0.0 or sash_h <= 0.0) and s.get("n_leaves", 0) > 0:
                     C_DED = 60.0
                     
@@ -533,7 +507,6 @@ class MaterialCalculator:
         self.excel = excel_client
 
     def _calc_imposts_context(self, width, height, left, center, right, top):
-        """Рассчитывает количество импостов и прямоугольников."""
         n_sections_vert = 0
         if left > 0: n_sections_vert += 1
         if center > 0: n_sections_vert += 1
@@ -554,7 +527,6 @@ class MaterialCalculator:
         }
 
     def calculate(self, order: dict, sections: list, selected_duplicates: dict):
-        """Вычисляет расход материалов по формулам из СПРАВОЧНИК-1."""
         ref_rows = self.excel.read_records(SHEET_REF1)
         total_area = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
         if not ref_rows:
@@ -594,7 +566,6 @@ class MaterialCalculator:
                 is_door_section = s.get("kind") == "door"
                 is_non_tamur_section = s.get("kind") in ["window", "door"] and order.get("product_type") != "Тамбур"
                 
-                # Логика фильтрации для Тамбура
                 if order.get("product_type") == "Тамбур":
                     if is_door_item and s.get("kind") == "panel":
                         continue
@@ -620,7 +591,6 @@ class MaterialCalculator:
                     sash_w = first_leaf.get("width_mm", 0.0)
                     sash_h = first_leaf.get("height_mm", 0.0)
                     
-                # Инженерная корректировка габаритов створки
                 if is_non_tamur_section and nsash > 0 and (sash_w <= 0.0 or sash_h <= 0.0):
                     C_DED = 60.0 
                     
@@ -703,11 +673,9 @@ class FinalCalculator:
         self.excel = excel_client
 
     def _lookup_ref2_rows(self):
-        """Читает справочник-2 (кэшированный)."""
         return self.excel.read_records(SHEET_REF2)
 
     def _find_price_by_header_match(self, needle_list: list, default=0.0):
-        """Ищет стоимость по совпадению в заголовке."""
         ref2 = self._lookup_ref2_rows()
         if not ref2: return default
         
@@ -721,7 +689,6 @@ class FinalCalculator:
         return default
 
     def _find_price_for_filling(self, filling_value):
-        """Ищет стоимость заполнения (для панелей)."""
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
         fv = str(filling_value or "").strip().lower()
@@ -745,11 +712,9 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_montage(self, montage_type):
-        """Ищет стоимость монтажа (цена за м²)."""
         return self._find_price_by_header_match(["монтаж", "стоимость", "за м"], 0.0)
 
     def _find_price_for_glass_by_type(self, glass_type):
-        """Ищет стоимость стеклопакета по типу."""
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
         gt = str(glass_type or "").strip().lower()
@@ -782,24 +747,19 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_toning(self):
-        """Ищет стоимость тонировки (цена за м²)."""
         return self._find_price_by_header_match(["тониров", "стоимость", "за м"], 0.0)
 
     def _find_price_for_assembly(self):
-        """Ищет стоимость сборки (цена за м²)."""
         return self._find_price_by_header_match(["сбор", "стоимость", "за м"], 0.0)
 
     def _find_price_for_handles(self):
-        """Ищет стоимость ручек (цена за шт)."""
         return self._find_price_by_header_match(["ручк", "стоимость", "шт"], 0.0)
 
     def _find_price_for_closer(self):
-        """Ищет стоимость доводчика (цена за шт)."""
         return self._find_price_by_header_match(["доводчик", "стоимость", "шт"], 0.0)
 
 
     def calculate(self, order: dict, total_area_all: float, material_total: float, lambr_cost: float = 0.0, handles_qty: int = 0, closer_qty: int = 0):
-        """Финальный расчет стоимости услуг и итоговой суммы."""
         
         glass_type = order.get("glass_type", "")
         toning = order.get("toning", "Нет")
@@ -861,7 +821,6 @@ class FinalCalculator:
 # EXPORT: коммерческое предложение 
 # =========================
 
-# Упрощаем, так как resource_path удален
 def build_smeta_workbook(order: dict,
                          base_positions: list,
                          lambr_positions: list,
@@ -873,7 +832,6 @@ def build_smeta_workbook(order: dict,
     ws = wb.active
     ws.title = "Коммерческое предложение"
 
-    # ... Пропускаем логику вставки логотипа, так как ресурс недоступен ...
     current_row = 1
     
     # Контакты
@@ -891,12 +849,11 @@ def build_smeta_workbook(order: dict,
     # Общая информация о заказе
     filling_mode_val = order.get('filling_mode', '')
     if not filling_mode_val and base_positions:
-        # Попытка получить заполнение из первой позиции, если не задано общее
         fill_val = base_positions[0].get('filling', '')
         if fill_val == order.get('glass_type', ''):
             filling_mode_val = f"Стеклопакет ({fill_val})"
         else:
-             filling_mode_val = fill_val # Используем заполнение из первой позиции
+             filling_mode_val = fill_val 
 
     
     ws.cell(row=current_row, column=1, value=f"Заказ № {order.get('order_number','')}").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 1
@@ -957,7 +914,6 @@ def build_smeta_workbook(order: dict,
 # =========================
 
 def ensure_session_state():
-    """Инициализация session_state."""
     if "tam_door_count" not in st.session_state:
         st.session_state["tam_door_count"] = 0
     if "tam_panel_count" not in st.session_state:
@@ -968,10 +924,6 @@ def ensure_session_state():
         st.session_state['pos_count'] = 1
 
 def _calculate_lambr_cost(sections: list, fin_calc: FinalCalculator):
-    """
-    Рассчитывает стоимость Ламбри/Сэндвич панелей.
-    Предполагается, что цена указана за м/п 6-метрового хлыста.
-    """
     lambr_cost = 0.0
     
     for s in sections:
@@ -990,7 +942,6 @@ def _calculate_lambr_cost(sections: list, fin_calc: FinalCalculator):
                 if price_per_meter > 0:
                     perimeter_m = 2 * (w_mm + h_mm) / 1000.0
                     
-                    # Расчет количества 6-метровых хлыстов, округление вверх
                     count_hlyst = math.ceil(perimeter_m / 6.0) if perimeter_m > 0 else 0
                     price_per_hlyst = price_per_meter * 6.0
                     
@@ -1125,7 +1076,6 @@ def main():
                     "n_leaves": n_leaves, "leaves": leaves_data 
                 })
         else:
-            # Динамический блок для Тамбура
             st.header("Параметры тамбура (дверные блоки и глухие панели)")
 
             c_add = st.columns([1,1,6])
@@ -1316,9 +1266,11 @@ def main():
         for p in sections:
             w_val = p.get("width_mm", 0.0) if p.get("kind") != "door" else p.get("frame_width_mm", 0.0)
             h_val = p.get("height_mm", 0.0) if p.get("kind") != "door" else p.get("frame_height_mm", 0.0)
-
+            
+            section_name = p.get('block_name', f"позиция №{p.get('id', 'N/A')}")
+            
             if w_val <= 0 or h_val <= 0:
-                st.error(f"Секция/позиция '{p.get('block_name', p.get('kind'))}' имеет нулевую ширину или высоту. Исправьте.")
+                st.error(f"❌ Секция/позиция '{section_name}' ({p.get('kind')}) имеет нулевую или отрицательную ширину ({w_val} мм) или высоту ({h_val} мм). Исправьте в разделе '{product_type}'.")
                 st.stop()
             
             area_m2 = (w_val * h_val) / 1_000_000.0
