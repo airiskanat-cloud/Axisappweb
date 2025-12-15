@@ -106,7 +106,6 @@ def safe_int(value, default=0):
         return default
 
 def get_field(row: dict, needle: str, default=None):
-    # ИСПРАВЛЕНО: Добавлена проверка, что row - это словарь
     if not isinstance(row, dict):
         return default
     needle = (needle or "").lower().strip()
@@ -173,7 +172,6 @@ def _eval_ast(node, names):
     raise ValueError(f"Недопустимый элемент формулы: {type(node).__name__}")
 
 def safe_eval_formula(formula: str, context: dict) -> float:
-    # ИСПРАВЛЕНО: Добавлена проверка, что formula - это строка
     formula = (formula or "").strip()
     if not formula:
         return 0.0
@@ -688,14 +686,16 @@ class FinalCalculator:
                 if k is None: continue
                 hk = str(k).lower()
                 for needle in needle_list:
+                    # УСИЛЕНИЕ ЛОГИКИ: Ищем точное совпадение слова или проверяем, что это не ручка/доводчик
                     if needle in hk and "стоимость" in hk:
+                        if any(exc in hk for exc in ["ручк", "доводчик"]):
+                            continue # Пропускаем, если ищем общую цену, но нашли ручку/доводчик
                         return safe_float(r[k], default)
         return default
 
     def _find_price_for_filling(self, filling_value):
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
-        # ИСПРАВЛЕНО: Убедиться, что fv - это строка
         fv = str(filling_value or "").strip().lower()
         
         for r in ref2:
@@ -704,7 +704,6 @@ class FinalCalculator:
             for k in r.keys():
                 if k is None: continue
                 if "панел" in str(k).lower() or "заполн" in str(k).lower():
-                    # ИСПРАВЛЕНО: Убедиться, что r[k] - это строка
                     if str(r.get(k) or "").strip().lower() == fv:
                         fill_key_found = r[k]
                         break
@@ -718,12 +717,12 @@ class FinalCalculator:
         return 0.0
 
     def _find_price_for_montage(self, montage_type):
+        # Ищем монтаж
         return self._find_price_by_header_match(["монтаж", "стоимость", "за м"], 0.0)
 
     def _find_price_for_glass_by_type(self, glass_type):
         ref2 = self._lookup_ref2_rows()
         if not ref2: return 0.0
-        # ИСПРАВЛЕНО: Убедиться, что gt - это строка
         gt = str(glass_type or "").strip().lower()
         
         chosen = None
@@ -732,7 +731,6 @@ class FinalCalculator:
                 if k is None: continue
                 if "тип стеклопак" in str(k).lower():
                     v = r.get(k)
-                    # ИСПРАВЛЕНО: Убедиться, что v - это строка
                     if v and str(v).strip().lower() == gt:
                         chosen = r
                         break
@@ -852,7 +850,10 @@ def build_smeta_workbook(order: dict,
         ws.cell(row=current_row, column=contact_col, value=f"Сайт: {COMPANY_SITE}"); current_row += 1
 
     current_row += 1
-    ws.cell(row=current_row, column=1, value="Коммерческое предложение").value = ws.cell(row=current_row, column=1).value.replace('\xa0', ' '); current_row += 2
+    # ИСПРАВЛЕНИЕ: Гарантируем, что значение ячейки - это строка перед replace
+    cell = ws.cell(row=current_row, column=1, value="Коммерческое предложение")
+    cell.value = str(cell.value).replace('\xa0', ' ')
+    current_row += 2
 
     # Общая информация о заказе
     filling_mode_val = order.get('filling_mode', '')
@@ -1123,7 +1124,7 @@ def main():
 
                 base_positions_inputs.append(data_to_append)
         else:
-            # Динамический блок для Тамбура (без изменений, т.к. там форма была верна)
+            # Динамический блок для Тамбура
             st.header("Параметры тамбура (дверные блоки и глухие панели)")
 
             c_add = st.columns([1,1,6])
@@ -1317,10 +1318,9 @@ def main():
         # Валидация габаритов и расчет площади/периметра
         valid_sections = []
         for p in sections:
-            w_val = p.get("width_mm", 0.0) if p.get("kind") == "window" else p.get("frame_width_mm", 0.0)
-            h_val = p.get("height_mm", 0.0) if p.get("kind") == "window" else p.get("frame_height_mm", 0.0)
+            w_val = p.get("width_mm", 0.0) if p.get("kind") == "window" or p.get("kind") == "panel" else p.get("frame_width_mm", 0.0)
+            h_val = p.get("height_mm", 0.0) if p.get("kind") == "window" or p.get("kind") == "panel" else p.get("frame_height_mm", 0.0)
             
-            # Улучшенное определение имени для диагностики
             section_name = p.get('block_name', f"позиция №{sections.index(p) + 1} ({p.get('kind').capitalize()})")
             
             if w_val <= 0 or h_val <= 0:
