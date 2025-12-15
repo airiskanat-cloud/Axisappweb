@@ -233,10 +233,11 @@ class GoogleSheetsClient:
             st.stop()
 
         try:
+            # ИСПРАВЛЕНО: Добавлен try/except для Base64 декодирования
             key_json = base64.b64decode(key_b64).decode("utf-8")
             info = json.loads(key_json)
-        except Exception as e:
-            st.error(f"❌ Ошибка декодирования service account key: {e}")
+        except (base64.binascii.Error, json.JSONDecodeError, Exception) as e:
+            st.error(f"❌ Ошибка декодирования service account key: {e}. Проверьте, что ключ Base64 не поврежден и не содержит переносов строк.")
             st.stop()
 
         try:
@@ -261,7 +262,7 @@ class GoogleSheetsClient:
             self.wb = client.open_by_key(self.sheet_id)
             logger.info("Успешно подключен к Google Sheets.")
         except Exception as e:
-            # Вся критическая обработка ошибок перемещена в _auth для правильной работы кэширования
+            # Если _auth выполнилось успешно, но здесь что-то пошло не так (например, ошибка ID таблицы)
             st.error(f"Критическая ошибка при подключении к Google Sheets. Проблема с ID таблицы или с авторизацией. {e}")
             st.stop()
             
@@ -1091,10 +1092,10 @@ def main():
                 
                 st.markdown("**Размеры импостов (для деления)**")
                 c_l, c_c, c_r, c_t = st.columns(4)
-                left_mm = c_l.number_input(f"LEFT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"l_{i}", value=0.0)
-                center_mm = c_c.number_input(f"CENTER, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"c_{i}", value=0.0)
-                right_mm = c_r.number_input(f"RIGHT, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"r_{i}", value=0.0)
-                top_mm = c_t.number_input(f"TOP, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"t_{i}", value=0.0)
+                left_mm = c_l.number_input(f"LEFT, мм (поз. {i+1})", min_value=0.0, step=10.0, value=0.0, key=f"l_{i}")
+                center_mm = c_c.number_input(f"CENTER, мм (поз. {i+1})", min_value=0.0, step=10.0, value=0.0, key=f"c_{i}")
+                right_mm = c_r.number_input(f"RIGHT, мм (поз. {i+1})", min_value=0.0, step=10.0, value=0.0, key=f"r_{i}")
+                top_mm = c_t.number_input(f"TOP, мм (поз. {i+1})", min_value=0.0, step=10.0, value=0.0, key=f"t_{i}")
                 
                 st.markdown("**Створки и фурнитура**")
                 n_leaves = st.number_input(f"Общее количество створок (N_sash) (поз. {i+1})", min_value=0, value=0, step=1, key=f"nleaves_{i}")
