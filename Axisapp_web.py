@@ -219,7 +219,7 @@ class GoogleSheetsClient:
         self.load()
 
     @st.cache_resource
-    def _auth(_self): # <- ИСПРАВЛЕНО: аргумент 'self' заменен на '_self'
+    def _auth_v3(_self): # <- ИСПРАВЛЕНО И ПЕРЕИМЕНОВАНО: Принудительный сброс кэша
         import base64
         import json
         import os
@@ -233,7 +233,6 @@ class GoogleSheetsClient:
             st.stop()
 
         try:
-            # ИСПРАВЛЕНО: Добавлен try/except для Base64 декодирования
             key_json = base64.b64decode(key_b64).decode("utf-8")
             info = json.loads(key_json)
         except (base64.binascii.Error, json.JSONDecodeError, Exception) as e:
@@ -257,12 +256,12 @@ class GoogleSheetsClient:
     def load(self):
         """Загружает рабочую книгу по ID."""
         try:
-            # Вызов _auth происходит без явной передачи self, так как Streamlit обрабатывает это
-            client = self._auth() 
+            # ИСПРАВЛЕНО: Вызываем новую функцию для сброса кэша
+            client = self._auth_v3() 
             self.wb = client.open_by_key(self.sheet_id)
             logger.info("Успешно подключен к Google Sheets.")
         except Exception as e:
-            # Если _auth выполнилось успешно, но здесь что-то пошло не так (например, ошибка ID таблицы)
+            # Если _auth_v3() выполнилось успешно, но здесь что-то пошло не так (например, ошибка ID таблицы)
             st.error(f"Критическая ошибка при подключении к Google Sheets. Проблема с ID таблицы или с авторизацией. {e}")
             st.stop()
             
