@@ -218,31 +218,42 @@ class GoogleSheetsClient:
         self._worksheets_cache = {}
         self.load()
 
+    @st.cache_resource
     def _auth(self):
-    def _auth(self):
-    import base64
-    import json
-    import os
-    import gspread
-    import streamlit as st
-    from google.oauth2.service_account import Credentials
+        # *** ИСПРАВЛЕННЫЙ БЛОК: Устранен IndentationError и добавлена обработка ошибок ***
+        import base64
+        import json
+        import os
+        import gspread
+        import streamlit as st
+        from google.oauth2.service_account import Credentials
 
-    key_b64 = os.environ.get("GCP_SA_KEYFILE_JSON_BASE64")
-    if not key_b64:
-        st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON_BASE64 не найдена.")
-        st.stop()
+        key_b64 = os.environ.get("GCP_SA_KEYFILE_JSON_BASE64")
+        if not key_b64:
+            st.error("❌ Переменная окружения GCP_SA_KEYFILE_JSON_BASE64 не найдена.")
+            st.stop()
 
-    key_json = base64.b64decode(key_b64).decode("utf-8")
-    info = json.loads(key_json)
+        try:
+            key_json = base64.b64decode(key_b64).decode("utf-8")
+            info = json.loads(key_json)
+        except Exception as e:
+            st.error(f"❌ Ошибка декодирования service account key: {e}")
+            st.stop()
 
-    creds = Credentials.from_service_account_info(
-        info,
-        scopes=[
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive",
-        ],
-    )
-    return gspread.authorize(creds)
+        try:
+            creds = Credentials.from_service_account_info(
+                info,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive",
+                ],
+            )
+            return gspread.authorize(creds)
+        except Exception as e:
+            st.error(f"❌ Ошибка аутентификации Google Sheets: {e}")
+            st.stop()
+        # *** КОНЕЦ ИСПРАВЛЕННОГО БЛОКА ***
+
 
     def load(self):
         """Загружает рабочую книгу по ID."""
