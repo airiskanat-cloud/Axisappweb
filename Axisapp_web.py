@@ -1034,12 +1034,31 @@ def main():
             
             for i in range(int(positions_count)):
                 st.subheader(f"Позиция {i+1}")
+                
+                # --- ИСПРАВЛЕНИЕ ФОРМЫ ВВОДА ДЛЯ ДВЕРИ/ОКНА ---
+                
+                # Поля габаритов рамы/изделия
                 st.markdown("**Габариты рамы/изделия**")
                 c1, c2, c_nwin = st.columns(3)
-                width_mm = c1.number_input(f"Ширина изделия, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"w_{i}")
-                height_mm = c2.number_input(f"Высота изделия, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"h_{i}")
+                
+                # Установка минимального значения, чтобы избежать ошибки 0.0
+                min_gabarit = 100.0 if product_type == "Дверь" else 100.0
+                
+                width_mm = c1.number_input(f"Ширина изделия, мм (поз. {i+1})", min_value=min_gabarit, step=10.0, key=f"w_{i}")
+                height_mm = c2.number_input(f"Высота изделия, мм (поз. {i+1})", min_value=min_gabarit, step=10.0, key=f"h_{i}")
                 nwin = c_nwin.number_input(f"Кол-во идентичных рам (N) (поз. {i+1})", min_value=1, value=1, step=1, key=f"nwin_{i}")
                 
+                # Выбор типа створки/двери
+                kind_val = "window"
+                if product_type == "Дверь":
+                    kind_val = "door"
+                    st.markdown("**Тип дверного полотна**")
+                    door_type = st.selectbox(f"Вид изделия (поз. {i+1})", ["Одностворчатая", "Двухстворчатая"], key=f"dtype_{i}")
+                    default_leaves_count = 1 if door_type == "Одностворчатая" else 2
+                else:
+                    default_leaves_count = 0
+                
+                # Размеры импостов
                 st.markdown("**Размеры импостов (для деления)**")
                 c_l, c_c, c_r, c_t = st.columns(4)
                 left_mm = c_l.number_input(f"LEFT, мм (поз. {i+1})", min_value=0.0, step=10.0, value=0.0, key=f"l_{i}")
@@ -1047,16 +1066,26 @@ def main():
                 right_mm = c_r.number_input(f"RIGHT, мм (поз. {i+1})", min_value=0.0, step=10.0, value=0.0, key=f"r_{i}")
                 top_mm = c_t.number_input(f"TOP, мм (поз. {i+1})", min_value=0.0, step=10.0, value=0.0, key=f"t_{i}")
                 
+                # Створки и фурнитура
                 st.markdown("**Створки и фурнитура**")
-                n_leaves = st.number_input(f"Общее количество створок (N_sash) (поз. {i+1})", min_value=0, value=0, step=1, key=f"nleaves_{i}")
+                
+                # Если Дверь, по умолчанию N_sash = 1 или 2 (если двустворчатая)
+                if kind_val == "door":
+                     n_leaves = st.number_input(f"Общее количество створок (N_sash) (поз. {i+1})", min_value=1, value=default_leaves_count, step=1, key=f"nleaves_{i}")
+                else: # Окно
+                     n_leaves = st.number_input(f"Общее количество створок (N_sash) (поз. {i+1})", min_value=0, value=default_leaves_count, step=1, key=f"nleaves_{i}")
+
 
                 leaves_data = []
                 if n_leaves > 0:
                     for L in range(int(n_leaves)):
                         st.markdown(f"**Размеры створки {L+1}**")
                         c_sash_w, c_sash_h = st.columns(2)
-                        sash_width_mm = c_sash_w.number_input(f"Ширина створки {L+1}, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sw_{i}_{L}")
-                        sash_height_mm = c_sash_h.number_input(f"Высота створки {L+1}, мм (поз. {i+1})", min_value=0.0, step=10.0, key=f"sh_{i}_{L}")
+                        # Минимальное значение для створки
+                        min_sash_gabarit = 400.0 if product_type == "Дверь" else 200.0
+                        
+                        sash_width_mm = c_sash_w.number_input(f"Ширина створки {L+1}, мм (поз. {i+1})", min_value=min_sash_gabarit, step=10.0, key=f"sw_{i}_{L}")
+                        sash_height_mm = c_sash_h.number_input(f"Высота створки {L+1}, мм (поз. {i+1})", min_value=min_sash_gabarit, step=10.0, key=f"sh_{i}_{L}")
                         
                         leaves_data.append({
                             "width_mm": sash_width_mm, 
@@ -1067,15 +1096,31 @@ def main():
                 first_sash_w = leaves_data[0]['width_mm'] if leaves_data else 0.0
                 first_sash_h = leaves_data[0]['height_mm'] if leaves_data else 0.0
                 
-                base_positions_inputs.append({
-                    "width_mm": width_mm, "height_mm": height_mm,
-                    "left_mm": left_mm, "center_mm": center_mm, "right_mm": right_mm, "top_mm": top_mm,
-                    "sash_width_mm": first_sash_w, "sash_height_mm": first_sash_h,
-                    "Nwin": nwin, "filling": glass_type,
-                    "kind": "window" if product_type == "Окно" else "door",
-                    "n_leaves": n_leaves, "leaves": leaves_data 
-                })
+                # Если Дверь, сохраняем габариты в frame_width_mm / frame_height_mm
+                if kind_val == "door":
+                    data_to_append = {
+                        "frame_width_mm": width_mm, "frame_height_mm": height_mm,
+                        "width_mm": width_mm, "height_mm": height_mm, # Сохраняем и в width/height
+                        "left_mm": left_mm, "center_mm": center_mm, "right_mm": right_mm, "top_mm": top_mm,
+                        "sash_width_mm": first_sash_w, "sash_height_mm": first_sash_h,
+                        "Nwin": nwin, "filling": glass_type,
+                        "kind": kind_val,
+                        "n_leaves": n_leaves, "leaves": leaves_data 
+                    }
+                else: # Окно
+                    data_to_append = {
+                        "width_mm": width_mm, "height_mm": height_mm,
+                        "left_mm": left_mm, "center_mm": center_mm, "right_mm": right_mm, "top_mm": top_mm,
+                        "sash_width_mm": first_sash_w, "sash_height_mm": first_sash_h,
+                        "Nwin": nwin, "filling": glass_type,
+                        "kind": kind_val,
+                        "n_leaves": n_leaves, "leaves": leaves_data 
+                    }
+
+                base_positions_inputs.append(data_to_append)
+                # --- КОНЕЦ ИСПРАВЛЕНИЯ ФОРМЫ ---
         else:
+            # Динамический блок для Тамбура (без изменений, т.к. там форма была верна)
             st.header("Параметры тамбура (дверные блоки и глухие панели)")
 
             c_add = st.columns([1,1,6])
@@ -1095,8 +1140,10 @@ def main():
                     name = st.text_input(f"Название блока #{i+1}", value=existing_section.get("block_name", f"Дверной блок {i+1}") if existing_section else f"Дверной блок {i+1}", key=f"door_name_{i}")
                     count = st.number_input(f"Кол-во одинаковых блоков #{i+1}", min_value=1, value=existing_section.get("Nwin", 1) if existing_section else 1, key=f"door_count_{i}")
                     dtype = st.selectbox(f"Тип двери #{i+1}", ["Одностворчатая","Двухстворчатая"], index=0, key=f"door_type_{i}")
-                    frame_w = st.number_input(f"Ширина рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, value=existing_section.get("frame_width_mm", 0.0) if existing_section else 0.0, key=f"frame_w_{i}")
-                    frame_h = st.number_input(f"Высота рамы (изделия), мм #{i+1}", min_value=0.0, step=10.0, value=existing_section.get("frame_height_mm", 0.0) if existing_section else 0.0, key=f"frame_h_{i}")
+                    
+                    min_gabarit = 100.0
+                    frame_w = st.number_input(f"Ширина рамы (изделия), мм #{i+1}", min_value=min_gabarit, step=10.0, value=existing_section.get("frame_width_mm", min_gabarit) if existing_section else min_gabarit, key=f"frame_w_{i}")
+                    frame_h = st.number_input(f"Высота рамы (изделия), мм #{i+1}", min_value=min_gabarit, step=10.0, value=existing_section.get("frame_height_mm", min_gabarit) if existing_section else min_gabarit, key=f"frame_h_{i}")
                     
                     st.subheader("Внутренние импосты (для деления рамы)")
                     c_imp1, c_imp2 = st.columns(2)
@@ -1115,8 +1162,9 @@ def main():
                         st.markdown(f"**Створка {L+1}**")
                         existing_leaf = existing_section.get("leaves", [{}])[L] if existing_section and L < len(existing_section.get("leaves", [])) else {}
                         
-                        lw = st.number_input(f"Ширина створки {L+1} (мм) — блок {i+1}", min_value=0.0, step=10.0, value=existing_leaf.get("width_mm", 0.0), key=f"leaf_w_{i}_{L}")
-                        lh = st.number_input(f"Высота створки {L+1} (мм) — блок {i+1}", min_value=0.0, step=10.0, value=existing_leaf.get("height_mm", 0.0), key=f"leaf_h_{i}_{L}")
+                        min_sash_gabarit = 400.0
+                        lw = st.number_input(f"Ширина створки {L+1} (мм) — блок {i+1}", min_value=min_sash_gabarit, step=10.0, value=existing_leaf.get("width_mm", min_sash_gabarit), key=f"leaf_w_{i}_{L}")
+                        lh = st.number_input(f"Высота створки {L+1} (мм) — блок {i+1}", min_value=min_sash_gabarit, step=10.0, value=existing_leaf.get("height_mm", min_sash_gabarit), key=f"leaf_h_{i}_{L}")
                         
                         default_fill_idx = filling_options_for_panels.index(existing_leaf.get("filling", glass_type)) if existing_leaf.get("filling") in filling_options_for_panels else (filling_options_for_panels.index(glass_type) if glass_type in filling_options_for_panels else 0)
                         fill = st.selectbox(f"Заполнение створки {L+1} — блок {i+1}", options=filling_options_for_panels, index=default_fill_idx, key=f"leaf_fill_{i}_{L}")
@@ -1149,8 +1197,10 @@ def main():
                     name = st.text_input(f"Название панели #{i+1}", value=existing_section.get("block_name", f"Панель {i+1}") if existing_section else f"Панель {i+1}", key=f"panel_name_{i}")
                     count = st.number_input(f"Кол-во одинаковых панелей #{i+1}", min_value=1, value=existing_section.get("Nwin", 1) if existing_section else 1, key=f"panel_count_{i}")
                     p1, p2 = st.columns(2)
-                    w = p1.number_input(f"Ширина панели, мм #{i+1}", min_value=0.0, step=10.0, value=existing_section.get("width_mm", 0.0) if existing_section else 0.0, key=f"panel_w_{i}")
-                    h = p2.number_input(f"Высота панели, мм #{i+1}", min_value=0.0, step=10.0, value=existing_section.get("height_mm", 0.0) if existing_section else 0.0, key=f"panel_h_{i}")
+                    
+                    min_gabarit = 100.0
+                    w = p1.number_input(f"Ширина панели, мм #{i+1}", min_value=min_gabarit, step=10.0, value=existing_section.get("width_mm", min_gabarit) if existing_section else min_gabarit, key=f"panel_w_{i}")
+                    h = p2.number_input(f"Высота панели, мм #{i+1}", min_value=min_gabarit, step=10.0, value=existing_section.get("height_mm", min_gabarit) if existing_section else min_gabarit, key=f"panel_h_{i}")
                     
                     default_fill_idx = filling_options_for_panels.index(existing_section.get("filling", filling_options_for_panels[default_panel_fill_index])) if existing_section and existing_section.get("filling") in filling_options_for_panels else default_panel_fill_index
                     fill = st.selectbox(f"Заполнение панели #{i+1}", options=filling_options_for_panels, index=default_fill_idx, key=f"panel_fill_{i}")
@@ -1264,13 +1314,15 @@ def main():
         # Валидация габаритов и расчет площади/периметра
         valid_sections = []
         for p in sections:
-            w_val = p.get("width_mm", 0.0) if p.get("kind") != "door" else p.get("frame_width_mm", 0.0)
-            h_val = p.get("height_mm", 0.0) if p.get("kind") != "door" else p.get("frame_height_mm", 0.0)
+            # Для Окна: width_mm/height_mm. Для Двери/Тамбура: frame_width_mm/frame_height_mm
+            w_val = p.get("width_mm", 0.0) if p.get("kind") == "window" else p.get("frame_width_mm", 0.0)
+            h_val = p.get("height_mm", 0.0) if p.get("kind") == "window" else p.get("frame_height_mm", 0.0)
             
-            section_name = p.get('block_name', f"позиция №{p.get('id', 'N/A')}")
+            # Улучшенное определение имени для диагностики
+            section_name = p.get('block_name', f"позиция №{sections.index(p) + 1} ({p.get('kind').capitalize()})")
             
             if w_val <= 0 or h_val <= 0:
-                st.error(f"❌ Секция/позиция '{section_name}' ({p.get('kind')}) имеет нулевую или отрицательную ширину ({w_val} мм) или высоту ({h_val} мм). Исправьте в разделе '{product_type}'.")
+                st.error(f"❌ Секция/позиция '{section_name}' имеет нулевую или отрицательную ширину ({w_val} мм) или высоту ({h_val} мм). Исправьте в разделе '{product_type}'.")
                 st.stop()
             
             area_m2 = (w_val * h_val) / 1_000_000.0
