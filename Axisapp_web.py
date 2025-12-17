@@ -841,9 +841,9 @@ class FinalCalculator:
             lambr_cost + handles_sum + closer_sum
         )
 
-        # Обеспечение (60%)
-        ensure_sum = base_sum * 0.6
-        rows.append(["Обеспечение (60%)", "", "", ensure_sum])
+        # Обеспечение (65%) - ИЗМЕНЕНО с 0.6 на 0.65
+        ensure_sum = base_sum * 0.65
+        rows.append(["Обеспечение (65%)", "", "", ensure_sum])
 
         # ИТОГО
         total_sum = base_sum + ensure_sum
@@ -1507,7 +1507,7 @@ def main():
                         "Итого": total_val if isinstance(total_val, str) else round(total_val, 2),
                     })
                 st.dataframe(fin_disp, use_container_width=True)
-            st.write(f"Обеспечение (60%): **{ensure_sum:.2f}**")
+            st.write(f"Обеспечение (65%): **{ensure_sum:.2f}**")
             st.write(f"ИТОГО к оплате: **{total_sum:.2f}**")
 
         # --- Экспорт коммерческого предложения ---
