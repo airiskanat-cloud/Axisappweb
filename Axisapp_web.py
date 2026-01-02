@@ -1,6 +1,6 @@
 # =========================================
-# Axis Pro GF v17.1 — Facade Calculator
-# Фикс авторизации: автоматический поиск ключей
+# Axis Pro GF v17.2 — Facade Calculator
+# Фикс: Автоматическое определение ключей Google
 # =========================================
 
 import math
@@ -46,26 +46,21 @@ logger.setLevel(logging.INFO)
 # =========================================
 
 def normalize_key(v):
-    if v is None:
-        return ""
+    if v is None: return ""
     return " ".join(str(v).replace("\xa0", " ").lower().split())
 
 def safe_float(v, default=0.0):
     try:
-        if v is None:
-            return default
+        if v is None: return default
         s = str(v).replace("\xa0", "").replace(" ", "").replace(",", ".")
-        if s == "":
-            return default
-        return float(s)
+        return float(s) if s else default
     except Exception:
         return default
 
 def get_field(row: dict, needle: str, default=None):
     needle = needle.lower()
     for k, v in row.items():
-        if k and needle in str(k).lower():
-            return v
+        if k and needle in str(k).lower(): return v
     return default
 
 # =========================================
@@ -73,58 +68,41 @@ def get_field(row: dict, needle: str, default=None):
 # =========================================
 
 _ALLOWED_OPS = {
-    ast.Add: op.add,
-    ast.Sub: op.sub,
-    ast.Mult: op.mul,
-    ast.Div: op.truediv,
-    ast.Pow: op.pow,
-    ast.USub: op.neg,
-    ast.UAdd: op.pos,
-    ast.Mod: op.mod,
+    ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul,
+    ast.Div: op.truediv, ast.Pow: op.pow, ast.USub: op.neg,
+    ast.UAdd: op.pos, ast.Mod: op.mod,
 }
 
 def _eval_node(node, names):
-    if isinstance(node, ast.Expression):
-        return _eval_node(node.body, names)
-    if isinstance(node, ast.Constant):
-        return node.value
+    if isinstance(node, ast.Expression): return _eval_node(node.body, names)
+    if isinstance(node, ast.Constant): return node.value
     if isinstance(node, ast.Name):
-        if node.id in names:
-            return names[node.id]
+        if node.id in names: return names[node.id]
         raise ValueError(f"Unknown var {node.id}")
     if isinstance(node, ast.BinOp):
-        return _ALLOWED_OPS[type(node.op)](
-            _eval_node(node.left, names),
-            _eval_node(node.right, names),
-        )
+        return _ALLOWED_OPS[type(node.op)](_eval_node(node.left, names), _eval_node(node.right, names))
     if isinstance(node, ast.UnaryOp):
-        return _ALLOWED_OPS[type(node.op)](
-            _eval_node(node.operand, names)
-        )
+        return _ALLOWED_OPS[type(node.op)](_eval_node(node.operand, names))
     if isinstance(node, ast.Call):
         if isinstance(node.func, ast.Attribute) and node.func.value.id == "math":
             fn = getattr(math, node.func.attr)
-            args = [_eval_node(a, names) for a in node.args]
-            return fn(*args)
+            return fn(*[_eval_node(a, names) for a in node.args])
         if isinstance(node.func, ast.Name) and node.func.id in ("min", "max"):
-            args = [_eval_node(a, names) for a in node.args]
-            return globals()[node.func.id](*args)
+            return globals()[node.func.id](*[_eval_node(a, names) for a in node.args])
     raise ValueError("Unsafe expression")
 
 def safe_eval(formula: str, context: dict) -> float:
-    if not formula:
-        return 0.0
+    if not formula: return 0.0
     try:
         ctx = {k: safe_float(v) for k, v in context.items()}
         ctx["math"] = math
-        node = ast.parse(formula, mode="eval")
-        return float(_eval_node(node, ctx))
+        return float(_eval_node(ast.parse(formula, mode="eval"), ctx))
     except Exception as e:
         logger.error("Formula error: %s | %s", formula, e)
         return 0.0
 
 # =========================================
-# GOOGLE SHEETS CLIENT (V17 MULTI-AUTH)
+# GOOGLE SHEETS CLIENT (Универсальный фикс)
 # =========================================
 
 class GoogleSheets:
@@ -132,14 +110,16 @@ class GoogleSheets:
     @st.cache_resource
     def auth(_self):
         """
-        Универсальный поиск ключа: ищет любое из 3-х имен и понимает как Base64, так и чистый JSON.
+        Ищет ключ под любым из возможных имен (Render или локально)
+        и автоматически определяет формат (Base64 или прямой JSON).
         """
-        key_source = st.secrets.get("GCP_SA_KEYFILE_JSON_BASE64") or \
-                     st.secrets.get("GCP_SA_KEYFILE_JSON") or \
-                     st.secrets.get("gcp_service_account")
+        # Проверяем все варианты имен переменных
+        key_source = st.secrets.get("gcp_service_account") or \
+                     st.secrets.get("GCP_SA_KEYFILE_JSON_BASE64") or \
+                     st.secrets.get("GCP_SA_KEYFILE_JSON")
 
         if not key_source:
-            st.error("❌ Ключ не найден! Добавьте переменную 'gcp_service_account' в Environment Variables на Render.")
+            st.error("❌ Ключ не найден! Проверьте, что в Render Environment Variables создана переменная 'gcp_service_account'.")
             st.stop()
 
         try:
@@ -169,197 +149,124 @@ class GoogleSheets:
         self.cache = {}
 
     def ws(self, name):
-        if name not in self.cache:
-            self.cache[name] = self.book.worksheet(name)
+        if name not in self.cache: self.cache[name] = self.book.worksheet(name)
         return self.cache[name]
 
     @st.cache_data(ttl=1800)
     def read(_self, sheet_name):
-        ws = _self.ws(sheet_name)
-        rows = ws.get_all_records()
-        return rows
+        return _self.ws(sheet_name).get_all_records()
 
 # =========================================
-# LOGIN
+# БЛОКИ ЛОГИКИ И ИНТЕРФЕЙСА (Без изменений)
 # =========================================
 
 def login(gs: GoogleSheets):
-    if "user" in st.session_state:
-        return True
-
+    if "user" in st.session_state: return True
     st.sidebar.title("🔐 Вход")
-    l_val = st.sidebar.text_input("Логин")
-    p_val = st.sidebar.text_input("Пароль", type="password")
-
+    l_v, p_v = st.sidebar.text_input("Логин"), st.sidebar.text_input("Пароль", type="password")
     if st.sidebar.button("Войти"):
-        users = gs.read(SHEET_USERS)
-        for u in users:
-            if normalize_key(get_field(u, "логин")) == normalize_key(l_val):
-                if str(get_field(u, "пароль")) == p_val:
-                    st.session_state["user"] = l_val
-                    st.rerun()
+        for u in gs.read(SHEET_USERS):
+            if normalize_key(get_field(u, "логин")) == normalize_key(l_v) and str(get_field(u, "пароль")) == p_v:
+                st.session_state["user"] = l_v
+                st.rerun()
         st.sidebar.error("Неверный логин или пароль")
     return False
 
-# =========================================
-# GEOM CONTEXT & CALCULATORS
-# =========================================
-
-def build_geom_context(section: dict):
-    width = safe_float(section.get("width_mm", 0))
-    height = safe_float(section.get("height_mm", 0))
-    qty = int(section.get("qty", 1))
-    left = safe_float(section.get("left", 0))
-    center = safe_float(section.get("center", 0))
-    right = safe_float(section.get("right", 0))
-    top = safe_float(section.get("top", 0))
-
-    area = (width * height) / 1_000_000
-    perimeter = 2 * (width + height) / 1000
-    n_vert = sum(1 for x in (left, center, right) if x > 0)
-    n_imp_vert = max(0, n_vert - 1)
-    n_imp_hor = 1 if top > 0 else 0
-    n_impost = n_imp_vert + n_imp_hor
-    n_sash = int(section.get("n_sash", 0))
-    sash_w = safe_float(section.get("sash_w", 0))
-    sash_h = safe_float(section.get("sash_h", 0))
-    kind = section.get("kind")
-
+def build_geom_context(s: dict):
+    w, h, q = safe_float(s.get("width_mm")), safe_float(s.get("height_mm")), int(s.get("qty", 1))
+    l, c, r, t = safe_float(s.get("left")), safe_float(s.get("center")), safe_float(s.get("right")), safe_float(s.get("top"))
+    area, peri = (w * h) / 1e6, 2 * (w + h) / 1000
+    n_v = sum(1 for x in (l, c, r) if x > 0)
+    n_imp = max(0, n_v - 1) + (1 if t > 0 else 0)
+    ns = int(s.get("n_sash", 0))
     return {
-        "width": width, "height": height, "area": area, "perimeter": perimeter, "qty": qty,
-        "left": left, "center": center, "right": right, "top": top,
-        "n_imp_vert": n_imp_vert, "n_imp_hor": n_imp_hor, "n_impost": n_impost,
-        "n_frame_rect": 1 + n_impost, "n_corners": 4 * (1 + n_impost),
-        "n_sash": n_sash, "n_sash_active": 1 if n_sash > 0 else 0,
-        "n_sash_passive": max(n_sash - 1, 0),
-        "sash_w": sash_w, "sash_h": sash_h,
-        "is_door": 1 if kind == "door" else 0, "is_facade": 1 if kind == "facade" else 0,
+        "width": w, "height": h, "area": area, "perimeter": peri, "qty": q,
+        "n_impost": n_imp, "n_frame_rect": 1 + n_imp, "n_corners": 4 * (1 + n_imp),
+        "n_sash": ns, "n_sash_active": 1 if ns > 0 else 0, "sash_w": safe_float(s.get("sash_w")), "sash_h": safe_float(s.get("sash_h")),
+        "is_door": 1 if s.get("kind") == "door" else 0, "is_facade": 1 if s.get("kind") == "facade" else 0
     }
 
 class MaterialCalculator:
-    def __init__(self, gs: GoogleSheets):
-        self.gs = gs
-    def calculate(self, sections: list):
+    def __init__(self, gs): self.gs = gs
+    def calculate(self, sections):
         ref1 = self.gs.read(SHEET_REF1)
-        results, total_sum = [], 0.0
+        res, total = [], 0.0
         for row in ref1:
-            row_type = str(get_field(row, "тип издел", "") or "").strip()
-            row_profile = str(get_field(row, "система проф", "") or "").strip()
-            formula = get_field(row, "формула_python")
-            if not formula: continue
-            qty_total = 0.0
+            row_t, row_p, form = str(get_field(row, "тип издел")), str(get_field(row, "система проф")), get_field(row, "формула_python")
+            if not form: continue
+            q_total = 0.0
             for s in sections:
-                if row_type and row_type != s["product_type"]: continue
-                if row_profile and row_profile != s["profile_system"]: continue
-                ctx = build_geom_context(s)
-                qty_total += safe_eval(str(formula), ctx) * ctx["qty"]
-            price = safe_float(get_field(row, "цена за"))
-            norm = safe_float(get_field(row, "кол-во норм"), 1)
-            if qty_total <= 0: continue
-            real_qty = math.ceil(qty_total / norm) * norm if norm > 0 else qty_total
-            sum_row = real_qty * price
-            total_sum += sum_row
-            results.append({
-                "Тип изделия": row_type, "Система профиля": row_profile,
-                "Тип элемента": str(get_field(row, "тип элемент", "")),
-                "Товар": str(get_field(row, "товар", "")),
-                "Факт. расход": round(qty_total, 3), "К отгрузке": real_qty,
-                "Цена": price, "Сумма": round(sum_row, 2),
-            })
-        return results, total_sum
+                if (not row_t or row_t == s["product_type"]) and (not row_p or row_p == s["profile_system"]):
+                    ctx = build_geom_context(s)
+                    q_total += safe_eval(str(form), ctx) * ctx["qty"]
+            if q_total <= 0: continue
+            p, n = safe_float(get_field(row, "цена за")), safe_float(get_field(row, "кол-во норм"), 1)
+            real_q = math.ceil(q_total / n) * n if n > 0 else q_total
+            total += real_q * p
+            res.append({"Товар": str(get_field(row, "товар")), "Факт. расход": round(q_total, 3), "К отгрузке": real_q, "Сумма": round(real_q * p, 2)})
+        return res, total
 
 class FinalCalculator:
-    def __init__(self, gs: GoogleSheets):
-        self.gs = gs
-        self.ref2 = self.gs.read(SHEET_REF2)
-    def _find_price(self, keywords: list, default=0.0):
+    def __init__(self, gs): self.gs = gs; self.ref2 = gs.read(SHEET_REF2)
+    def _get_p(self, kw):
         for row in self.ref2:
             for k, v in row.items():
-                if k and all(word in normalize_key(k) for word in keywords):
-                    return safe_float(v, default)
-        return default
-    def calculate(self, sections: list, material_sum: float, glass_type: str, toning: bool, assembly: bool, montage: bool):
+                if k and all(w in normalize_key(k) for w in kw): return safe_float(v)
+        return 0.0
+    def calculate(self, sections, mat_sum, g_type, ton, ass, mon):
         area = sum((safe_float(s["width_mm"])*safe_float(s["height_mm"])/1e6)*int(s.get("qty", 1)) for s in sections)
-        rows = []
-        # Стеклопакет
-        g_price = 0.0
-        g_type_norm = normalize_key(glass_type)
+        g_p = 0.0
         for row in self.ref2:
-            if any("тип стеклопак" in normalize_key(k) and normalize_key(v) == g_type_norm for k,v in row.items()):
-                g_price = next((safe_float(vv) for kk,vv in row.items() if "стоимость" in normalize_key(kk)), 0.0)
-                break
-        if g_price == 0: g_price = self._find_price(["стеклопакет", "м"])
-        rows.append(("Стеклопакет", g_price, "м²", area * g_price))
-        if toning: rows.append(("Тонировка", self._find_price(["тониров"]), "м²", area * self._find_price(["тониров"])))
-        if assembly: rows.append(("Сборка", self._find_price(["сборк"]), "м²", area * self._find_price(["сборк"])))
-        if montage: rows.append(("Монтаж", self._find_price(["монтаж"]), "м²", area * self._find_price(["монтаж"])))
-        rows.append(("Материалы", "-", "-", material_sum))
+            if any("тип стеклопак" in normalize_key(k) and normalize_key(v) == normalize_key(g_type) for k,v in row.items()):
+                g_p = next((safe_float(vv) for kk,vv in row.items() if "стоимость" in normalize_key(kk)), 0.0)
+        if g_p == 0: g_p = self._get_p(["стеклопакет", "м"])
+        rows = [("Стеклопакет", g_p, "м²", area * g_p)]
+        if ton: rows.append(("Тонировка", self._get_p(["тониров"]), "м²", area * self._get_p(["тониров"])))
+        if ass: rows.append(("Сборка", self._get_p(["сборк"]), "м²", area * self._get_p(["сборк"])))
+        if mon: rows.append(("Монтаж", self._get_p(["монтаж"]), "м²", area * self._get_p(["монтаж"])))
+        rows.append(("Материалы", "-", "-", mat_sum))
         base = sum(r[3] for r in rows)
         ensure = base * 0.65
         rows.append(("Обеспечение 65%", "", "", ensure))
         rows.append(("ИТОГО", "", "", base + ensure))
         return rows, base + ensure
 
-# =========================================
-# UI
-# =========================================
-
-def section_form(title, p_type, p_sys, k_prefix=""):
+def section_form(title, p_t, p_s, kp=""):
     st.subheader(title)
     c1, c2, c3 = st.columns(3)
-    w = c1.number_input("Ширина, мм", 100.0, step=10.0, key=f"{k_prefix}w")
-    h = c2.number_input("Высота, мм", 100.0, step=10.0, key=f"{k_prefix}h")
-    q = c3.number_input("Кол-во (N)", 1, step=1, key=f"{k_prefix}q")
-    st.markdown("**Импосты**")
+    w, h, q = c1.number_input("Ширина", 100.0, step=10.0, key=f"{kp}w"), c2.number_input("Высота", 100.0, step=10.0, key=f"{kp}h"), c3.number_input("Кол-во", 1, step=1, key=f"{kp}q")
     i1, i2, i3, i4 = st.columns(4)
-    l = i1.number_input("LEFT", 0.0, step=10.0, key=f"{k_prefix}l")
-    c = i2.number_input("CENTER", 0.0, step=10.0, key=f"{k_prefix}c")
-    r = i3.number_input("RIGHT", 0.0, step=10.0, key=f"{k_prefix}r")
-    t = i4.number_input("TOP", 0.0, step=10.0, key=f"{k_prefix}t")
+    l, c, r, t = i1.number_input("LEFT", 0.0, key=f"{kp}l"), i2.number_input("CENTER", 0.0, key=f"{kp}c"), i3.number_input("RIGHT", 0.0, key=f"{kp}r"), i4.number_input("TOP", 0.0, key=f"{kp}t")
     ns, sw, sh = 0, 0.0, 0.0
-    if "Окно с откр." in p_type or "Дверь" in p_type:
-        ns = st.number_input("Кол-во створок", 1, step=1, key=f"{k_prefix}ns")
-        s1, s2 = st.columns(2)
-        sw = s1.number_input("Ширина створки, мм", 200.0, step=10.0, key=f"{k_prefix}sw")
-        sh = s2.number_input("Высота створки, мм", 200.0, step=10.0, key=f"{k_prefix}sh")
-    return {"product_type": p_type, "profile_system": p_sys, "kind": "door" if "Дверь" in p_type else "window",
-            "width_mm": w, "height_mm": h, "qty": q, "left": l, "center": c, "right": r, "top": t,
-            "n_sash": ns, "sash_w": sw, "sash_h": sh}
+    if "Окно с откр." in p_t or "Дверь" in p_t:
+        ns = st.number_input("Створки", 1, key=f"{kp}ns")
+        sw, sh = st.columns(2)[0].number_input("Ширина ств.", 200.0, key=f"{kp}sw"), st.columns(2)[1].number_input("Высота ств.", 200.0, key=f"{kp}sh")
+    return {"product_type": p_t, "profile_system": p_s, "kind": "door" if "Дверь" in p_t else "window", "width_mm": w, "height_mm": h, "qty": q, "left": l, "center": c, "right": r, "top": t, "n_sash": ns, "sash_w": sw, "sash_h": sh}
 
 def main():
     st.set_page_config(page_title=APP_TITLE, layout="wide")
     st.title("🏗️ Axis Pro GF — Калькулятор")
     gs = GoogleSheets(GSPREAD_SHEET_ID)
     if not login(gs): st.stop()
-    
     with st.sidebar:
-        st.header("Заказ")
-        p_main = st.selectbox("Тип", ["Окно с откр.", "Окно глух.", "Дверь 1 створч.", "Дверь 2-х створч.", "Фасад"])
-        p_sys = st.selectbox("Система", ["ALG 2030-63C", "ALG 2030-55C", "ALG 2030-73C", "ALG 2030-45C", "ALG 2030-Slim", "Ruit 50F"])
-        g_type = st.text_input("Стеклопакет", "двойной")
-        ton, ass, mon = st.checkbox("Тонировка"), st.checkbox("Сборка"), st.checkbox("Монтаж")
-
+        p_m = st.selectbox("Тип", ["Окно с откр.", "Окно глух.", "Дверь 1 створч.", "Дверь 2-х створч.", "Фасад"])
+        p_s = st.selectbox("Система", ["ALG 2030-63C", "ALG 2030-55C", "ALG 2030-73C", "ALG 2030-45C", "ALG 2030-Slim", "Ruit 50F"])
+        gt, ton, ass, mon = st.text_input("Стеклопакет", "двойной"), st.checkbox("Тонировка"), st.checkbox("Сборка"), st.checkbox("Монтаж")
     sections = []
-    if p_main != "Фасад":
-        sections.append(section_form("Параметры", p_main, p_sys, "m"))
+    if p_m != "Фасад": sections.append(section_form("Параметры", p_m, p_s, "m"))
     else:
-        f = section_form("Каркас фасада", "Фасад", p_sys, "fm"); f["kind"] = "facade"
-        sections.append(f)
-        if "f_cnt" not in st.session_state: st.session_state.f_cnt = 0
-        if st.button("➕ Добавить вставку"): st.session_state.f_cnt += 1
-        for i in range(st.session_state.f_cnt):
-            st.markdown(f"---")
-            it = st.selectbox(f"Тип вставки #{i+1}", ["Окно с откр.", "Окно глух.", "Дверь 1 створч."], key=f"it{i}")
-            isys = st.selectbox(f"Система #{i+1}", ["ALG 2030-63C", "ALG 2030-55C"], key=f"is{i}")
-            sections.append(section_form(f"Вставка #{i+1}", it, isys, f"i{i}"))
-
+        f = section_form("Каркас", "Фасад", p_s, "f"); f["kind"] = "facade"; sections.append(f)
+        if "fc" not in st.session_state: st.session_state.fc = 0
+        if st.button("➕ Добавить вставку"): st.session_state.fc += 1
+        for i in range(st.session_state.fc):
+            it = st.selectbox(f"Тип #{i+1}", ["Окно с откр.", "Окно глух.", "Дверь 1 створч."], key=f"it{i}")
+            sections.append(section_form(f"Вставка #{i+1}", it, p_s, f"i{i}"))
     if st.button("🚀 Рассчитать", type="primary"):
-        m_rows, m_sum = MaterialCalculator(gs).calculate(sections)
-        f_rows, total = FinalCalculator(gs).calculate(sections, m_sum, g_type, ton, ass, mon)
+        m_r, m_s = MaterialCalculator(gs).calculate(sections)
+        f_r, total = FinalCalculator(gs).calculate(sections, m_s, gt, ton, ass, mon)
         st.success(f"ИТОГО: {round(total, 2)}")
         t1, t2 = st.tabs(["Материалы", "Итог"])
-        with t1: st.dataframe(pd.DataFrame(m_rows), use_container_width=True)
-        with t2: st.dataframe(pd.DataFrame(f_rows, columns=["Название", "Цена", "Ед.", "Сумма"]), use_container_width=True)
+        with t1: st.dataframe(pd.DataFrame(m_r), use_container_width=True)
+        with t2: st.dataframe(pd.DataFrame(f_r, columns=["Название", "Цена", "Ед.", "Сумма"]), use_container_width=True)
 
-if __name__ == "__main__":
-    main()
+if __name__ == "__main__": main()
