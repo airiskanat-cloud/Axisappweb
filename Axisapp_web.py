@@ -9,24 +9,21 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-from openpyxl import Workbook
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
-# =========================================================
-# 1. НАСТРОЙКИ И КОНСТАНТЫ
-# =========================================================
+# =========================
+# КОНСТАНТЫ
+# =========================
 GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8"
+SHEET_REF1 = "СПРАВОЧНИК -1"
 SHEET_REF2 = "СПРАВОЧНИК -2"
 SHEET_REF3 = "СПРАВОЧНИК -3"
 SHEET_FORM = "ЗАПРОСЫ"
 SHEET_FINAL = "Итоговый расчет с монтажом"
+SHEET_USERS = "ПОЛЬЗОВАТЕЛИ"
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# =========================================================
-# 2. ПОДКЛЮЧЕНИЕ
-# =========================================================
+# =========================
+# ПОДКЛЮЧЕНИЕ
+# =========================
 def get_client():
     scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_file("/etc/secrets/gcp.json", scopes=scopes)
@@ -40,27 +37,53 @@ def load_db():
         df = pd.DataFrame(sh.worksheet(name).get_all_records())
         df.columns = df.columns.str.strip()
         return df
-    return {"ref2": get_df(SHEET_REF2), "ref3": get_df(SHEET_REF3), "sh": sh}
+    return {
+        "ref1": get_df(SHEET_REF1),
+        "ref2": get_df(SHEET_REF2),
+        "ref3": get_df(SHEET_REF3),
+        "users": get_df(SHEET_USERS),
+        "sh": sh
+    }
 
-# =========================================================
-# 3. ОСНОВНОЕ ПРИЛОЖЕНИЕ
-# =========================================================
+# =========================
+# ОСНОВНОЙ КОД Axis Pro GF
+# =========================
 def main():
     st.set_page_config(page_title="Axis Pro GF", layout="wide")
-    st.title("🏗️ Axis Pro GF | Инженерный комплекс")
-
     db = load_db()
 
-    # --- ФОРМА ЗАПОЛНЕНИЯ (СИНХРОННО С ЗАПРОСОМ) ---
+    if 'auth' not in st.session_state:
+        st.session_state.auth = False
+
+    # --- БЛОК ЛОГИНА (ВОЗВРАЩЕН) ---
+    if not st.session_state.auth:
+        st.title("🏗️ Axis Pro GF | Вход")
+        col_l, col_r = st.columns([1, 1])
+        with col_l:
+            u = st.text_input("Логин")
+            p = st.text_input("Пароль", type="password")
+            if st.button("Войти"):
+                user_check = db['users'][(db['users']['Логин'] == u) & (db['users']['Пароль'].astype(str) == p)]
+                if not user_check.empty:
+                    st.session_state.auth = True
+                    st.session_state.user_role = user_check.iloc[0]['Роль']
+                    st.rerun()
+                else:
+                    st.error("Неверные данные")
+        return
+
+    st.title("🏗️ Axis Pro GF | Расчетный комплекс")
+
+    # --- ФОРМА ЗАПОЛНЕНИЯ (ТВОИ 22 ПОЛЯ) ---
     with st.form("axis_form"):
-        st.subheader("📋 Данные заказа и профиля")
+        st.subheader("1. Заказ и Профиль")
         c1, c2, c3, c4 = st.columns(4)
         order_no = c1.text_input("Номер заказа", "001")
         pos_no = c2.text_input("№ позиции", "1")
         p_type = c3.selectbox("Тип изделия", ["Окно с откр.", "Окно глух.", "Дверь 1 створч.", "Дверь 2-х створч.", "Фасад"])
         p_sys = c4.selectbox("Профильная система", ["ALG 2030-45C", "ALG 2030-63C", "ALG 2030-73C", "Ruit 50F"])
 
-        st.subheader("📐 Геометрия (мм)")
+        st.subheader("2. Геометрия (мм)")
         g1, g2, g3, g4, g5, g6 = st.columns(6)
         W = g1.number_input("Ширина, мм", value=1000)
         H = g2.number_input("Высота, мм", value=1500)
@@ -72,61 +95,63 @@ def main():
         g7, g8, g9, g10 = st.columns(4)
         sW = g7.number_input("Ширина створки, мм", value=0)
         sH = g8.number_input("Высота створки, мм", value=0)
-        qty = g9.number_input("Кол-во шт (Nwin)", value=1)
-        s_count = g10.number_input("Створки (шт)", value=0)
+        qty = g9.number_input("Количество (шт)", value=1)
+        nwin = g10.number_input("Nwin", value=1)
 
-        st.subheader("⚙️ Услуги и Заполнение")
+        st.subheader("3. Заполнение и Услуги")
         u1, u2, u3, u4, u5 = st.columns(5)
-        sp_type = u1.selectbox("Стеклопакет", ["двойной", "тройной", "энергодвойной", "энерготройной", "Одинарный 4мм", "Одинарный 6мм"])
+        sp_type = u1.selectbox("Тип стеклопакета", ["двойной", "тройной", "энергодвойной", "энерготройной", "Одинарный 4мм", "Одинарный 6мм"])
         filling = u2.selectbox("Заполнение", ["Стеклопакет", "Ламбри без термо", "Ламбри с термо"])
         toning = u3.checkbox("Тонировка")
         assembly = u4.checkbox("Сборка", value=True)
-        montage = u5.selectbox("Монтаж", ["Нет", "Монтаж", "Демонтаж/Монтаж", "Сложный монтаж"])
+        montage = u5.selectbox("Тип монтажа", ["Нет", "Монтаж", "Демонтаж/Монтаж", "Сложный монтаж"])
 
-        submit = st.form_submit_button("🚀 РАССЧИТАТЬ")
+        submit = st.form_submit_button("🚀 РАССЧИТАТЬ МАТЕРИАЛЫ И СТОИМОСТЬ")
 
     if submit:
-        # --- ПОДГОТОВКА КОНТЕКСТА ДЛЯ ФОРМУЛ ---
-        # Здесь мы прописываем все варианты имен переменных из Справочника-3
+        # --- ПОДГОТОВКА КОНТЕКСТА ---
         ctx = {
             "W": W, "H": H, "count": qty, "qty": qty,
-            "w_s": sW, "h_s": sH, "w_stvor": sW, "h_stvor": sH,
-            "n_lp": 4, "lock_points": 4, "math": math,
-            "n_m": L if p_type == "Фасад" else 0, # Стойки фасада
-            "n_t": C if p_type == "Фасад" else 0, # Ригели фасада
-            "total_area": (W * H / 1000000) * qty
+            "w_s": sW, "h_s": sH, "n_m": L, "n_t": C,
+            "L": L, "C": C, "R": R, "T": T,
+            "math": math
         }
 
-        # --- РАСЧЕТ МАТЕРИАЛОВ ---
-        ref3 = db['ref3'].copy()
-        ref3['Тип изделия'] = ref3['Тип изделия'].astype(str).str.strip()
-        mats_filtered = ref3[ref3['Тип изделия'] == p_type]
+        # --- РАСЧЕТ МАТЕРИАЛОВ (ПО СПРАВОЧНИКУ-1 И СПРАВОЧНИКУ-3) ---
+        # Мы ищем в Справочнике-1 те строки, которые подходят под тип и систему
+        ref1 = db['ref1'].copy()
+        ref1['Тип изделия'] = ref1['Тип изделия'].astype(str).str.strip()
+        ref1['Система профиля'] = ref1['Система профиля'].astype(str).str.strip()
+        
+        # Фильтр по типу и системе
+        mats_filtered = ref1[(ref1['Тип изделия'] == p_type) & (ref1['Система профиля'] == p_sys)]
         
         spec_res = []
         total_mats_cost = 0
 
         for _, row in mats_filtered.iterrows():
             try:
+                # Используем формулу из колонки Формула_Python
                 formula = str(row['Формула_Python']).replace('=', '').replace('^', '**')
                 res_qty = eval(formula, {"__builtins__": None}, ctx)
+                
                 if res_qty > 0:
-                    # Поиск цены в Справочнике-2
-                    prices = db['ref2'][db['ref2']['Система'].str.strip() == p_sys]
-                    u_price = prices['Цена'].values[0] if not prices.empty else 0
-                    
-                    row_cost = res_qty * u_price
+                    price = float(row.get('цена за ед', 0))
+                    row_cost = res_qty * price
                     total_mats_cost += row_cost
                     spec_res.append({
-                        "Тип": row.get('Тип элемента', 'Профиль'),
-                        "Название": row.get('Комплектующие', 'Профиль'),
+                        "Тип элемента": row.get('Тип элемента', ''),
+                        "Товар": row.get('Товар', ''),
+                        "Артикул": row.get('Артикул', ''),
                         "Расход": round(res_qty, 2),
+                        "Ед": row.get('Ед. фактического расхода', 'м.п.'),
                         "Сумма": round(row_cost, 0)
                     })
-            except: continue
+            except Exception as e:
+                continue
 
-        # --- ЭКОНОМИКА (ПО ТВОЕМУ СПИСКУ) ---
-        area = ctx["total_area"]
-        # Цены из твоего сообщения
+        # --- ЭКОНОМИКА (ПО ЦЕНАМ ИЗ ТВОЕГО СПИСКА) ---
+        area = (W * H / 1000000) * qty
         prices_sp = {"двойной": 9000, "тройной": 14000, "энергодвойной": 12000, "энерготройной": 15000, "Одинарный 4мм": 4000, "Одинарный 6мм": 6000}
         p_sp = prices_sp.get(sp_type, 0) if filling == "Стеклопакет" else (2248 if "без термо" in filling else 4588)
         
@@ -135,47 +160,39 @@ def main():
         p_mon = 10000 if montage == "Монтаж" else 12000 if montage == "Демонтаж/Монтаж" else 15000 if montage == "Сложный монтаж" else 0
         
         # Сетка услуг
-        services = [
-            {"Услуга": "Стеклопакет/Панель", "Итого": p_sp * area},
-            {"Услуга": "Нарезка", "Итого": 4000 * area},
-            {"Услуга": "Тонировка", "Итого": p_ton * area},
-            {"Услуга": "Сборка", "Итого": p_ass * area},
-            {"Услуга": "Монтаж", "Итого": p_mon * area}
+        serv_data = [
+            {"Услуга": "Стеклопакет/Заполнение", "Ед": "м2", "Итого": p_sp * area},
+            {"Услуга": "Нарезка", "Ед": "м2", "Итого": 4000 * area},
+            {"Услуга": "Тонировка", "Ед": "м2", "Итого": p_ton * area},
+            {"Услуга": "Сборка", "Ед": "м2", "Итого": p_ass * area},
+            {"Услуга": "Монтаж", "Ед": "м2", "Итого": p_mon * area}
         ]
-        total_serv = sum(s['Итого'] for s in services)
+        total_serv = sum(s['Итого'] for s in serv_data)
         
-        # ИТОГИ
         base_sum = total_mats_cost + total_serv
         margin = base_sum * 0.65
         final_total = base_sum + margin
 
-        # --- ВЫВОД ---
-        st.header("📊 Итоги расчета Axis Pro GF")
-        c_res1, c_res2 = st.columns(2)
+        # --- ВЫВОД РЕЗУЛЬТАТОВ ---
+        st.header("📊 Результаты расчета")
         
-        with c_res1:
-            st.subheader("Смета услуг")
-            st.table(pd.DataFrame(services))
-        
-        with c_res2:
-            st.subheader("Финансовый результат")
-            st.metric("Общая площадь", f"{area:.3f} м2")
-            st.metric("Себестоимость материалов", f"{total_mats_cost:,.0f} ₸")
-            st.write(f"**Обеспечение (65%):** {margin:,.0f} ₸")
-            st.title(f"ИТОГО: {final_total:,.0f} ₸")
+        r1, r2, r3 = st.columns(3)
+        r1.metric("Площадь", f"{area:.3f} м2")
+        r2.metric("Мат. себестоимость", f"{total_mats_cost:,.0f} ₸")
+        r3.metric("ИТОГО К ОПЛАТЕ", f"{final_total:,.0f} ₸")
 
-        with st.expander("🔍 Детальный расход материалов"):
+        st.subheader("📋 Детальная смета услуг")
+        st.table(pd.DataFrame(serv_data))
+
+        with st.expander("🔍 Посмотреть расход материалов (из Справочника-1)"):
             if spec_res:
                 st.dataframe(pd.DataFrame(spec_res), use_container_width=True)
             else:
-                st.warning("Материалы не найдены. Проверьте 'Тип изделия' в Справочнике-3.")
+                st.warning("Материалы не найдены. Проверьте Тип изделия и Систему профиля в Справочнике-1.")
 
-        # ЗАПИСЬ В ИСТОРИЮ (ЗАПРОСЫ)
+        # ЗАПИСЬ В ЗАПРОСЫ
         try:
-            db['sh'].worksheet(SHEET_FORM).append_row([
-                order_no, pos_no, p_type, p_sys, W, H, qty, datetime.now().strftime("%d.%m.%Y %H:%M")
-            ])
-            st.toast("Запрос сохранен в историю")
+            db['sh'].worksheet(SHEET_FORM).append_row([order_no, pos_no, p_type, p_sys, W, H, qty, datetime.now().strftime("%d.%m.%Y")])
         except: pass
 
 if __name__ == "__main__":
