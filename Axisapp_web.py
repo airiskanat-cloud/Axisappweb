@@ -138,7 +138,7 @@ def safe_eval(formula: str, context: dict) -> float:
 class GoogleSheets:
 
     @st.cache_resource
-    def auth(self):
+    def auth(_self): # <--- Исправлено: добавлено подчеркивание для предотвращения UnhashableParamError
         key_b64 = st.secrets.get("GCP_SA_KEYFILE_JSON_BASE64") or \
                   st.secrets.get("GCP_SA_KEYFILE_JSON")
 
@@ -167,8 +167,8 @@ class GoogleSheets:
         return self.cache[name]
 
     @st.cache_data(ttl=1800)
-    def read(self, sheet_name):
-        ws = self.ws(sheet_name)
+    def read(_self, sheet_name): # <--- Также добавлено подчеркивание для согласованности
+        ws = _self.ws(sheet_name)
         rows = ws.get_all_records()
         return rows
 
@@ -184,19 +184,20 @@ def login(gs: GoogleSheets):
         return True
 
     st.sidebar.title("🔐 Вход")
-    login = st.sidebar.text_input("Логин")
+    login_val = st.sidebar.text_input("Логин")
     pwd = st.sidebar.text_input("Пароль", type="password")
 
     if st.sidebar.button("Войти"):
         users = gs.read(SHEET_USERS)
         for u in users:
-            if normalize_key(get_field(u, "логин")) == normalize_key(login):
+            if normalize_key(get_field(u, "логин")) == normalize_key(login_val):
                 if str(get_field(u, "пароль")) == pwd:
-                    st.session_state["user"] = login
+                    st.session_state["user"] = login_val
                     st.rerun()
         st.sidebar.error("Неверный логин или пароль")
 
     return False
+
 # =========================================
 # DATA MODEL: SECTION / FACADE
 # =========================================
@@ -204,7 +205,6 @@ def login(gs: GoogleSheets):
 def build_geom_context(section: dict):
     """
     Универсальный геометрический контекст
-    Работает для окна / двери / фасада / панели
     """
 
     width = safe_float(section.get("width_mm", 0))
@@ -279,9 +279,6 @@ class MaterialCalculator:
         self.gs = gs
 
     def calculate(self, sections: list):
-        """
-        sections: list of section dicts
-        """
         ref1 = self.gs.read(SHEET_REF1)
         results = []
         total_sum = 0.0
@@ -299,11 +296,8 @@ class MaterialCalculator:
             qty_total = 0.0
 
             for s in sections:
-                # фильтр по типу изделия
                 if row_type and row_type != s["product_type"]:
                     continue
-
-                # фильтр по системе профиля
                 if row_profile and row_profile != s["profile_system"]:
                     continue
 
@@ -339,6 +333,7 @@ class MaterialCalculator:
             })
 
         return results, total_sum
+
 # =========================================
 # FINAL CALCULATOR (СПРАВОЧНИК-2)
 # =========================================
@@ -349,7 +344,6 @@ class FinalCalculator:
         self.gs = gs
         self.ref2 = self.gs.read(SHEET_REF2)
 
-    # ---------- Поиск цены по ключевым словам ----------
     def _find_price(self, keywords: list, default=0.0):
         for row in self.ref2:
             for k, v in row.items():
@@ -361,12 +355,11 @@ class FinalCalculator:
         return default
 
     def price_glass(self, glass_type: str):
-        glass_type = normalize_key(glass_type)
+        glass_type_norm = normalize_key(glass_type)
         for row in self.ref2:
             for k, v in row.items():
                 if "тип стеклопак" in normalize_key(k):
-                    if normalize_key(v) == glass_type:
-                        # ищем стоимость в той же строке
+                    if normalize_key(v) == glass_type_norm:
                         for kk, vv in row.items():
                             if "стоимость" in normalize_key(kk):
                                 return safe_float(vv)
@@ -381,16 +374,7 @@ class FinalCalculator:
     def price_toning(self):
         return self._find_price(["тониров", "м"], 0.0)
 
-    # ---------- Итоговый расчет ----------
-    def calculate(
-        self,
-        sections: list,
-        material_sum: float,
-        glass_type: str,
-        toning: bool,
-        assembly: bool,
-        montage: bool,
-    ):
+    def calculate(self, sections: list, material_sum: float, glass_type: str, toning: bool, assembly: bool, montage: bool):
         total_area = sum(
             (safe_float(s["width_mm"]) * safe_float(s["height_mm"]) / 1_000_000)
             * int(s.get("qty", 1))
@@ -399,38 +383,38 @@ class FinalCalculator:
 
         rows = []
 
-        # --- Стеклопакет ---
+        # Стеклопакет
         glass_price = self.price_glass(glass_type)
         glass_sum = total_area * glass_price
         rows.append(("Стеклопакет", glass_price, "м²", glass_sum))
 
-        # --- Тонировка ---
+        # Тонировка
         ton_sum = 0.0
         if toning:
             ton_price = self.price_toning()
             ton_sum = total_area * ton_price
             rows.append(("Тонировка", ton_price, "м²", ton_sum))
 
-        # --- Сборка ---
+        # Сборка
         ass_sum = 0.0
         if assembly:
             ass_price = self.price_assembly()
             ass_sum = total_area * ass_price
             rows.append(("Сборка", ass_price, "м²", ass_sum))
 
-        # --- Монтаж ---
+        # Монтаж
         mon_sum = 0.0
         if montage:
             mon_price = self.price_montage()
             mon_sum = total_area * mon_price
             rows.append(("Монтаж", mon_price, "м²", mon_sum))
 
-        # --- Материалы ---
+        # Материалы
         rows.append(("Материалы", "-", "-", material_sum))
 
         base_sum = material_sum + glass_sum + ton_sum + ass_sum + mon_sum
 
-        # --- Обеспечение 65% ---
+        # Обеспечение 65%
         ensure = base_sum * 0.65
         rows.append(("Обеспечение 65%", "", "", ensure))
 
@@ -438,34 +422,35 @@ class FinalCalculator:
         rows.append(("ИТОГО", "", "", total))
 
         return rows, total
+
 # =========================================
 # STREAMLIT UI
 # =========================================
 
-def section_form(title, product_type, profile_system):
+def section_form(title, product_type, profile_system, key_prefix=""):
     st.subheader(title)
 
     c1, c2, c3 = st.columns(3)
-    width = c1.number_input("Ширина, мм", min_value=100.0, step=10.0)
-    height = c2.number_input("Высота, мм", min_value=100.0, step=10.0)
-    qty = c3.number_input("Кол-во (N)", min_value=1, step=1, value=1)
+    width = c1.number_input("Ширина, мм", min_value=100.0, step=10.0, key=f"{key_prefix}_w")
+    height = c2.number_input("Высота, мм", min_value=100.0, step=10.0, key=f"{key_prefix}_h")
+    qty = c3.number_input("Кол-во (N)", min_value=1, step=1, value=1, key=f"{key_prefix}_q")
 
     st.markdown("**Импосты (если есть)**")
     i1, i2, i3, i4 = st.columns(4)
-    left = i1.number_input("LEFT", min_value=0.0, step=10.0)
-    center = i2.number_input("CENTER", min_value=0.0, step=10.0)
-    right = i3.number_input("RIGHT", min_value=0.0, step=10.0)
-    top = i4.number_input("TOP", min_value=0.0, step=10.0)
+    left = i1.number_input("LEFT", min_value=0.0, step=10.0, key=f"{key_prefix}_l")
+    center = i2.number_input("CENTER", min_value=0.0, step=10.0, key=f"{key_prefix}_c")
+    right = i3.number_input("RIGHT", min_value=0.0, step=10.0, key=f"{key_prefix}_r")
+    top = i4.number_input("TOP", min_value=0.0, step=10.0, key=f"{key_prefix}_t")
 
     n_sash = 0
     sash_w = 0.0
     sash_h = 0.0
 
     if "Окно с откр." in product_type or "Дверь" in product_type:
-        n_sash = st.number_input("Кол-во створок", min_value=1, step=1, value=1)
+        n_sash = st.number_input("Кол-во створок", min_value=1, step=1, value=1, key=f"{key_prefix}_ns")
         s1, s2 = st.columns(2)
-        sash_w = s1.number_input("Ширина створки, мм", min_value=200.0, step=10.0)
-        sash_h = s2.number_input("Высота створки, мм", min_value=200.0, step=10.0)
+        sash_w = s1.number_input("Ширина створки, мм", min_value=200.0, step=10.0, key=f"{key_prefix}_sw")
+        sash_h = s2.number_input("Высота створки, мм", min_value=200.0, step=10.0, key=f"{key_prefix}_sh")
 
     kind = "window"
     if "Дверь" in product_type:
@@ -486,7 +471,6 @@ def section_form(title, product_type, profile_system):
         "sash_w": sash_w,
         "sash_h": sash_h,
     }
-
 
 # =========================================
 # MAIN
@@ -509,29 +493,15 @@ def main():
 
         product_main = st.selectbox(
             "Тип изделия",
-            [
-                "Окно с откр.",
-                "Окно глух.",
-                "Дверь 1 створч.",
-                "Дверь 2-х створч.",
-                "Фасад",
-            ],
+            ["Окно с откр.", "Окно глух.", "Дверь 1 створч.", "Дверь 2-х створч.", "Фасад"],
         )
 
         profile_system = st.selectbox(
             "Система профиля",
-            [
-                "ALG 2030-63C",
-                "ALG 2030-55C",
-                "ALG 2030-73C",
-                "ALG 2030-45C",
-                "ALG 2030-Slim",
-                "Ruit 50F",
-            ],
+            ["ALG 2030-63C", "ALG 2030-55C", "ALG 2030-73C", "ALG 2030-45C", "ALG 2030-Slim", "Ruit 50F"],
         )
 
         glass_type = st.text_input("Тип стеклопакета", value="двойной")
-
         toning = st.checkbox("Тонировка")
         assembly = st.checkbox("Сборка")
         montage = st.checkbox("Монтаж")
@@ -540,55 +510,36 @@ def main():
 
     # ---------- Main area ----------
     if product_main != "Фасад":
-        section = section_form("Параметры изделия", product_main, profile_system)
+        section = section_form("Параметры изделия", product_main, profile_system, key_prefix="main")
         sections.append(section)
-
     else:
         st.header("Фасад — каркас")
-
-        facade = section_form("Каркас фасада", "Фасад", profile_system)
+        facade = section_form("Каркас фасада", "Фасад", profile_system, key_prefix="facade_main")
         facade["kind"] = "facade"
         sections.append(facade)
 
         st.markdown("---")
         st.header("Вставки в фасад")
 
-        if "facade_sections" not in st.session_state:
-            st.session_state["facade_sections"] = []
+        if "facade_sections_count" not in st.session_state:
+            st.session_state["facade_sections_count"] = 0
 
         if st.button("➕ Добавить вставку"):
-            st.session_state["facade_sections"].append({})
+            st.session_state["facade_sections_count"] += 1
 
-        for idx in range(len(st.session_state["facade_sections"])):
+        for idx in range(st.session_state["facade_sections_count"]):
             st.markdown(f"### Вставка {idx + 1}")
             ptype = st.selectbox(
                 f"Тип вставки #{idx+1}",
-                [
-                    "Окно с откр.",
-                    "Окно глух.",
-                    "Дверь 1 створч.",
-                    "Дверь 2-х створч.",
-                ],
+                ["Окно с откр.", "Окно глух.", "Дверь 1 створч.", "Дверь 2-х створч."],
                 key=f"ptype_{idx}",
             )
             psys = st.selectbox(
                 f"Система профиля #{idx+1}",
-                [
-                    "ALG 2030-63C",
-                    "ALG 2030-55C",
-                    "ALG 2030-73C",
-                    "ALG 2030-45C",
-                    "ALG 2030-Slim",
-                    "Ruit 50F",
-                ],
+                ["ALG 2030-63C", "ALG 2030-55C", "ALG 2030-73C", "ALG 2030-45C", "ALG 2030-Slim", "Ruit 50F"],
                 key=f"psys_{idx}",
             )
-
-            sec = section_form(
-                f"Параметры вставки #{idx+1}",
-                ptype,
-                psys,
-            )
+            sec = section_form(f"Параметры вставки #{idx+1}", ptype, psys, key_prefix=f"ins_{idx}")
             sections.append(sec)
 
     st.markdown("---")
@@ -622,11 +573,6 @@ def main():
                 pd.DataFrame(fin_rows, columns=["Наименование", "Цена", "Ед.", "Сумма"]),
                 use_container_width=True,
             )
-
-
-# =========================================
-# RUN
-# =========================================
 
 if __name__ == "__main__":
     main()
