@@ -3,302 +3,224 @@ import os
 import sys
 import shutil
 from io import BytesIO
-import zipfile
 import logging
-import json
-import ast
-import operator as op
+from datetime import datetime
 
 import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-
 from openpyxl import Workbook
-from openpyxl.drawing.image import Image as XLImage
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 
-# =========================
-# КОНСТАНТЫ / НАСТРОЙКИ
-# =========================
-
-DEBUG = False
+# =========================================================
+# 1. СИСТЕМНЫЕ НАСТРОЙКИ
+# =========================================================
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-if not logger.handlers:
-    handler = logging.StreamHandler(sys.stdout)
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8"
 
-# Листы
+# Листы Google Таблиц
 SHEET_REF1 = "СПРАВОЧНИК -1"
 SHEET_REF2 = "СПРАВОЧНИК -2"
 SHEET_REF3 = "СПРАВОЧНИК -3"
 SHEET_FORM = "ЗАПРОСЫ"
-SHEET_GABARITS = "Расчет по габаритам"
-SHEET_MATERIAL = "Расчетом расходов материалов"
 SHEET_FINAL = "Итоговый расчет с монтажом"
 SHEET_USERS = "ПОЛЬЗОВАТЕЛИ"
 
-# Списки для интерфейса (согласно запросу)
-PRODUCT_TYPES = ["Окно с откр.", "Окно глух.", "Дверь 1 створч.", "Дверь 2-х створч.", "Фасад"]
-PROFILE_SYSTEMS = [
-    "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-73C", 
-    "ALG 2030-45C", "ALG 2030-Slim", "Ruit 50F"
-]
-
-# Заголовки
-FORM_HEADER = [
-    "Номер заказа", "№ позиции",
-    "Тип изделия", "Вид изделия", "Створки",
-    "Профильная система",
-    "Тип стеклопакета",
-    "Режим заполнения",
-    "Ширина, мм", "Высота, мм",
-    "LEFT, мм", "CENTER, мм", "RIGHT, мм", "TOP, мм",
-    "Ширина створки, мм", "Высота створки, мм",
-    "Кол-во Nwin",
-    "Тонировка", "Сборка", "Монтаж",
-    "Тип ручек", "Доводчик"
-]
-
-# Брендинг КП
-COMPANY_NAME = "ООО «AXIS»"
-COMPANY_CITY = "Город Астана"
-COMPANY_PHONE = "+7 707 504 4040"
-COMPANY_EMAIL = "Axisokna.kz@mail.ru"
-COMPANY_SITE = "www.axis.kz"
-
-# =========================
-# УТИЛИТЫ
-# =========================
-
-def normalize_key(k):
-    if k is None: return None
-    s = str(k).replace("\xa0", " ")
-    s = " ".join(s.split())
-    return s.strip().lower()
-
-def _clean_cell_val(v):
-    if v is None: return ""
-    return str(v).replace("\xa0", " ").strip()
-
-def safe_float(value, default=0.0):
+# =========================================================
+# 2. ПОДКЛЮЧЕНИЕ К ДАННЫМ
+# =========================================================
+def get_gspread_client():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     try:
-        if value is None: return default
-        s = str(value).replace("\xa0", "").replace(" ", "").replace(",", ".")
-        return float(s) if s else default
-    except: return default
-
-def get_field(row: dict, needle: str, default=None):
-    if not isinstance(row, dict): return default
-    needle = (needle or "").lower().strip()
-    for k, v in row.items():
-        if k and needle in str(k).lower(): return v
-    return default
-
-# =========================
-# БЕЗОПАСНЫЙ EVAL
-# =========================
-
-_allowed_ops = {
-    ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv,
-    ast.Pow: op.pow, ast.USub: op.neg, ast.UAdd: op.pos, ast.Mod: op.mod,
-    ast.FloorDiv: op.floordiv, ast.Lt: op.lt, ast.Gt: op.gt, ast.LtE: op.le,
-    ast.GtE: op.ge, ast.Eq: op.eq, ast.NotEq: op.ne,
-    ast.And: lambda a,b: a and b, ast.Or: lambda a,b: a or b,
-}
-
-def _eval_ast(node, names):
-    if isinstance(node, ast.Expression): return _eval_ast(node.body, names)
-    if isinstance(node, (ast.Constant, ast.Num)): return node.value if isinstance(node, ast.Constant) else node.n
-    if isinstance(node, ast.UnaryOp):
-        val = _eval_ast(node.operand, names)
-        fn = _allowed_ops.get(type(node.op))
-        if fn: return fn(val)
-    if isinstance(node, ast.BinOp):
-        left = _eval_ast(node.left, names)
-        right = _eval_ast(node.right, names)
-        fn = _allowed_ops.get(type(node.op))
-        if fn: return fn(left, right)
-    if isinstance(node, ast.Name):
-        if node.id in names: return names[node.id]
-        raise ValueError(f"Недопустимое имя '{node.id}'")
-    if isinstance(node, ast.Call):
-        func = node.func
-        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == "math":
-            fname = func.attr
-            if hasattr(math, fname):
-                args = [_eval_ast(a, names) for a in node.args]
-                return getattr(math, fname)(*args)
-        if isinstance(func, ast.Name) and func.id in ("min", "max"):
-            args = [_eval_ast(a, names) for a in node.args]
-            return globals()[func.id](*args)
-    raise ValueError(f"Недопустимый элемент формулы")
-
-def safe_eval_formula(formula: str, context: dict) -> float:
-    formula = (formula or "").strip()
-    if not formula: return 0.0
-    try:
-        names = {**context, "math": math, "min": min, "max": max}
-        node = ast.parse(formula, mode="eval")
-        return float(_eval_ast(node, names))
-    except: return 0.0
-
-# =========================
-# GOOGLE SHEETS CLIENT
-# =========================
-
-class GoogleSheetsClient:
-    def __init__(self, sheet_id: str):
-        self.sheet_id = sheet_id
-        self._worksheets_cache = {}
-        self.load()
-
-    @st.cache_resource
-    def _auth_v3(_self):
-        import base64
-        key_b64 = os.environ.get("GCP_SA_KEYFILE_JSON_BASE64")
-        if not key_b64:
-            st.error("❌ Ключ GCP_SA_KEYFILE_JSON_BASE64 не найден.")
-            st.stop()
-        info = json.loads(base64.b64decode(key_b64).decode("utf-8"))
-        creds = Credentials.from_service_account_info(info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
+        # Прямое использование ключа на Render (файл gcp.json)
+        creds = Credentials.from_service_account_file("/etc/secrets/gcp.json", scopes=scopes)
         return gspread.authorize(creds)
+    except Exception as e:
+        st.error(f"❌ Ошибка авторизации: {e}")
+        st.stop()
 
-    def load(self):
-        try:
-            client = self._auth_v3()
-            self.wb = client.open_by_key(self.sheet_id)
-        except Exception as e:
-            st.error(f"Ошибка подключения: {e}")
-            st.stop()
+@st.cache_data(ttl=600)
+def load_all_data():
+    client = get_gspread_client()
+    sh = client.open_by_key(GSPREAD_SHEET_ID)
+    return {
+        "ref1": pd.DataFrame(sh.worksheet(SHEET_REF1).get_all_records()),
+        "ref2": pd.DataFrame(sh.worksheet(SHEET_REF2).get_all_records()),
+        "ref3": pd.DataFrame(sh.worksheet(SHEET_REF3).get_all_records()),
+        "users": pd.DataFrame(sh.worksheet(SHEET_USERS).get_all_records()),
+        "sh": sh
+    }
 
-    def ws(self, name: str):
-        if name in self._worksheets_cache: return self._worksheets_cache[name]
+# =========================================================
+# 3. МАТЕМАТИЧЕСКАЯ ЛОГИКА
+# =========================================================
+def calculate_materials(pos, ref3, ref2):
+    """Расчет материалов на основе формул из Справочника-3"""
+    spec = []
+    cost = 0
+    mats_ref = ref3[ref3['Тип изделия'] == pos['type']]
+    
+    context = {
+        "W": pos['W'], "H": pos['H'], "qty": pos['qty'],
+        "n_m": pos.get('n_m', 0), "n_t": pos.get('n_t', 0),
+        "hinges": pos.get('hinges', 2), "is_insert": int(pos.get('is_insert', False)),
+        "math": math
+    }
+
+    for _, row in mats_ref.iterrows():
         try:
-            ws = self.wb.worksheet(name)
-            self._worksheets_cache[name] = ws
-            return ws
+            formula = str(row['Формула_Python']).replace('=', '').replace('^', '**')
+            qty_mat = eval(formula, {"__builtins__": None}, context)
+            if qty_mat > 0:
+                price_row = ref2[ref2['Система'] == pos['sys']]
+                price = price_row['Цена'].values[0] if not price_row.empty else 0
+                sum_mat = qty_mat * price
+                cost += sum_mat
+                spec.append({
+                    "Наименование": row['Наименование'],
+                    "Количество": round(qty_mat, 2),
+                    "Ед": row['Ед'],
+                    "Сумма": round(sum_mat, 0)
+                })
         except:
-            if name == SHEET_FORM:
-                ws = self.wb.add_worksheet(name, rows="100", cols="30")
-                ws.append_row(FORM_HEADER)
-                return ws
-            st.error(f"Лист {name} не найден.")
-            st.stop()
+            continue
+    return spec, cost
 
-    @st.cache_data(ttl=600)
-    def read_records(_self, sheet_name: str):
-        rows = _self.ws(sheet_name).get_all_values()
-        if not rows: return []
-        header = [normalize_key(h) for h in rows[0]]
-        records = []
-        for r in rows[1:]:
-            if any(r): records.append({header[i]: r[i] for i in range(len(header)) if i < len(r)})
-        return records
+# =========================================================
+# 4. ГЕНЕРАЦИЯ КП (EXCEL)
+# =========================================================
+def build_excel(order_meta, items, grand_total, total_area):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "КП Axisapp"
+    
+    # Стили
+    bold = Font(bold=True)
+    ws['C1'] = "ООО «AXIS»"
+    ws['C1'].font = Font(bold=True, size=14)
+    ws.append(["Заказ №", order_meta['no']])
+    ws.append(["Цвет RAL", order_meta['ral']])
+    ws.append([])
+    
+    headers = ["№", "Тип", "Габариты", "Система", "Кол-во", "Площадь"]
+    ws.append(headers)
+    for i, p in enumerate(items, 1):
+        ws.append([i, p['type'], f"{p['W']}x{p['H']}", p['sys'], p['qty'], round(p['area'], 3)])
+    
+    ws.append([])
+    ws.append(["ИТОГО ПЛОЩАДЬ:", f"{total_area:.3f} м2"])
+    ws.append(["ИТОГО К ОПЛАТЕ:", f"{grand_total:,.0f} тенге"])
+    
+    output = BytesIO()
+    wb.save(output)
+    return output.getvalue()
 
-    def append_form_row(self, row: list):
-        try: self.ws(SHEET_FORM).append_row(row, value_input_option='USER_ENTERED')
-        except Exception as e: st.error(f"Ошибка записи: {e}")
-
-# =========================
-# КАЛЬКУЛЯТОРЫ
-# =========================
-
-class GabaritCalculator:
-    def __init__(self, excel_client: GoogleSheetsClient):
-        self.excel = excel_client
-
-    def calculate(self, order: dict, sections: list):
-        ref_rows = self.excel.read_records(SHEET_REF3)
-        total_area = sum(s.get("area_m2", 0.0) * s.get("Nwin", 1) for s in sections)
-        total_perimeter = sum(s.get("perimeter_m", 0.0) * s.get("Nwin", 1) for s in sections)
-        
-        g_vals = []
-        for row in ref_rows:
-            type_elem = get_field(row, "тип элемент", "")
-            formula = get_field(row, "формула_python", "")
-            if not type_elem or not formula: continue
-            
-            val_sum = 0.0
-            for s in sections:
-                ctx = {
-                    "width": s.get("width_mm", 0.0), "height": s.get("height_mm", 0.0),
-                    "area": s.get("area_m2", 0.0), "qty": s.get("Nwin", 1),
-                    "is_facade": 1 if order.get("product_type") == "Фасад" else 0
-                }
-                val_sum += safe_eval_formula(formula, ctx) * ctx["qty"]
-            g_vals.append([type_elem, val_sum])
-        return g_vals, total_area, total_perimeter
-
-# =========================
-# ОСНОВНОЕ ПРИЛОЖЕНИЕ
-# =========================
-
+# =========================================================
+# 5. ИНТЕРФЕЙС STREAMLIT
+# =========================================================
 def main():
-    st.set_page_config(page_title="AXIS Калькулятор 15.1", layout="wide")
-    client = GoogleSheetsClient(GSPREAD_SHEET_ID)
+    st.set_page_config(page_title="Axisapp Pro v16", layout="wide")
+    db = load_all_data()
 
-    st.title("🧮 AXIS: Расчет конструкций (Фасады и Окна)")
+    if 'auth' not in st.session_state: st.session_state.auth = False
+    if 'items' not in st.session_state: st.session_state.items = []
 
-    with st.expander("📝 Основные параметры заказа", expanded=True):
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            order_num = st.text_input("Номер заказа", "001")
-            product_type = st.selectbox("Тип изделия", PRODUCT_TYPES)
-        with col2:
-            profile_sys = st.selectbox("Серия профиля", PROFILE_SYSTEMS)
-            glass_type = st.selectbox("Тип заполнения", ["4мм", "6мм", "Стеклопакет 24мм", "Стеклопакет 32мм"])
-        with col3:
-            montage = st.radio("Монтаж", ["Да", "Нет"], horizontal=True)
-            assembly = st.radio("Сборка", ["Да", "Нет"], horizontal=True)
+    # --- ЛОГИН ---
+    if not st.session_state.auth:
+        st.title("🧱 Вход в систему AXIS")
+        u = st.text_input("Логин")
+        p = st.text_input("Пароль", type="password")
+        if st.button("Войти"):
+            user = db['users'][(db['users']['Логин'] == u) & (db['users']['Пароль'].astype(str) == p)]
+            if not user.empty:
+                st.session_state.auth = True
+                st.session_state.role = user.iloc[0]['Роль']
+                st.rerun()
+        return
 
-    # Логика для Фасада (Каркас + Заполнение)
-    sections = []
-    if product_type == "Фасад":
-        st.subheader("🏗️ Параметры Фасада")
-        f_col1, f_col2 = st.columns(2)
-        with f_col1:
-            f_width = st.number_input("Общая ширина фасада (мм)", 0)
-            f_height = st.number_input("Общая высота фасада (мм)", 0)
-        with f_col2:
-            st.info("Добавьте окна и двери, которые встроены в фасад")
+    # --- ГЛАВНЫЙ ЭКРАН ---
+    st.sidebar.title(f"👤 {st.session_state.role}")
+    order_no = st.sidebar.text_input("Номер заказа", "2025-001")
+    ral = st.sidebar.text_input("RAL", "7024")
+
+    tab1, tab2, tab3 = st.tabs(["📐 Конструктор", "📋 Список позиций", "💰 Расчет"])
+
+    with tab1:
+        st.subheader("Добавление изделия")
+        col1, col2, col3 = st.columns([2, 2, 1])
+        
+        # 1) Обновленные типы
+        p_type = col1.selectbox("Тип изделия", ["Окно с откр.", "Окно глух.", "Дверь 2-х створч.", "Дверь 1 створч.", "Фасад"])
+        # 2) Обновленные серии
+        p_sys = col2.selectbox("Серия профиля", ["ALG 2030-63C", "ALG 2030-55C", "ALG 2030-73C", "ALG 2030-45C", "ALG 2030-Slim", "Ruit 50F"])
+        p_qty = col3.number_input("Кол-во", min_value=1, value=1)
+
+        cW, cH = st.columns(2)
+        W = cW.number_input("Ширина (мм)", value=1000)
+        H = cH.number_input("Высота (мм)", value=1500)
+
+        # 4) Логика Фасада и каркаса
+        n_m, n_t, is_ins = 0, 0, False
+        if p_type == "Фасад":
+            st.info("📏 Введите габариты каркаса")
+            f1, f2 = st.columns(2)
+            n_m = f1.number_input("Кол-во стоек", value=2)
+            n_t = f2.number_input("Кол-во ригелей", value=1)
+        else:
+            is_ins = st.checkbox("Вставка в фасад (каркас)", help="Добавляет адаптер 5081")
+
+        if st.button("Добавить в расчет"):
+            # Автоматика фурнитуры (3 петли если H > 2100)
+            h_count = 3 if H > 2100 and "Дверь" in p_type else 2
             
-        # Пример добавления секции
-        sections.append({
-            "kind": "facade_frame", "width_mm": f_width, "height_mm": f_height, 
-            "area_m2": (f_width * f_height) / 1_000_000, "Nwin": 1
-        })
+            st.session_state.items.append({
+                "type": p_type, "sys": p_sys, "W": W, "H": H, "qty": p_qty,
+                "area": (W * H / 1000000) * p_qty,
+                "n_m": n_m, "n_t": n_t, "is_insert": is_ins, "hinges": h_count
+            })
+            st.success("Позиция добавлена!")
 
-    else:
-        # Обычный ввод для окон/дверей
-        st.subheader("🖼️ Параметры конструкции")
-        w = st.number_input("Ширина (мм)", 0)
-        h = st.number_input("Высота (мм)", 0)
-        qty = st.number_input("Кол-во (шт)", 1)
-        sections.append({
-            "kind": "standard", "width_mm": w, "height_mm": h, 
-            "area_m2": (w * h) / 1_000_000, "Nwin": qty
-        })
+    with tab2:
+        if st.session_state.items:
+            st.table(pd.DataFrame(st.session_state.items)[['type', 'sys', 'W', 'H', 'qty', 'area']])
+            if st.button("Очистить проект"):
+                st.session_state.items = []
+                st.rerun()
 
-    if st.button("🚀 Рассчитать и Сохранить"):
-        calc = GabaritCalculator(client)
-        results, t_area, t_perim = calc.calculate({"product_type": product_type}, sections)
-        
-        st.success(f"Расчет завершен! Общая площадь: {t_area:.2f} м²")
-        st.table(pd.DataFrame(results, columns=["Элемент", "Значение"]))
-        
-        # Сохранение в Google Sheets
-        for s in sections:
-            client.append_form_row([
-                order_num, "1", product_type, "", "", profile_sys, 
-                glass_type, "", s["width_mm"], s["height_mm"], 
-                0, 0, 0, 0, 0, 0, s["Nwin"], "Нет", assembly, montage, "", ""
-            ])
-        st.info("Данные успешно отправлены в таблицу.")
+    with tab3:
+        if st.session_state.items:
+            toning = st.sidebar.checkbox("Тонировка")
+            assembly = st.sidebar.checkbox("Сборка", value=True)
+            montage = st.sidebar.checkbox("Монтаж")
+
+            total_mats_cost = 0
+            full_spec = []
+
+            for item in st.session_state.items:
+                spec, cost = calculate_materials(item, db['ref3'], db['ref2'])
+                full_spec.extend(spec)
+                total_mats_cost += cost
+
+            total_area = sum(i['area'] for i in st.session_state.items)
+            glass_cost = total_area * 18000
+            if toning: glass_cost += (total_area * 5000)
+            
+            labor = (total_area * 5000 if assembly else 0) + (total_area * 8000 if montage else 0)
+            
+            # Коэффициент обеспечения 1.65
+            final_sum = (total_mats_cost + glass_cost + labor) * 1.65
+
+            st.metric("ИТОГО К ОПЛАТЕ", f"{final_sum:,.0f} ₸")
+            st.write(f"Общая площадь: {total_area:.3f} м2")
+
+            with st.expander("Детальные материалы"):
+                st.table(pd.DataFrame(full_spec).groupby("Наименование").sum())
+
+            excel_data = build_excel({"no": order_no, "ral": ral}, st.session_state.items, final_sum, total_area)
+            st.download_button("💾 Скачать КП в Excel", data=excel_data, file_name=f"Axis_Offer_{order_no}.xlsx")
 
 if __name__ == "__main__":
     main()
