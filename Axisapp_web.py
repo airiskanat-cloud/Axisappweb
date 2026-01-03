@@ -140,36 +140,24 @@ class GoogleSheets:
 
     @st.cache_resource
     def auth(_self):
-        # Приоритет: os.environ (Render), затем st.secrets (Local/Streamlit Cloud)
-        key_source = os.environ.get("gcp_service_account") or \
-                     os.environ.get("GCP_SA_KEYFILE_JSON") or \
-                     st.secrets.get("gcp_service_account")
+        secret_path = "/etc/secrets/gcp_service_account.json"
 
-        if not key_source:
-            st.error("❌ Ключ авторизации не найден в переменных окружения.")
+        if not os.path.exists(secret_path):
+            st.error("❌ Secret file gcp_service_account.json не найден")
             st.stop()
 
-        # Если ключ пришел как объект из secrets, превращаем его в строку для обработки
-        if not isinstance(key_source, str):
-            try:
-                info = dict(key_source)
-            except:
-                st.error("❌ Формат ключа в st.secrets некорректен.")
-                st.stop()
-        else:
-            # Если это строка, пробуем Base64 или прямой JSON
-            key_source = key_source.strip()
-            try:
-                # 1. Пробуем Base64 (самый надежный способ для Render)
-                info = json.loads(base64.b64decode(key_source).decode("utf-8"))
-            except Exception:
-                try:
-                    # 2. Пробуем прямой JSON
-                    info = json.loads(key_source)
-                except Exception as e:
-                    st.error(f"❌ Ошибка в формате JSON ключа: {e}")
-                    st.info("Убедитесь, что в Render переменная окружения содержит валидный JSON с двойными кавычками.")
-                    st.stop()
+        try:
+            creds = Credentials.from_service_account_file(
+                secret_path,
+                scopes=[
+                    "https://www.googleapis.com/auth/spreadsheets",
+                    "https://www.googleapis.com/auth/drive",
+                ],
+            )
+            return gspread.authorize(creds)
+        except Exception as e:
+            st.error(f"❌ Ошибка Google Auth: {e}")
+            st.stop()
 
         try:
             creds = Credentials.from_service_account_info(
