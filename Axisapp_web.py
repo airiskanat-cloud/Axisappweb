@@ -158,6 +158,7 @@ class GoogleSheets:
         if not os.path.exists(SERVICE_ACCOUNT_PATH):
             st.error("❌ Не найден файл сервисного аккаунта Google")
             st.stop()
+
         creds = Credentials.from_service_account_file(
             SERVICE_ACCOUNT_PATH,
             scopes=[
@@ -178,8 +179,8 @@ class GoogleSheets:
         return self._cache[name]
 
     @st.cache_data(ttl=1800)
-    def read(self, sheet_name: str):
-        return self.ws(sheet_name).get_all_records()
+    def read(_self, sheet_name: str):
+        return _self.ws(sheet_name).get_all_records()
 
     def append(self, sheet_name: str, row: list):
         self.ws(sheet_name).append_row(
