@@ -952,3 +952,175 @@ def save_request_and_offer_download(
             file_name="commercial_proposal.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
+# =========================================
+# MAIN APPLICATION (Final)
+# =========================================
+
+def main():
+    st.set_page_config(page_title=APP_TITLE, layout="wide")
+    st.title(APP_TITLE)
+
+    gs = GoogleSheetsClient(GSPREAD_SHEET_ID)
+
+    if not login(gs):
+        st.stop()
+
+    st.header("Order parameters")
+
+    # --- PRODUCT PARAMETERS ---
+    col1, col2 = st.columns(2)
+
+    with col1:
+        product_type = st.selectbox(
+            "Product type",
+            [
+                "Окно с откр.",
+                "Окно глух.",
+                "Дверь 1 створч.",
+                "Дверь 2-х створч.",
+                "Фасад",
+            ],
+        )
+
+    with col2:
+        profile_system = st.selectbox(
+            "Profile system",
+            [
+                "ALG 2030-63C",
+                "ALG 2030-55C",
+                "ALG 2030-73C",
+                "ALG 2030-45C",
+                "ALG 2030-Slim",
+                "Ruit 50F",
+            ],
+        )
+
+    st.subheader("Geometry")
+
+    g1, g2, g3 = st.columns(3)
+
+    with g1:
+        width_mm = st.number_input("Width (mm)", min_value=100.0, step=10.0)
+
+    with g2:
+        height_mm = st.number_input("Height (mm)", min_value=100.0, step=10.0)
+
+    with g3:
+        qty = st.number_input("Quantity", min_value=1, step=1, value=1)
+
+    st.subheader("Imposts")
+
+    i1, i2, i3, i4 = st.columns(4)
+
+    with i1:
+        left_mm = st.number_input("LEFT (mm)", min_value=0.0, step=10.0)
+
+    with i2:
+        center_mm = st.number_input("CENTER (mm)", min_value=0.0, step=10.0)
+
+    with i3:
+        right_mm = st.number_input("RIGHT (mm)", min_value=0.0, step=10.0)
+
+    with i4:
+        top_mm = st.number_input("TOP (mm)", min_value=0.0, step=10.0)
+
+    sash_count = 0
+    sash_width_mm = 0.0
+    sash_height_mm = 0.0
+
+    if "Окно" in product_type or "Дверь" in product_type:
+        st.subheader("Sashes")
+
+        s1, s2, s3 = st.columns(3)
+
+        with s1:
+            sash_count = st.number_input("Sash count", min_value=1, step=1, value=1)
+
+        with s2:
+            sash_width_mm = st.number_input("Sash width (mm)", min_value=200.0, step=10.0)
+
+        with s3:
+            sash_height_mm = st.number_input("Sash height (mm)", min_value=200.0, step=10.0)
+
+    stand_step_mm = 0.0
+    if product_type == "Фасад":
+        stand_step_mm = st.number_input(
+            "Facade stand step (mm)",
+            min_value=300.0,
+            step=50.0,
+            value=1000.0,
+        )
+
+    # --- POSITIONS ---
+    positions = [
+        {
+            "product_type": product_type,
+            "profile_system": profile_system,
+            "width_mm": width_mm,
+            "height_mm": height_mm,
+            "qty": qty,
+            "left_mm": left_mm,
+            "center_mm": center_mm,
+            "right_mm": right_mm,
+            "top_mm": top_mm,
+            "sash_count": sash_count,
+            "sash_width_mm": sash_width_mm,
+            "sash_height_mm": sash_height_mm,
+            "stand_step_mm": stand_step_mm,
+        }
+    ]
+
+    # --- GLASS TYPE ---
+    catalog = GlassServiceCatalog(gs)
+    glass_types = catalog.get_glass_types()
+
+    if not glass_types:
+        st.error("No glass types found in reference sheet")
+        st.stop()
+
+    selected_glass_type = st.selectbox(
+        "Glass type",
+        glass_types,
+    )
+
+    # --- CALCULATE ---
+    if st.button("Calculate", type="primary"):
+        calc_result = calculate_full_result(
+            gs_client=gs,
+            positions=positions,
+            glass_type=selected_glass_type,
+        )
+
+        st.success(f"TOTAL: {round(calc_result['total_sum'], 2)}")
+
+        st.subheader("Totals")
+        st.write(calc_result["totals"])
+
+        st.subheader("Materials")
+        if calc_result["material_rows"]:
+            st.dataframe(pd.DataFrame(calc_result["material_rows"]))
+        else:
+            st.info("No materials")
+
+        st.subheader("Services")
+        if calc_result["service_rows"]:
+            st.dataframe(
+                pd.DataFrame(
+                    calc_result["service_rows"],
+                    columns=["Name", "Price", "Unit", "Sum"],
+                )
+            )
+        else:
+            st.info("No services")
+
+        save_request_and_offer_download(
+            gs_client=gs,
+            positions=positions,
+            glass_type=selected_glass_type,
+            user_login=st.session_state["user_login"],
+            calc_result=calc_result,
+        )
+
+
+if __name__ == "__main__":
+    main()
