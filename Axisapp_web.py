@@ -170,7 +170,7 @@ def safe_eval(formula, context):
 class GoogleSheetsClient:
 
     @st.cache_resource
-    def auth(self):
+    def auth(_self):
         secret_path = "/etc/secrets/gcp_service_account.json"
 
         if not os.path.exists(secret_path):
