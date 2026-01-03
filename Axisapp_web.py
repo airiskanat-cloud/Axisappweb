@@ -433,10 +433,10 @@ class MaterialCalculator:
 
             formula = get_field(row, "формула_python")
 
-            if not formula:
+                        if not formula:
                 continue
 
-            total_fact расход = 0.0
+            total_fact = 0.0
 
             for pos in positions:
                 if row_product_type and row_product_type != pos["product_type"]:
@@ -448,29 +448,22 @@ class MaterialCalculator:
                 geom = build_geometry_context(pos)
 
                 context = {
-                    # габариты
                     "W": geom["width"],
                     "H": geom["height"],
                     "area": geom["area_one"],
                     "perimeter": geom["perimeter_one"],
                     "qty": geom["qty"],
-
-                    # импосты
                     "impost_vert": geom["impost_vert"],
                     "impost_hor": geom["impost_hor"],
                     "impost_total": geom["impost_total"],
-
-                    # створки
                     "sash_count": geom["sash_count"],
                     "sash_area": geom["sash_area_one"],
                     "sash_perimeter": geom["sash_perimeter_one"],
-
-                    # рамки
                     "corners": geom["corners"],
                 }
 
                 value = safe_eval(str(formula), context)
-                total_fact расход += value * geom["qty"]
+                total_fact += value * geom["qty"]
 
             if total_fact расход <= 0:
                 continue
