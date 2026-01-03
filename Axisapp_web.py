@@ -197,14 +197,14 @@ class GoogleSheetsClient:
         return self._cache[name]
 
     @st.cache_data(ttl=1800)
-    def read(self, sheet_name):
-        ws = self.worksheet(sheet_name)
+    def read(_self, sheet_name):
+        ws = _self.worksheet(sheet_name)
         return ws.get_all_records()
 
     def append_row(self, sheet_name, row):
         ws = self.worksheet(sheet_name)
         ws.append_row(row, value_input_option="USER_ENTERED")
-
+        
 # =========================================
 # LOGIN
 # =========================================
