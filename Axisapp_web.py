@@ -1,6 +1,7 @@
 # =========================================
 # Axis Pro GF — Calculator
-# Base Part (Part 1 / 7)
+# Part 1 / 6
+# Base, utils, GoogleSheetsClient, login
 # =========================================
 
 import math
@@ -21,7 +22,7 @@ from google.oauth2.service_account import Credentials
 # CONFIG
 # =========================================
 
-APP_TITLE = "Axis Pro GF — Facade / Windows / Doors"
+APP_TITLE = "Axis Pro GF — Фасады / Окна / Двери"
 
 GSPREAD_SHEET_ID = "13kxXxhYNkMBhnltEZT6v2cdRu6aTF4_7wm7glqq45O8"
 
@@ -204,7 +205,7 @@ class GoogleSheetsClient:
     def append_row(self, sheet_name, row):
         ws = self.worksheet(sheet_name)
         ws.append_row(row, value_input_option="USER_ENTERED")
-        
+
 # =========================================
 # LOGIN
 # =========================================
@@ -213,15 +214,15 @@ def login(gs: GoogleSheetsClient):
     if "user_login" in st.session_state:
         return True
 
-    st.sidebar.title("Login")
+    st.sidebar.title("Вход")
 
-    login_value = st.sidebar.text_input("Login")
+    login_value = st.sidebar.text_input("Логин")
     password_value = st.sidebar.text_input(
-        "Password",
+        "Пароль",
         type="password",
     )
 
-    if st.sidebar.button("Sign in"):
+    if st.sidebar.button("Войти"):
         users = gs.read(SHEET_USERS)
         for user in users:
             login_cell = str(get_field(user, "логин", "")).strip()
@@ -231,16 +232,18 @@ def login(gs: GoogleSheetsClient):
                 st.session_state["user_login"] = login_cell
                 st.rerun()
 
-        st.sidebar.error("Invalid login or password")
+        st.sidebar.error("Неверный логин или пароль")
 
     return False
 # =========================================
-# GEOMETRY AND CONTEXT (Part 2 / 7)
+# GEOMETRY & CONTEXT
+# Part 2 / 6
 # =========================================
 
 def build_position_geometry(position):
     """
-    One position = one row like in Excel 'ЗАПРОСЫ'
+    Base geometry for one position (one product line).
+    Quantity (qty) applies to the whole position.
     """
 
     width_mm = safe_float(position.get("width_mm"))
@@ -253,9 +256,6 @@ def build_position_geometry(position):
     area_one = width_m * height_m
     perimeter_one = 2.0 * (width_m + height_m)
 
-    total_area = area_one * qty
-    total_perimeter = perimeter_one * qty
-
     return {
         "width_mm": width_mm,
         "height_mm": height_mm,
@@ -264,15 +264,15 @@ def build_position_geometry(position):
         "area_one": area_one,
         "perimeter_one": perimeter_one,
         "qty": qty,
-        "total_area": total_area,
-        "total_perimeter": total_perimeter,
+        "area_total": area_one * qty,
+        "perimeter_total": perimeter_one * qty,
     }
 
 
 def build_impost_geometry(position):
     """
-    Imposts exactly as in Excel:
-    LEFT / CENTER / RIGHT / TOP are lengths in mm
+    Imposts logic (Excel-compatible):
+    LEFT / CENTER / RIGHT / TOP are lengths in mm.
     """
 
     left = safe_float(position.get("left_mm"))
@@ -283,109 +283,123 @@ def build_impost_geometry(position):
     vertical_count = sum(1 for v in (left, center, right) if v > 0)
     horizontal_count = 1 if top > 0 else 0
 
-    vertical_length = (left + center + right) / 1000.0
-    horizontal_length = top / 1000.0
+    vertical_length_m = (left + center + right) / 1000.0
+    horizontal_length_m = top / 1000.0
 
     return {
         "impost_vert_count": max(vertical_count - 1, 0),
         "impost_hor_count": horizontal_count,
-        "impost_vert_length": vertical_length,
-        "impost_hor_length": horizontal_length,
-        "impost_total_length": vertical_length + horizontal_length,
+        "impost_vert_length": vertical_length_m,
+        "impost_hor_length": horizontal_length_m,
+        "impost_total_length": vertical_length_m + horizontal_length_m,
     }
 
 
-def build_sash_geometry(position):
+def build_sashes_geometry(position):
     """
-    Sashes logic exactly as Excel:
-    each sash has its own width / height
+    Multi-sash geometry.
+    Supports multiple sashes with DIFFERENT sizes.
+
+    Expected formats:
+    - position["sashes"] = list of dicts:
+        [{"width_mm": ..., "height_mm": ...}, ...]
+    OR (legacy fallback):
+    - sash_count + sash_width_mm + sash_height_mm
     """
 
-    sash_count = safe_int(position.get("sash_count"))
-    sash_width_mm = safe_float(position.get("sash_width_mm"))
-    sash_height_mm = safe_float(position.get("sash_height_mm"))
+    sashes = position.get("sashes")
 
-    if sash_count <= 0:
-        return {
-            "sash_count": 0,
-            "sash_area_one": 0.0,
-            "sash_area_total": 0.0,
-            "sash_perimeter_one": 0.0,
-            "sash_perimeter_total": 0.0,
-        }
+    total_area = 0.0
+    total_perimeter = 0.0
+    sash_count = 0
 
-    sash_width_m = sash_width_mm / 1000.0
-    sash_height_m = sash_height_mm / 1000.0
+    if isinstance(sashes, list) and len(sashes) > 0:
+        for sash in sashes:
+            w_mm = safe_float(sash.get("width_mm"))
+            h_mm = safe_float(sash.get("height_mm"))
 
-    area_one = sash_width_m * sash_height_m
-    perimeter_one = 2.0 * (sash_width_m + sash_height_m)
+            if w_mm <= 0 or h_mm <= 0:
+                continue
+
+            w_m = w_mm / 1000.0
+            h_m = h_mm / 1000.0
+
+            total_area += w_m * h_m
+            total_perimeter += 2.0 * (w_m + h_m)
+            sash_count += 1
+
+    else:
+        # --- Legacy single-size fallback ---
+        sash_count = safe_int(position.get("sash_count"))
+        sash_w_mm = safe_float(position.get("sash_width_mm"))
+        sash_h_mm = safe_float(position.get("sash_height_mm"))
+
+        if sash_count > 0 and sash_w_mm > 0 and sash_h_mm > 0:
+            w_m = sash_w_mm / 1000.0
+            h_m = sash_h_mm / 1000.0
+
+            area_one = w_m * h_m
+            per_one = 2.0 * (w_m + h_m)
+
+            total_area = area_one * sash_count
+            total_perimeter = per_one * sash_count
 
     return {
         "sash_count": sash_count,
-        "sash_width_mm": sash_width_mm,
-        "sash_height_mm": sash_height_mm,
-        "sash_width_m": sash_width_m,
-        "sash_height_m": sash_height_m,
-        "sash_area_one": area_one,
-        "sash_area_total": area_one * sash_count,
-        "sash_perimeter_one": perimeter_one,
-        "sash_perimeter_total": perimeter_one * sash_count,
+        "sash_area_total": total_area,
+        "sash_perimeter_total": total_perimeter,
     }
 
 
 def build_formula_context(position):
     """
-    CONTEXT FOR СПРАВОЧНИК-1 FORMULAS
-    Variables match Excel exactly
+    Formula context for СПРАВОЧНИК-1 (Excel-compatible).
     """
 
     pos = build_position_geometry(position)
     impost = build_impost_geometry(position)
-    sash = build_sash_geometry(position)
+    sash = build_sashes_geometry(position)
 
-    context = {}
+    ctx = {}
 
     # --- BASIC ---
-    context["count"] = pos["qty"]
-    context["W"] = pos["width_m"]
-    context["H"] = pos["height_m"]
+    ctx["count"] = pos["qty"]
+    ctx["W"] = pos["width_m"]
+    ctx["H"] = pos["height_m"]
 
     # --- AREAS ---
-    context["area"] = pos["area_one"]
-    context["area_total"] = pos["total_area"]
+    ctx["area"] = pos["area_one"]
+    ctx["area_total"] = pos["area_total"]
 
     # --- PERIMETERS ---
-    context["perimeter"] = pos["perimeter_one"]
-    context["perimeter_total"] = pos["total_perimeter"]
+    ctx["perimeter"] = pos["perimeter_one"]
+    ctx["perimeter_total"] = pos["perimeter_total"]
 
     # --- IMPOSTS ---
-    context["impost_vert"] = impost["impost_vert_length"]
-    context["impost_hor"] = impost["impost_hor_length"]
-    context["impost_total"] = impost["impost_total_length"]
-    context["impost_vert_count"] = impost["impost_vert_count"]
-    context["impost_hor_count"] = impost["impost_hor_count"]
+    ctx["impost_vert"] = impost["impost_vert_length"]
+    ctx["impost_hor"] = impost["impost_hor_length"]
+    ctx["impost_total"] = impost["impost_total_length"]
+    ctx["impost_vert_count"] = impost["impost_vert_count"]
+    ctx["impost_hor_count"] = impost["impost_hor_count"]
 
     # --- SASHES ---
-    context["sash_count"] = sash["sash_count"]
-    context["glass_w"] = sash.get("sash_width_m", 0.0)
-    context["glass_h"] = sash.get("sash_height_m", 0.0)
-    context["sash_area"] = sash.get("sash_area_one", 0.0)
-    context["sash_area_total"] = sash.get("sash_area_total", 0.0)
-    context["sash_perimeter"] = sash.get("sash_perimeter_one", 0.0)
-    context["sash_perimeter_total"] = sash.get("sash_perimeter_total", 0.0)
+    ctx["sash_count"] = sash["sash_count"]
+    ctx["sash_area_total"] = sash["sash_area_total"]
+    ctx["sash_perimeter_total"] = sash["sash_perimeter_total"]
 
     # --- FLAGS ---
     product_type = normalize_text(position.get("product_type"))
-    context["is_window"] = 1 if "Окно" in product_type else 0
-    context["is_door"] = 1 if "Дверь" in product_type else 0
-    context["is_facade"] = 1 if "Фасад" in product_type else 0
+    ctx["is_window"] = 1 if "Окно" in product_type else 0
+    ctx["is_door"] = 1 if "Дверь" in product_type else 0
+    ctx["is_facade"] = 1 if "Фасад" in product_type else 0
 
-    return context
+    return ctx
 
 
 def aggregate_totals(positions):
     """
-    Global totals like Excel 'ИТОГО'
+    Aggregates totals across ALL positions.
+    Correct for any quantity and any number of sashes.
     """
 
     total_area = 0.0
@@ -394,13 +408,13 @@ def aggregate_totals(positions):
     total_sash_perimeter = 0.0
 
     for pos in positions:
-        geo = build_position_geometry(pos)
-        sash = build_sash_geometry(pos)
+        base = build_position_geometry(pos)
+        sash = build_sashes_geometry(pos)
 
-        total_area += geo["total_area"]
-        total_perimeter += geo["total_perimeter"]
-        total_sash_area += sash.get("sash_area_total", 0.0)
-        total_sash_perimeter += sash.get("sash_perimeter_total", 0.0)
+        total_area += base["area_total"]
+        total_perimeter += base["perimeter_total"]
+        total_sash_area += sash["sash_area_total"]
+        total_sash_perimeter += sash["sash_perimeter_total"]
 
     return {
         "total_area": total_area,
@@ -409,7 +423,8 @@ def aggregate_totals(positions):
         "total_sash_perimeter": total_sash_perimeter,
     }
 # =========================================
-# MATERIAL CALCULATOR (Part 3 / 7)
+# MATERIAL CALCULATOR
+# Part 3 / 6
 # Based on СПРАВОЧНИК-1
 # =========================================
 
@@ -417,14 +432,14 @@ class MaterialCalculator:
     """
     Material calculation strictly follows Excel logic from СПРАВОЧНИК-1.
 
-    Key principles:
-    - Exact match of product_type and profile_system (string == string)
-    - Formula context = build_formula_context()
-    - Supports different element types:
-        * per position
-        * per sash
-        * per square meter
-        * per running meter
+    Business rules (FIXED):
+    - If 'Тип изделия' is filled in reference → must match position product_type
+    - If 'Тип изделия' is empty → applies to ALL products
+    - If 'Система профиля' is filled in reference → must match position profile_system
+    - If 'Система профиля' is empty → applies to ALL profile systems
+
+    Result rows count = actual number of reference rows
+    matching selected product type and profile system.
     """
 
     def __init__(self, gs_client):
@@ -454,18 +469,27 @@ class MaterialCalculator:
             price = safe_float(get_field(ref, "цена за"), 0.0)
             norm = safe_float(get_field(ref, "кол-во норм"), 1.0)
 
+            # --- BASIC VALIDATION ---
             if not formula or price <= 0:
                 continue
 
             total_qty = 0.0
 
             for pos in positions:
-                # --- STRICT MATCH WITH СПРАВОЧНИК-1 ---
-                if product_type_ref and product_type_ref != normalize_text(pos.get("product_type")):
-                    continue
-                if profile_ref and profile_ref != normalize_text(pos.get("profile_system")):
-                    continue
+                pos_product = normalize_text(pos.get("product_type"))
+                pos_profile = normalize_text(pos.get("profile_system"))
 
+                # --- PRODUCT TYPE FILTER ---
+                if product_type_ref:
+                    if product_type_ref != pos_product:
+                        continue
+
+                # --- PROFILE SYSTEM FILTER ---
+                if profile_ref:
+                    if profile_ref != pos_profile:
+                        continue
+
+                # --- FORMULA CONTEXT ---
                 ctx = build_formula_context(pos)
 
                 try:
@@ -473,15 +497,12 @@ class MaterialCalculator:
                 except Exception:
                     qty_value = 0.0
 
-                # --- ELEMENT TYPE LOGIC ---
-                # Excel behavior:
-                # formula already returns correct quantity unit
                 total_qty += qty_value
 
             if total_qty <= 0:
                 continue
 
-            # --- NORMALIZATION (хлысты, упаковки и т.п.) ---
+            # --- NORMALIZATION (bundles, bars, packages) ---
             if norm > 0:
                 ship_qty = math.ceil(total_qty / norm) * norm
             else:
@@ -491,488 +512,35 @@ class MaterialCalculator:
             total_sum += row_sum
 
             result_rows.append({
-                "Product type": product_type_ref,
-                "Profile system": profile_ref,
-                "Element type": element_type,
-                "Item": product_name,
-                "Calculated qty": round(total_qty, 3),
-                "Shipping qty": ship_qty,
-                "Price": price,
-                "Sum": round(row_sum, 2),
+                "Тип изделия": product_type_ref,
+                "Система профиля": profile_ref,
+                "Тип элемента": element_type,
+                "Товар": product_name,
+                "Факт. расход": round(total_qty, 3),
+                "К отгрузке": ship_qty,
+                "Цена": price,
+                "Сумма": round(row_sum, 2),
             })
 
         return result_rows, round(total_sum, 2)
 # =========================================
-# GLASS AND SERVICES (Part 4 / 7)
-# Based on СПРАВОЧНИК-2
+# UI — POSITIONS INPUT
+# Part 5 / 6
 # =========================================
 
-class GlassServiceCatalog:
+def position_form(idx, is_facade=False):
     """
-    Reads СПРАВОЧНИК-2 and provides:
-    - list of glass types for UI
-    - prices for glass, panels, toning, assembly, montage
-    """
-
-    def __init__(self, gs_client):
-        self.gs = gs_client
-        self.rows = self.gs.read(SHEET_REF2)
-
-    def get_glass_types(self):
-        """
-        Returns list of glass types exactly as in СПРАВОЧНИК-2
-        """
-        types = []
-        for row in self.rows:
-            glass_type = normalize_text(
-                get_field(row, "тип стеклопак", "")
-            )
-            if glass_type and glass_type not in types:
-                types.append(glass_type)
-        return types
-
-    def find_row_by_glass(self, glass_type):
-        glass_type_norm = normalize_text(glass_type)
-        for row in self.rows:
-            if normalize_text(get_field(row, "тип стеклопак", "")) == glass_type_norm:
-                return row
-        return None
-
-    def get_price(self, row, field_name):
-        return safe_float(get_field(row, field_name), 0.0)
-
-
-class GlassServiceCalculator:
-    """
-    Calculates glass and services strictly from СПРАВОЧНИК-2
+    One position form.
+    idx — index in positions list
     """
 
-    def __init__(self, catalog: GlassServiceCatalog):
-        self.catalog = catalog
+    st.markdown(f"### Позиция #{idx + 1}")
 
-    def calculate(self, positions, selected_glass_type):
-        totals = aggregate_totals(positions)
+    c1, c2 = st.columns(2)
 
-        total_area = totals["total_area"]
-
-        result_rows = []
-        total_sum = 0.0
-
-        ref_row = self.catalog.find_row_by_glass(selected_glass_type)
-        if not ref_row:
-            return result_rows, 0.0
-
-        # --- GLASS ---
-        glass_price = self.catalog.get_price(
-            ref_row,
-            "стоимость стеклопакета",
-        )
-        if glass_price > 0:
-            glass_sum = total_area * glass_price
-            result_rows.append((
-                "Glass unit",
-                glass_price,
-                "m2",
-                round(glass_sum, 2),
-            ))
-            total_sum += glass_sum
-
-        # --- PANELS ---
-        panel_price = self.catalog.get_price(
-            ref_row,
-            "стоимость панел",
-        )
-        if panel_price > 0:
-            panel_sum = total_area * panel_price
-            result_rows.append((
-                "Panels",
-                panel_price,
-                "m2",
-                round(panel_sum, 2),
-            ))
-            total_sum += panel_sum
-
-        # --- TONING ---
-        toning_price = self.catalog.get_price(
-            ref_row,
-            "стоимость тониров",
-        )
-        if toning_price > 0:
-            toning_sum = total_area * toning_price
-            result_rows.append((
-                "Toning",
-                toning_price,
-                "m2",
-                round(toning_sum, 2),
-            ))
-            total_sum += toning_sum
-
-        # --- ASSEMBLY ---
-        assembly_price = self.catalog.get_price(
-            ref_row,
-            "стоимость сборк",
-        )
-        if assembly_price > 0:
-            assembly_sum = total_area * assembly_price
-            result_rows.append((
-                "Assembly",
-                assembly_price,
-                "m2",
-                round(assembly_sum, 2),
-            ))
-            total_sum += assembly_sum
-
-        # --- MONTAGE ---
-        montage_price = self.catalog.get_price(
-            ref_row,
-            "стоимость монтаж",
-        )
-        if montage_price > 0:
-            montage_sum = total_area * montage_price
-            result_rows.append((
-                "Montage",
-                montage_price,
-                "m2",
-                round(montage_sum, 2),
-            ))
-            total_sum += montage_sum
-
-        return result_rows, round(total_sum, 2)
-# =========================================
-# FACADE ENGINEERING (Part 5 / 7)
-# Wind load logic based on Excel concept
-# =========================================
-
-# Stand profiles table (from Excel)
-# Ordered by Jx ascending
-FACADE_STAND_TABLE = [
-    {"code": "90-5035",  "jx": 79},
-    {"code": "100-5009", "jx": 117},
-    {"code": "110-5034", "jx": 126},
-    {"code": "130-5033", "jx": 190},
-    {"code": "150-5032", "jx": 277},
-    {"code": "170-5010", "jx": 403},
-    {"code": "160-5005", "jx": 422},
-    {"code": "200-5006", "jx": 851},
-]
-
-
-def facade_required_jx(height_m):
-    """
-    Required Jx based on facade height.
-    Formula follows Excel concept:
-    Jx ~ H^2
-    """
-    if height_m <= 0:
-        return 0.0
-    return 55.0 * (height_m ** 2)
-
-
-def select_facade_stand(height_mm):
-    """
-    Selects facade stand profile based on height.
-    Returns dict with code and jx.
-    """
-    height_m = height_mm / 1000.0
-    required_jx = facade_required_jx(height_m)
-
-    for stand in FACADE_STAND_TABLE:
-        if stand["jx"] >= required_jx:
-            return stand
-
-    return None
-
-
-def build_facade_context(position):
-    """
-    Adds facade-specific parameters to formula context.
-    Does NOT override base context.
-    """
-
-    context = build_formula_context(position)
-
-    height_mm = safe_float(position.get("height_mm"))
-    stand_step_mm = safe_float(position.get("stand_step_mm"))
-
-    stand = select_facade_stand(height_mm)
-
-    context["facade_height_m"] = height_mm / 1000.0
-    context["stand_step_m"] = stand_step_mm / 1000.0
-
-    if stand:
-        context["facade_stand_jx"] = stand["jx"]
-        context["facade_stand_code"] = stand["code"]
-    else:
-        context["facade_stand_jx"] = 0.0
-        context["facade_stand_code"] = ""
-
-    return context
-
-
-def is_facade_position(position):
-    product_type = normalize_text(position.get("product_type"))
-    return product_type == "Фасад"
-# =========================================
-# REQUESTS STORAGE (Part 6 / 7)
-# Save calculation history to SHEET_REQUESTS
-# =========================================
-
-def serialize_positions(positions):
-    """
-    Prepare positions data for storage (JSON).
-    """
-    clean = []
-    for pos in positions:
-        clean.append({
-            "product_type": pos.get("product_type"),
-            "profile_system": pos.get("profile_system"),
-            "width_mm": safe_float(pos.get("width_mm")),
-            "height_mm": safe_float(pos.get("height_mm")),
-            "qty": safe_int(pos.get("qty"), 1),
-            "left_mm": safe_float(pos.get("left_mm")),
-            "center_mm": safe_float(pos.get("center_mm")),
-            "right_mm": safe_float(pos.get("right_mm")),
-            "top_mm": safe_float(pos.get("top_mm")),
-            "sash_count": safe_int(pos.get("sash_count")),
-            "sash_width_mm": safe_float(pos.get("sash_width_mm")),
-            "sash_height_mm": safe_float(pos.get("sash_height_mm")),
-            "stand_step_mm": safe_float(pos.get("stand_step_mm")),
-        })
-    return json.dumps(clean, ensure_ascii=False)
-
-
-def serialize_materials(material_rows):
-    """
-    Prepare materials table for storage (JSON).
-    """
-    return json.dumps(material_rows, ensure_ascii=False)
-
-
-def save_request(
-    gs_client,
-    user_login,
-    positions,
-    glass_type,
-    material_sum,
-    services_sum,
-    total_area,
-    total_perimeter,
-    ensure_sum,
-    total_sum,
-    material_rows,
-):
-    """
-    Append one request row to SHEET_REQUESTS.
-    """
-
-    row = [
-        now_str(),                 # datetime
-        user_login,                # user
-        glass_type,                # glass type
-        round(total_area, 3),      # total area
-        round(total_perimeter, 3), # total perimeter
-        round(material_sum, 2),    # materials sum
-        round(services_sum, 2),    # glass + services sum
-        round(ensure_sum, 2),      # ensure 65%
-        round(total_sum, 2),       # total
-        serialize_positions(positions),
-        serialize_materials(material_rows),
-    ]
-
-    gs_client.append_row(SHEET_REQUESTS, row)
-# =========================================
-# COMMERCIAL PROPOSAL (Part 7 / 7.1)
-# Excel template based (v15 logic)
-# =========================================
-
-from openpyxl import load_workbook
-from tempfile import NamedTemporaryFile
-
-
-KP_TEMPLATE_PATH = "kp_template.xlsx"
-
-
-def fill_kp_template(template_path, output_path, data):
-    """
-    Fill Excel commercial proposal template with calculation data.
-    Template structure must match v15.
-    """
-
-    wb = load_workbook(template_path)
-    ws = wb.active
-
-    # --- HEADER ---
-    ws["B2"] = data["date"]
-    ws["B3"] = data["user"]
-    ws["B4"] = data["glass_type"]
-
-    # --- GEOMETRY ---
-    ws["B6"] = data["total_area"]
-    ws["B7"] = data["total_perimeter"]
-
-    # --- TOTALS ---
-    ws["E10"] = data["materials_sum"]
-    ws["E11"] = data["services_sum"]
-    ws["E12"] = data["ensure_sum"]
-    ws["E13"] = data["total_sum"]
-
-    # --- MATERIALS TABLE ---
-    start_row = 16
-
-    for idx, row in enumerate(data["materials_rows"]):
-        ws.cell(row=start_row + idx, column=1).value = row.get("Item")
-        ws.cell(row=start_row + idx, column=2).value = row.get("Calculated qty")
-        ws.cell(row=start_row + idx, column=3).value = row.get("Price")
-        ws.cell(row=start_row + idx, column=4).value = row.get("Sum")
-
-    wb.save(output_path)
-
-
-def generate_kp_file(
-    user_login,
-    glass_type,
-    totals,
-    material_rows,
-    material_sum,
-    services_sum,
-    ensure_sum,
-    total_sum,
-):
-    """
-    Generate filled KP Excel file and return its path.
-    """
-
-    with NamedTemporaryFile(delete=False, suffix=".xlsx") as tmp:
-        output_path = tmp.name
-
-    data = {
-        "date": now_str(),
-        "user": user_login,
-        "glass_type": glass_type,
-        "total_area": round(totals["total_area"], 3),
-        "total_perimeter": round(totals["total_perimeter"], 3),
-        "materials_sum": round(material_sum, 2),
-        "services_sum": round(services_sum, 2),
-        "ensure_sum": round(ensure_sum, 2),
-        "total_sum": round(total_sum, 2),
-        "materials_rows": material_rows,
-    }
-
-    fill_kp_template(
-        KP_TEMPLATE_PATH,
-        output_path,
-        data,
-    )
-
-    return output_path
-# =========================================
-# COMMERCIAL PROPOSAL (Part 7 / 7.2)
-# Final integration with calculation
-# =========================================
-
-def calculate_full_result(gs_client, positions, glass_type):
-    """
-    Full calculation pipeline.
-    """
-
-    # --- MATERIALS ---
-    material_calc = MaterialCalculator(gs_client)
-    material_rows, material_sum = material_calc.calculate(positions)
-
-    # --- SERVICES ---
-    catalog = GlassServiceCatalog(gs_client)
-    service_calc = GlassServiceCalculator(catalog)
-    service_rows, services_sum = service_calc.calculate(
-        positions,
-        glass_type,
-    )
-
-    # --- TOTALS ---
-    totals = aggregate_totals(positions)
-
-    base_sum = material_sum + services_sum
-    ensure_sum = base_sum * ENSURE_PERCENT
-    total_sum = base_sum + ensure_sum
-
-    return {
-        "material_rows": material_rows,
-        "material_sum": material_sum,
-        "service_rows": service_rows,
-        "services_sum": services_sum,
-        "totals": totals,
-        "ensure_sum": ensure_sum,
-        "total_sum": total_sum,
-    }
-
-
-def save_request_and_offer_download(
-    gs_client,
-    positions,
-    glass_type,
-    user_login,
-    calc_result,
-):
-    """
-    Save request and show KP download button.
-    """
-
-    save_request(
-        gs_client=gs_client,
-        user_login=user_login,
-        positions=positions,
-        glass_type=glass_type,
-        material_sum=calc_result["material_sum"],
-        services_sum=calc_result["services_sum"],
-        total_area=calc_result["totals"]["total_area"],
-        total_perimeter=calc_result["totals"]["total_perimeter"],
-        ensure_sum=calc_result["ensure_sum"],
-        total_sum=calc_result["total_sum"],
-        material_rows=calc_result["material_rows"],
-    )
-
-    if not os.path.exists(KP_TEMPLATE_PATH):
-        st.error("KP template file not found")
-        return
-
-    kp_path = generate_kp_file(
-        user_login=user_login,
-        glass_type=glass_type,
-        totals=calc_result["totals"],
-        material_rows=calc_result["material_rows"],
-        material_sum=calc_result["material_sum"],
-        services_sum=calc_result["services_sum"],
-        ensure_sum=calc_result["ensure_sum"],
-        total_sum=calc_result["total_sum"],
-    )
-
-    with open(kp_path, "rb") as f:
-        st.download_button(
-            label="Download commercial proposal (Excel)",
-            data=f,
-            file_name="commercial_proposal.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-# =========================================
-# MAIN APPLICATION (Final)
-# =========================================
-
-def main():
-    st.set_page_config(page_title=APP_TITLE, layout="wide")
-    st.title(APP_TITLE)
-
-    gs = GoogleSheetsClient(GSPREAD_SHEET_ID)
-
-    if not login(gs):
-        st.stop()
-
-    st.header("Order parameters")
-
-    # --- PRODUCT PARAMETERS ---
-    col1, col2 = st.columns(2)
-
-    with col1:
+    with c1:
         product_type = st.selectbox(
-            "Product type",
+            "Тип изделия",
             [
                 "Окно с откр.",
                 "Окно глух.",
@@ -980,11 +548,12 @@ def main():
                 "Дверь 2-х створч.",
                 "Фасад",
             ],
+            key=f"ptype_{idx}",
         )
 
-    with col2:
+    with c2:
         profile_system = st.selectbox(
-            "Profile system",
+            "Система профиля",
             [
                 "ALG 2030-63C",
                 "ALG 2030-55C",
@@ -993,133 +562,299 @@ def main():
                 "ALG 2030-Slim",
                 "Ruit 50F",
             ],
+            key=f"psys_{idx}",
         )
-
-    st.subheader("Geometry")
 
     g1, g2, g3 = st.columns(3)
 
     with g1:
-        width_mm = st.number_input("Width (mm)", min_value=100.0, step=10.0)
+        width_mm = st.number_input(
+            "Ширина, мм",
+            min_value=100.0,
+            step=10.0,
+            key=f"w_{idx}",
+        )
 
     with g2:
-        height_mm = st.number_input("Height (mm)", min_value=100.0, step=10.0)
+        height_mm = st.number_input(
+            "Высота, мм",
+            min_value=100.0,
+            step=10.0,
+            key=f"h_{idx}",
+        )
 
     with g3:
-        qty = st.number_input("Quantity", min_value=1, step=1, value=1)
+        qty = st.number_input(
+            "Кол-во (N)",
+            min_value=1,
+            step=1,
+            value=1,
+            key=f"q_{idx}",
+        )
 
-    st.subheader("Imposts")
-
+    # --- IMPOSTS ---
+    st.markdown("**Импосты (мм)**")
     i1, i2, i3, i4 = st.columns(4)
 
     with i1:
-        left_mm = st.number_input("LEFT (mm)", min_value=0.0, step=10.0)
-
+        left_mm = st.number_input("LEFT", min_value=0.0, step=10.0, key=f"l_{idx}")
     with i2:
-        center_mm = st.number_input("CENTER (mm)", min_value=0.0, step=10.0)
-
+        center_mm = st.number_input("CENTER", min_value=0.0, step=10.0, key=f"c_{idx}")
     with i3:
-        right_mm = st.number_input("RIGHT (mm)", min_value=0.0, step=10.0)
-
+        right_mm = st.number_input("RIGHT", min_value=0.0, step=10.0, key=f"r_{idx}")
     with i4:
-        top_mm = st.number_input("TOP (mm)", min_value=0.0, step=10.0)
+        top_mm = st.number_input("TOP", min_value=0.0, step=10.0, key=f"t_{idx}")
 
+    # --- SASHES ---
+    sashes = []
     sash_count = 0
-    sash_width_mm = 0.0
-    sash_height_mm = 0.0
 
     if "Окно" in product_type or "Дверь" in product_type:
-        st.subheader("Sashes")
+        st.markdown("**Створки**")
 
-        s1, s2, s3 = st.columns(3)
+        sash_count = st.number_input(
+            "Кол-во створок",
+            min_value=1,
+            step=1,
+            value=1,
+            key=f"sash_count_{idx}",
+        )
 
-        with s1:
-            sash_count = st.number_input("Sash count", min_value=1, step=1, value=1)
+        for s in range(sash_count):
+            st.markdown(f"Створка #{s + 1}")
+            sc1, sc2 = st.columns(2)
 
-        with s2:
-            sash_width_mm = st.number_input("Sash width (mm)", min_value=200.0, step=10.0)
+            with sc1:
+                sw = st.number_input(
+                    "Ширина створки, мм",
+                    min_value=200.0,
+                    step=10.0,
+                    key=f"sw_{idx}_{s}",
+                )
 
-        with s3:
-            sash_height_mm = st.number_input("Sash height (mm)", min_value=200.0, step=10.0)
+            with sc2:
+                sh = st.number_input(
+                    "Высота створки, мм",
+                    min_value=200.0,
+                    step=10.0,
+                    key=f"sh_{idx}_{s}",
+                )
 
+            sashes.append({
+                "width_mm": sw,
+                "height_mm": sh,
+            })
+
+    # --- FACADE ---
     stand_step_mm = 0.0
     if product_type == "Фасад":
         stand_step_mm = st.number_input(
-            "Facade stand step (mm)",
+            "Шаг стоек фасада, мм",
             min_value=300.0,
             step=50.0,
             value=1000.0,
+            key=f"stand_{idx}",
         )
 
-    # --- POSITIONS ---
-    positions = [
-        {
-            "product_type": product_type,
-            "profile_system": profile_system,
-            "width_mm": width_mm,
-            "height_mm": height_mm,
-            "qty": qty,
-            "left_mm": left_mm,
-            "center_mm": center_mm,
-            "right_mm": right_mm,
-            "top_mm": top_mm,
-            "sash_count": sash_count,
-            "sash_width_mm": sash_width_mm,
-            "sash_height_mm": sash_height_mm,
-            "stand_step_mm": stand_step_mm,
-        }
-    ]
+    return {
+        "product_type": product_type,
+        "profile_system": profile_system,
+        "width_mm": width_mm,
+        "height_mm": height_mm,
+        "qty": qty,
+        "left_mm": left_mm,
+        "center_mm": center_mm,
+        "right_mm": right_mm,
+        "top_mm": top_mm,
+        "sashes": sashes,
+        "sash_count": sash_count,
+        "stand_step_mm": stand_step_mm,
+    }
+
+
+def positions_block():
+    """
+    Block for multiple positions.
+    """
+
+    if "positions_count" not in st.session_state:
+        st.session_state["positions_count"] = 1
+
+    positions = []
+
+    for i in range(st.session_state["positions_count"]):
+        positions.append(position_form(i))
+        st.divider()
+
+    c1, c2 = st.columns(2)
+
+    with c1:
+        if st.button("➕ Добавить позицию"):
+            st.session_state["positions_count"] += 1
+            st.rerun()
+
+    with c2:
+        if st.session_state["positions_count"] > 1:
+            if st.button("➖ Удалить последнюю"):
+                st.session_state["positions_count"] -= 1
+                st.rerun()
+
+    return positions
+# =========================================
+# MAIN APPLICATION
+# Part 6 / 6
+# =========================================
+
+def main():
+    st.set_page_config(
+        page_title=APP_TITLE,
+        layout="wide",
+    )
+
+    st.title("🏗️ Axis Pro GF — Калькулятор")
+
+    # --- GOOGLE SHEETS ---
+    gs = GoogleSheetsClient(GSPREAD_SHEET_ID)
+
+    # --- LOGIN ---
+    if not login(gs):
+        st.stop()
+
+    # --- INPUT BLOCK ---
+    st.header("Параметры изделий")
+
+    positions = positions_block()
 
     # --- GLASS TYPE ---
+    st.header("Стеклопакет и услуги")
+
     catalog = GlassServiceCatalog(gs)
     glass_types = catalog.get_glass_types()
 
     if not glass_types:
-        st.error("No glass types found in reference sheet")
+        st.error("В СПРАВОЧНИК-2 не найдены типы стеклопакетов")
         st.stop()
 
     selected_glass_type = st.selectbox(
-        "Glass type",
+        "Тип стеклопакета",
         glass_types,
     )
 
     # --- CALCULATE ---
-    if st.button("Calculate", type="primary"):
-        calc_result = calculate_full_result(
-            gs_client=gs,
-            positions=positions,
-            glass_type=selected_glass_type,
-        )
+    if st.button("🚀 Рассчитать", type="primary"):
+        with st.spinner("Выполняется расчёт..."):
 
-        st.success(f"TOTAL: {round(calc_result['total_sum'], 2)}")
+            # --- MATERIALS ---
+            material_calc = MaterialCalculator(gs)
+            material_rows, material_sum = material_calc.calculate(positions)
 
-        st.subheader("Totals")
-        st.write(calc_result["totals"])
-
-        st.subheader("Materials")
-        if calc_result["material_rows"]:
-            st.dataframe(pd.DataFrame(calc_result["material_rows"]))
-        else:
-            st.info("No materials")
-
-        st.subheader("Services")
-        if calc_result["service_rows"]:
-            st.dataframe(
-                pd.DataFrame(
-                    calc_result["service_rows"],
-                    columns=["Name", "Price", "Unit", "Sum"],
-                )
+            # --- SERVICES ---
+            service_calc = GlassServiceCalculator(catalog)
+            service_rows, services_sum = service_calc.calculate(
+                positions,
+                selected_glass_type,
             )
-        else:
-            st.info("No services")
 
-        save_request_and_offer_download(
+            # --- TOTALS ---
+            totals = aggregate_totals(positions)
+
+            base_sum = material_sum + services_sum
+            ensure_sum = base_sum * ENSURE_PERCENT
+            total_sum = base_sum + ensure_sum
+
+        # --- RESULT HEADER ---
+        st.success(f"ИТОГО к оплате: {round(total_sum, 2)}")
+
+        # --- SUMMARY ---
+        st.subheader("Сводные данные")
+
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            st.metric("Общая площадь, м²", round(totals["total_area"], 3))
+        with c2:
+            st.metric("Общий периметр, м", round(totals["total_perimeter"], 3))
+        with c3:
+            st.metric("Обеспечение 65%", round(ensure_sum, 2))
+
+        # --- MATERIALS TABLE ---
+        st.subheader("Материалы (СПРАВОЧНИК-1)")
+
+        if material_rows:
+            st.dataframe(
+                pd.DataFrame(material_rows),
+                use_container_width=True,
+            )
+            st.write(f"**Итого материалы:** {round(material_sum, 2)}")
+        else:
+            st.info("Материалы не рассчитаны")
+
+        # --- SERVICES TABLE ---
+        st.subheader("Стеклопакет и услуги (СПРАВОЧНИК-2)")
+
+        if service_rows:
+            st.dataframe(
+                pd.DataFrame(service_rows),
+                use_container_width=True,
+            )
+            st.write(f"**Итого услуги:** {round(services_sum, 2)}")
+        else:
+            st.info("Услуги отсутствуют")
+
+        # --- FINAL TOTAL ---
+        st.subheader("Итог")
+
+        итог_df = pd.DataFrame(
+            [
+                ["Материалы", material_sum],
+                ["Услуги", services_sum],
+                ["Обеспечение 65%", ensure_sum],
+                ["ИТОГО", total_sum],
+            ],
+            columns=["Позиция", "Сумма"],
+        )
+
+        st.dataframe(итог_df, use_container_width=True)
+
+        # --- SAVE REQUEST ---
+        save_request(
             gs_client=gs,
+            user_login=st.session_state["user_login"],
             positions=positions,
             glass_type=selected_glass_type,
-            user_login=st.session_state["user_login"],
-            calc_result=calc_result,
+            material_sum=material_sum,
+            services_sum=services_sum,
+            total_area=totals["total_area"],
+            total_perimeter=totals["total_perimeter"],
+            ensure_sum=ensure_sum,
+            total_sum=total_sum,
+            material_rows=material_rows,
         )
+
+        # --- COMMERCIAL PROPOSAL ---
+        st.subheader("Коммерческое предложение")
+
+        if os.path.exists(KP_TEMPLATE_PATH):
+            kp_path = generate_kp_file(
+                user_login=st.session_state["user_login"],
+                glass_type=selected_glass_type,
+                totals=totals,
+                material_rows=material_rows,
+                material_sum=material_sum,
+                services_sum=services_sum,
+                ensure_sum=ensure_sum,
+                total_sum=total_sum,
+            )
+
+            with open(kp_path, "rb") as f:
+                st.download_button(
+                    label="📄 Скачать коммерческое предложение (Excel)",
+                    data=f,
+                    file_name="Коммерческое_предложение.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+        else:
+            st.warning("Файл шаблона КП не найден")
 
 
 if __name__ == "__main__":
