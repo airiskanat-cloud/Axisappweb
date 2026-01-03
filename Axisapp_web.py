@@ -186,10 +186,10 @@ def safe_eval(formula: str, context: dict) -> float:
 # GOOGLE SHEETS CLIENT
 # =========================================
 
-class GoogleSheets:
+cclass GoogleSheets:
 
     @st.cache_resource
-    def auth(self):
+    def auth(_self):
         if not os.path.exists(SERVICE_ACCOUNT_PATH):
             st.error("❌ Не найден файл сервисного аккаунта Google")
             st.stop()
