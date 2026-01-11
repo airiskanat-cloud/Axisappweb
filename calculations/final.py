@@ -7,6 +7,72 @@ from calculations.materials import materials_facade
 from calculations.pricing import price_facade
 
 
+def run_calculation(order_data: dict) -> dict:
+    """
+    Главная функция расчёта заказа
+    
+    Args:
+        order_data: Словарь с данными заказа:
+            - meta: метаданные (номер заказа и т.д.)
+            - common: общие параметры (тип изделия, система профиля, стекло и т.д.)
+            - positions: список позиций окон/дверей
+            - facade: данные фасада (если есть)
+    
+    Returns:
+        Словарь с результатами расчёта
+    """
+    common = order_data.get("common", {})
+    positions = order_data.get("positions", [])
+    facade_data = order_data.get("facade")
+    
+    # Определяем тип изделия
+    product_type = common.get("product_type", "")
+    
+    # Получаем параметры
+    glass_type = common.get("glass_type", "Двойной")
+    profile_system = common.get("profile_system", "ALG 2030-73C")
+    toning = "Есть" if common.get("toning") else "Нет"
+    assembly = "Есть" if common.get("assembly") else "Нет"
+    installation = common.get("installation", "Нет")
+    
+    # Справочник цен (здесь нужно подключить реальный справочник)
+    ref2 = {
+        "Двойной": 9000,
+        "Тройной": 12000,
+        "Тонировка": 1500,
+        "Сборка": 2000,
+        "Монтаж": 3000
+    }
+    
+    # Если это фасад
+    if facade_data:
+        result = calc_facade_final(
+            facade_data=facade_data,
+            ref2=ref2,
+            glass_type=glass_type,
+            toning=toning,
+            assembly=assembly,
+            installation=installation
+        )
+    # Если это окна/двери
+    else:
+        result = calc_windows_doors_final(
+            positions=positions,
+            ref2=ref2,
+            glass_type=glass_type,
+            profile_system=profile_system,
+            toning=toning,
+            assembly=assembly,
+            installation=installation
+        )
+    
+    # Добавляем метаданные
+    result["meta"] = order_data.get("meta", {})
+    result["common"] = common
+    
+    return result
+
+
 def calc_windows_doors_final(
     positions: list,
     ref2: dict,
