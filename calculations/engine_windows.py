@@ -467,6 +467,39 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     
     return result
 
+def calculate_windows_geometry(positions: List[Dict]) -> Dict:
+    """
+    Расчет геометрии для СПИСКА позиций окон/дверей
+    
+    Args:
+        positions: Список позиций окон/дверей
+    
+    Returns:
+        Словарь с агрегированными данными по всем позициям
+    """
+    total_area = 0.0
+    total_perimeter = 0.0
+    total_count = 0
+    
+    for pos in positions:
+        # Получаем систему профиля для каждой позиции
+        system = pos.get("system_id") or pos.get("system", "ALG 2030-73C")
+        
+        # Рассчитываем геометрию одной позиции
+        geom = calculate_window_geometry(pos, system)
+        
+        # Учитываем количество
+        count = geom["count"]
+        total_area += geom["area_m2"] * count
+        total_perimeter += geom["perimeter_m"] * count
+        total_count += count
+    
+    return {
+        "total_area_m2": round(total_area, 3),
+        "total_perimeter_m": round(total_perimeter, 3),
+        "total_count": total_count
+    }
+
 def calculate_impost_length(width_mm: float, height_mm: float, system: str, direction: str) -> float:
     """
     Вспомогательная функция для расчёта длины одного импоста
