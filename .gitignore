@@ -1,19 +1,14 @@
-.DS_Store # чтобы он больше не появлялся
-# Office temp files
-~$*.xlsx
-~$*.xls
-~$*.doc*
-~$*.tmp
-# Python cache
+# system
+.DS_Store
+
+# python
 __pycache__/
 *.pyc
 
-# Office temp files
-~$*.xlsx
-~$*.xls
-~$*.doc*
-~$*.tmp
-# Python cache
-__pycache__/
-*.pyc
-axis-pro-481214-a96e4e15320c.json
+# secrets
+*.json
+.env
+
+# data
+*.xlsx
+*.csv
