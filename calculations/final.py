@@ -1,4 +1,4 @@
-from calculations.geometry import geometry_positions
+from calculations.engine_windows import calculate_windows_geometry
 from calculations.materials import materials_positions
 from calculations.pricing import price_windows_doors, price_options_windows
 
@@ -21,8 +21,7 @@ def calc_windows_doors_final(
     """
 
     # 1. Геометрия
-    geometry = geometry_positions(positions)
-
+    geometry = calculate_windows_geometry(positions)
 
     # 2. Материалы
     materials = materials_positions(geometry)
@@ -35,6 +34,7 @@ def calc_windows_doors_final(
         glass_type=glass_type,
         profile_system=profile_system
     )
+
 
     # 4. Опции
     options_price = price_options_windows(
