@@ -1,4 +1,4 @@
-from calculations.geometry import geometry_positions
+from calculations.geometry import calc_geometry
 from calculations.geometry import geometry_positions_extended
 from calculations.materials import materials_positions
 from calculations.pricing import price_windows_doors, price_options_windows
