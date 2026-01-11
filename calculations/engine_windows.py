@@ -415,6 +415,7 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
         if fill_cat == "Стеклопакет":
             # Стеклопакет: площадь × цена за м²
             price_glass = get_price_from_ref2(glass_type)
+            print(f"🔍 DEBUG Стеклопакет: fill_cat='{fill_cat}', glass_type='{glass_type}', price={price_glass}, area={pos_area:.3f}")
             cost_glass_lambri += pos_area * price_glass
         elif "Ламбри" in fill_cat:
             # Ламбри: округляем до кратного 6м (хлысты), потом × цена за 1м

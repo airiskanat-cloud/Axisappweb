@@ -176,8 +176,9 @@ def export_facade_to_excel(facade_result: Dict, order_number: str = None, output
         Путь к созданному файлу
     """
     
-    if not facade_result.get('success'):
-        raise ValueError(f"Ошибка расчета: {facade_result.get('error')}")
+    # ИСПРАВЛЕНО: Убрана проверка success - она опциональна
+    if not facade_result:
+        raise ValueError("Результаты расчета фасада отсутствуют")
     
     wb = Workbook()
     ws = wb.active
