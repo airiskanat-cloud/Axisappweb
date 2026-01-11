@@ -259,8 +259,8 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
                    target_type)
         
         for row in ref3:
-            # НОВАЯ ЛОГИКА: фильтрация по CODE
-            row_code = str(row.get("CODE", "")).strip()
+            # ИСПРАВЛЕНО: поддержка обоих вариантов написания колонки
+            row_code = str(row.get("CODE") or row.get("code") or "").strip()
             pos_code = context.get("code", "")
             
             if row_code and pos_code and row_code == pos_code:
@@ -298,8 +298,8 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
         context = all_contexts[pos_idx]
         
         for row in ref1:
-            # НОВАЯ ЛОГИКА: фильтрация по CODE
-            row_code = str(row.get("CODE", "")).strip()
+            # ИСПРАВЛЕНО: поддержка обоих вариантов написания колонки
+            row_code = str(row.get("CODE") or row.get("code") or "").strip()
             pos_code = position.get("code", "")
             
             if row_code and pos_code and row_code == pos_code:
@@ -443,7 +443,8 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     cost_installation = 0.0
     installation = common.get("installation_id") or common.get("installation", "Нет")
     if installation != "Нет":
-        price_installation = get_price_from_ref2("Монтаж")
+        # ИСПРАВЛЕНО: ищем цену по конкретному типу монтажа, а не просто "Монтаж"
+        price_installation = get_price_from_ref2(installation)
         cost_installation = total_area * price_installation
     
     result["part3_final"] = {
@@ -466,39 +467,6 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     result["part1_summary"] = result["part1_gabarits"]
     
     return result
-
-def calculate_windows_geometry(positions: List[Dict]) -> Dict:
-    """
-    Расчет геометрии для СПИСКА позиций окон/дверей
-    
-    Args:
-        positions: Список позиций окон/дверей
-    
-    Returns:
-        Словарь с агрегированными данными по всем позициям
-    """
-    total_area = 0.0
-    total_perimeter = 0.0
-    total_count = 0
-    
-    for pos in positions:
-        # Получаем систему профиля для каждой позиции
-        system = pos.get("system_id") or pos.get("system", "ALG 2030-73C")
-        
-        # Рассчитываем геометрию одной позиции
-        geom = calculate_window_geometry(pos, system)
-        
-        # Учитываем количество
-        count = geom["count"]
-        total_area += geom["area_m2"] * count
-        total_perimeter += geom["perimeter_m"] * count
-        total_count += count
-    
-    return {
-        "total_area_m2": round(total_area, 3),
-        "total_perimeter_m": round(total_perimeter, 3),
-        "total_count": total_count
-    }
 
 def calculate_impost_length(width_mm: float, height_mm: float, system: str, direction: str) -> float:
     """
