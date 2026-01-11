@@ -10,6 +10,43 @@ def ceil_to_package(value: float, package_size: float) -> float:
     return round(num_packages * package_size, 3)
 
 
+def materials_positions(geometry: Dict) -> Dict:
+    """
+    Обёртка для совместимости с final.py
+    Преобразует результаты геометрии в формат материалов
+    
+    Args:
+        geometry: Словарь с результатами расчёта геометрии
+    
+    Returns:
+        Словарь с материалами
+    """
+    # Базовая структура материалов
+    return {
+        "total_area_m2": geometry.get("total_area_m2", 0),
+        "total_perimeter_m": geometry.get("total_perimeter_m", 0),
+        "materials_list": []
+    }
+
+
+def materials_facade(facade_data: Dict) -> Dict:
+    """
+    Расчёт материалов для фасада
+    
+    Args:
+        facade_data: Данные фасада
+    
+    Returns:
+        Словарь с материалами фасада
+    """
+    return {
+        "total_area_m2": facade_data.get("total_area", 0),
+        "glass_area_m2": facade_data.get("glass_area", 0),
+        "panels_area_m2": facade_data.get("panels_area", 0),
+        "materials_list": []
+    }
+
+
 def calculate_materials_combined(
     order_data: Dict,
     geometry_results: List[Dict],
