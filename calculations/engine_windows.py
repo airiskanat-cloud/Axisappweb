@@ -400,8 +400,9 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     
     total_area = result["metrics"]["total_area"]
     
-    # Стеклопакет / Ламбри
-    cost_glass_lambri = 0.0
+    # ИСПРАВЛЕНО: Разделяем стеклопакет и ламбри
+    cost_glass = 0.0
+    cost_lambri = 0.0
     
     for position in positions:
         pos_data = position.get("data", {})
@@ -415,16 +416,16 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
         if fill_cat == "Стеклопакет":
             # Стеклопакет: площадь × цена за м²
             price_glass = get_price_from_ref2(glass_type)
-            print(f"🔍 DEBUG Стеклопакет: fill_cat='{fill_cat}', glass_type='{glass_type}', price={price_glass}, area={pos_area:.3f}")
-            cost_glass_lambri += pos_area * price_glass
+            print(f"🔍 DEBUG Стеклопакет: glass_type='{glass_type}', price={price_glass}, area={pos_area:.3f}, cost={pos_area * price_glass:.2f}")
+            cost_glass += pos_area * price_glass
         elif "Ламбри" in fill_cat:
             # Ламбри: округляем до кратного 6м (хлысты), потом × цена за 1м
             price_lambri = get_price_from_ref2(fill_cat)
-            print(f"🔍 DEBUG: fill_cat='{fill_cat}', price_lambri={price_lambri}")  # DEBUG
             # Округляем площадь до кратного 6 (завод отпускает хлыстами по 6м)
             qty_hlysti = math.ceil(pos_area / 6)  # количество хлыстов
             total_meters = qty_hlysti * 6  # итого метров к отгрузке
-            cost_glass_lambri += total_meters * price_lambri
+            print(f"🔍 DEBUG Ламбри: fill_cat='{fill_cat}', price={price_lambri}, area={pos_area:.3f}, хлыстов={qty_hlysti}, метров={total_meters}, cost={total_meters * price_lambri:.2f}")
+            cost_lambri += total_meters * price_lambri
     
     # Тонировка
     cost_toning = 0.0
@@ -449,7 +450,8 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
         cost_installation = total_area * price_installation
     
     result["part3_final"] = {
-        "Стеклопакет / Ламбри": round(cost_glass_lambri, 0),
+        "Стеклопакет": round(cost_glass, 0),
+        "Ламбри": round(cost_lambri, 0),
         "Тонировка": round(cost_toning, 0),
         "Сборка": round(cost_assembly, 0),
         "Монтаж": round(cost_installation, 0),

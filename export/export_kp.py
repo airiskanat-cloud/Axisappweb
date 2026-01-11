@@ -114,6 +114,31 @@ def export_to_excel(order_data: dict, result_data: dict, output_dir: str = None)
     
     row += 1
     
+    # ДЕТАЛИЗАЦИЯ СТОИМОСТИ
+    part3 = result_data.get("part3_final", {})
+    
+    if part3:
+        ws.merge_cells(f'A{row}:F{row}')
+        cell = ws[f'A{row}']
+        cell.value = "ДЕТАЛИЗАЦИЯ СТОИМОСТИ"
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = center_alignment
+        row += 1
+        
+        # Выводим каждую позицию
+        for key, value in part3.items():
+            if value > 0:  # Показываем только ненулевые
+                ws[f'A{row}'] = key
+                ws[f'A{row}'].font = normal_font
+                ws[f'E{row}'] = f"{value:,.2f}"
+                ws[f'E{row}'].font = normal_font
+                ws[f'F{row}'] = "₸"
+                ws[f'F{row}'].font = normal_font
+                row += 1
+        
+        row += 1
+    
     # ИТОГИ
     ws[f'A{row}'] = "Общая площадь:"
     ws[f'A{row}'].font = bold_font
@@ -198,6 +223,20 @@ def export_facade_to_excel(facade_result: Dict, order_number: str = None, output
     cell.font = title_font
     cell.alignment = center_alignment
     
+    row += 1
+    ws.merge_cells(f'A{row}:F{row}')
+    cell = ws[f'A{row}']
+    cell.value = "Город Астана"
+    cell.font = normal_font
+    cell.alignment = center_alignment
+    
+    row += 1
+    ws.merge_cells(f'A{row}:F{row}')
+    cell = ws[f'A{row}']
+    cell.value = "Тел.: +7 707 504 4040"
+    cell.font = normal_font
+    cell.alignment = center_alignment
+    
     row += 2
     ws.merge_cells(f'A{row}:F{row}')
     cell = ws[f'A{row}']
@@ -207,10 +246,36 @@ def export_facade_to_excel(facade_result: Dict, order_number: str = None, output
     
     row += 2
     
+    # Извлекаем данные из результата
+    facade_type = facade_result.get('facade_type', 'Фасад')
+    total_positions = facade_result.get('total_positions', 0)
     total_cost = facade_result.get('total_cost', 0)
+    materials_cost = facade_result.get('materials_cost', 0)
+    
+    # Позиции
+    positions = facade_result.get('positions', [])
+    if positions:
+        ws[f'A{row}'] = "ПОЗИЦИИ:"
+        ws[f'A{row}'].font = Font(name='Arial', size=12, bold=True)
+        row += 1
+        
+        for idx, pos in enumerate(positions, start=1):
+            geometry = pos.get('geometry', {})
+            ws[f'A{row}'] = f"Позиция {idx}:"
+            ws[f'B{row}'] = f"{geometry.get('width_m', 0):.1f} × {geometry.get('height_m', 0):.1f} м"
+            row += 1
+    
+    row += 1
+    
+    # ИТОГИ
+    ws[f'A{row}'] = "Материалы:"
+    ws[f'E{row}'] = f"{materials_cost:,.2f} ₸"
+    row += 1
     
     ws[f'A{row}'] = "ИТОГО к оплате:"
+    ws[f'A{row}'].font = Font(name='Arial', size=14, bold=True)
     ws[f'E{row}'] = f"{total_cost:,.2f} ₸"
+    ws[f'E{row}'].font = Font(name='Arial', size=14, bold=True)
     
     # Ширина столбцов
     ws.column_dimensions['A'].width = 30
