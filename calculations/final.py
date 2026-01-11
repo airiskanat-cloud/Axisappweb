@@ -17,10 +17,11 @@ def calc_windows_doors_final(
     """
 
     # 1. Геометрия
-    geometry = geometry_positions_extended(positions)
+geometry = geometry_positions_extended(positions)
 
-    # 2. Материалы
-    materials = materials_positions(geometry_ext)
+# 2. Материалы
+materials = materials_positions(geometry)
+
 
     # 3. Базовая цена
     base_price = price_windows_doors(
