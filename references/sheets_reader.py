@@ -9,13 +9,17 @@ logger = logging.getLogger(__name__)
 def parse_price(value):
     if value is None:
         return 0.0
-    return float(
-        str(value)
-        .replace('\xa0', '')  # неразрывный пробел (из Google Sheets)
-        .replace(' ', '')    # обычный пробел
-        .replace(',', '.')   # на всякий случай
-    )
 
+    value = str(value).strip()
+    if value == "":
+        return 0.0
+
+    return float(
+        value
+        .replace('\xa0', '')  # неразрывный пробел
+        .replace(' ', '')    # обычный пробел
+        .replace(',', '.')   # запятая → точка
+    )
 
 # Названия листов из твоих справочников
 SHEET_REF1 = "Справочник1"
