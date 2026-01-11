@@ -59,6 +59,30 @@ except ModuleNotFoundError:
 logger = logging.getLogger(__name__)
 
 
+# ========== ВСПОМОГАТЕЛЬНАЯ ФУНКЦИЯ ДЛЯ FINAL.PY ==========
+
+def facade_glass_and_panels(facade_data: Dict) -> Dict:
+    """
+    Расчёт площадей стекла и панелей для фасада
+    Обёртка для совместимости с final.py
+    
+    Args:
+        facade_data: Данные фасада
+    
+    Returns:
+        Dict с площадями
+    """
+    total_area = facade_data.get("total_area", 0)
+    glass_area = facade_data.get("glass_area", total_area * 0.8)  # 80% стекло
+    panels_area = facade_data.get("panels_area", total_area * 0.2)  # 20% панели
+    
+    return {
+        "total_facade_area_m2": round(total_area, 3),
+        "glass_area_m2": round(glass_area, 3),
+        "panels_area_m2": round(panels_area, 3)
+    }
+
+
 # ========== ГЛАВНАЯ ФУНКЦИЯ РАСЧЕТА ==========
 
 def calculate_facade_full(facade_type: str,

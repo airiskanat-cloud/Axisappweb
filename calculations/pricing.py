@@ -1,6 +1,114 @@
 # calculations/pricing.py
 from typing import Dict, List
 
+
+def price_windows_doors(geometry: Dict, materials: Dict, ref2: Dict, 
+                        glass_type: str, profile_system: str) -> Dict:
+    """
+    Расчёт базовой цены окон/дверей
+    
+    Args:
+        geometry: Результаты геометрии
+        materials: Материалы
+        ref2: Справочник цен
+        glass_type: Тип стеклопакета
+        profile_system: Система профиля
+    
+    Returns:
+        Dict с базовой ценой
+    """
+    total_area = geometry.get("total_area_m2", 0)
+    
+    # Цена стеклопакета за м²
+    glass_price = ref2.get(glass_type, 0)
+    if isinstance(glass_price, dict):
+        glass_price = glass_price.get("Цена за кв.м.", 0)
+    
+    glass_cost = total_area * float(glass_price)
+    
+    # Цена профиля (примерная, можно доработать)
+    profile_cost = total_area * 5000  # базовая цена профиля
+    
+    total = glass_cost + profile_cost
+    
+    return {
+        "glass": round(glass_cost, 2),
+        "profile": round(profile_cost, 2),
+        "total": round(total, 2)
+    }
+
+
+def price_options_windows(geometry: Dict, ref2: Dict, glass_type: str,
+                          toning: str, assembly: str, installation: str) -> Dict:
+    """
+    Расчёт цены опций для окон/дверей
+    
+    Args:
+        geometry: Результаты геометрии
+        ref2: Справочник цен
+        glass_type: Тип стеклопакета
+        toning: Тонировка (Есть/Нет)
+        assembly: Сборка (Есть/Нет)
+        installation: Монтаж
+    
+    Returns:
+        Dict с ценами опций
+    """
+    total_area = geometry.get("total_area_m2", 0)
+    
+    options = {}
+    total_options = 0.0
+    
+    # Тонировка
+    if toning == "Есть":
+        toning_price = ref2.get("Тонировка", 0)
+        cost = total_area * float(toning_price)
+        options["toning"] = cost
+        total_options += cost
+    
+    # Сборка
+    if assembly == "Есть":
+        assembly_price = ref2.get("Сборка", 0)
+        cost = total_area * float(assembly_price)
+        options["assembly"] = cost
+        total_options += cost
+    
+    # Монтаж
+    if installation != "Нет":
+        installation_price = ref2.get("Монтаж", 0)
+        cost = total_area * float(installation_price)
+        options["installation"] = cost
+        total_options += cost
+    
+    options["total"] = round(total_options, 2)
+    
+    return options
+
+
+def price_facade(facade_areas: Dict, facade_materials: Dict) -> Dict:
+    """
+    Расчёт цены фасада
+    
+    Args:
+        facade_areas: Площади фасада
+        facade_materials: Материалы фасада
+    
+    Returns:
+        Dict с ценой фасада
+    """
+    total_area = facade_areas.get("total_facade_area_m2", 0)
+    
+    # Базовая цена фасада (примерная)
+    base_price_per_m2 = 15000  # тенге за м²
+    
+    total = total_area * base_price_per_m2
+    
+    return {
+        "base": round(total, 2),
+        "total": round(total, 2)
+    }
+
+
 def calculate_final_pricing(
     materials_results: Dict, 
     geometry_results: List[Dict], 
