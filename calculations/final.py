@@ -6,6 +6,10 @@ from calculations.facade import facade_glass_and_panels
 from calculations.materials import materials_facade
 from calculations.pricing import price_facade
 
+# Импорт для загрузки справочников
+from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
+from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3
+
 
 def run_calculation(order_data: dict) -> dict:
     """
@@ -35,14 +39,21 @@ def run_calculation(order_data: dict) -> dict:
     assembly = "Есть" if common.get("assembly") else "Нет"
     installation = common.get("installation", "Нет")
     
-    # Справочник цен (здесь нужно подключить реальный справочник)
-    ref2 = {
-        "Двойной": 9000,
-        "Тройной": 12000,
-        "Тонировка": 1500,
-        "Сборка": 2000,
-        "Монтаж": 3000
-    }
+    # ИСПРАВЛЕНО: Загружаем справочники из Google Sheets
+    try:
+        ref1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+        ref2 = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+        ref3 = load_reference_3(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+    except Exception as e:
+        print(f"⚠️ Ошибка загрузки справочников: {e}")
+        # Fallback на константы если не удалось загрузить
+        ref2 = {
+            "Двойной": 9000,
+            "Тройной": 12000,
+            "Тонировка": 1500,
+            "Сборка": 2000,
+            "Монтаж": 3000
+        }
     
     # Если это фасад
     if facade_data:
