@@ -391,10 +391,11 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     
     def get_price_from_ref2(key_word: str) -> float:
         """Поиск цены в Справочнике-2"""
-        price = ref2.get(key_word)
+        # ИСПРАВЛЕНО: приводим к нижнему регистру и убираем пробелы вокруг /
+        key_normalized = key_word.lower().replace(" / ", "/")
+        price = ref2.get(key_normalized)
         if price is None:
-            print(f"⚠️ WARNING: Цена для '{key_word}' не найдена!")
-            print(f"   📋 Доступные ключи: {list(ref2.keys())[:10]}")  # Первые 10
+            print(f"⚠️ WARNING: Цена для '{key_word}' (normalized: '{key_normalized}') не найдена!")
             return 0.0
         return float(price)
     
