@@ -163,7 +163,11 @@ def export_facade_to_excel(facade_result: Dict, order_number: str = None, output
     
     # Стили
     title_font = Font(name='Arial', size=16, bold=True)
+    header_font = Font(name='Arial', size=14, bold=True)
     normal_font = Font(name='Arial', size=11)
+    bold_font = Font(name='Arial', size=11, bold=True)
+    
+    header_fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
     
     center_alignment = Alignment(horizontal='center', vertical='center')
     
