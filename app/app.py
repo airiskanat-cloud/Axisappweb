@@ -849,10 +849,10 @@ def render_facade_page():
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
                 glass_cost = 0
-                price_map = {"Двойной": 9000, "Тройной": 12000, "Энергодвойной": 11000}
                 for glass_type, total_glass_area in glass_areas.items():
                     if total_glass_area > 0:
-                        price_per_m2 = price_map.get(glass_type, 9000)
+                        # ИСПРАВЛЕНО: берём цену из ref2
+                        price_per_m2 = ref2.get(glass_type, 9000)
                         glass_cost += total_glass_area * price_per_m2
                 
                 # РАСЧЕТ ЛАМБРИ (по общей площади)
@@ -860,68 +860,90 @@ def render_facade_page():
                 if lambri_area > 0:
                     import math
                     
-                    # Фактический расход = общая площадь (м²)
-                    l_fact = lambri_area
-                    
-                    # Кол-во к отгрузке = общая площадь / 6 (норма)
+                    # Кол-во к отгрузке = ceil(площадь / 6)
                     q_otgr = math.ceil(lambri_area / 6.0)
                     
-                    # Стоимость из Справочника-2 за 1 м²
-                    price_per_m2_lambri = 2248  # ₸/м²
+                    # ИСПРАВЛЕНО: берём цену из ref2
+                    price_per_m_lambri = ref2.get("Ламбри без термо", 2248)
                     
-                    # Сумма = (стоимость за 1 м² * 6) * кол-во к отгрузке
-                    norma = 6
-                    lambri_cost = (price_per_m2_lambri * norma) * q_otgr
+                    # Сумма = цена_за_метр * (кол-во_хлыстов * 6м)
+                    lambri_cost = price_per_m_lambri * (q_otgr * 6)
                 
-                # Объединяем
-                glass_lambri_cost = glass_cost + lambri_cost
+                # НЕ объединяем - считаем отдельно!
                 
                 # Тонировка
                 toning_cost = 0
                 if facade_toning == "Есть":
-                    toning_cost = total_area * 2000
+                    # ИСПРАВЛЕНО: берём цену из ref2
+                    price_toning = ref2.get("Тонировка", 2000)
+                    toning_cost = total_area * price_toning
                 
                 # Сборка
                 assembly_cost = 0
                 if facade_assembly == "Есть":
-                    assembly_cost = total_area * 10000
+                    # ИСПРАВЛЕНО: берём цену из ref2
+                    price_assembly = ref2.get("Сборка", 10000)
+                    assembly_cost = total_area * price_assembly
                 
                 # Монтаж
                 installation_cost = 0
-                if facade_installation == "Монтаж":
-                    installation_cost = total_area * 10000
-                elif facade_installation == "Демонтаж":
-                    installation_cost = total_area * 5000
-                elif facade_installation == "Демонтаж / Монтаж":
-                    installation_cost = total_area * 15000
-                elif facade_installation == "Сложный монтаж":
-                    installation_cost = total_area * 15000
+                if facade_installation != "Нет":
+                    # ИСПРАВЛЕНО: берём цену из ref2 по названию
+                    price_installation = ref2.get(facade_installation, 10000)
+                    installation_cost = total_area * price_installation
                 
                 # Сумма без обеспечения
-                subtotal = materials_cost + glass_lambri_cost + toning_cost + assembly_cost + installation_cost
+                subtotal = materials_cost + glass_cost + lambri_cost + toning_cost + assembly_cost + installation_cost
                 
                 # Обеспечение 65%
                 margin = subtotal * 0.65
                 total_cost = subtotal + margin
                 
-                # Сохраняем результат
+                # ИСПРАВЛЕНО: Сохраняем результат - стеклопакет и ламбри РАЗДЕЛЬНО
                 st.session_state.last_facade_result = {
+                    "facade_type": "Фасад",
+                    "order_number": facade_order_num,
                     "metrics": {
                         "total_area": total_area,
                         "total_perimeter": total_perimeter
                     },
                     "part3_final": {
-                        "Стеклопакет / Ламбри": round(glass_lambri_cost, 0),
+                        "Стеклопакет": round(glass_cost, 0),
+                        "Ламбри": round(lambri_cost, 0),
                         "Тонировка": round(toning_cost, 0),
                         "Сборка": round(assembly_cost, 0),
                         "Монтаж": round(installation_cost, 0),
                         "Материалы": round(materials_cost, 0),
                         "Обеспечение (65%)": round(margin, 0)
                     },
-                    "total_with_margin": round(total_cost, 0),
-                    "positions": results,
-                    "order_number": facade_order_num
+                    "total_cost": round(total_cost, 0),
+                    "materials_cost": round(materials_cost, 0),
+                    "positions": results
                 }
+                
+                # ИСПРАВЛЕНО: Сохранение в историю
+                try:
+                    current_user = st.session_state.get("current_user", {})
+                    user_login = current_user.get("login", "unknown")
+                    
+                    # Формируем order_data для истории
+                    facade_order_data = {
+                        "common": {
+                            "order_number": facade_order_num,
+                            "facade_type": "Фасад"
+                        },
+                        "positions": results
+                    }
+                    
+                    save_history(
+                        GOOGLE_CREDENTIALS_PATH,
+                        SPREADSHEET_ID,
+                        user_login,
+                        facade_order_data,
+                        st.session_state.last_facade_result
+                    )
+                except Exception as e:
+                    print(f"⚠️ Не удалось сохранить историю фасада: {e}")
                 
                 # Вывод результатов
                 st.success("✅ Расчет выполнен!")

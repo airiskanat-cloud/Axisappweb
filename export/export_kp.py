@@ -87,63 +87,15 @@ def export_to_excel(order_data: dict, result_data: dict, output_dir: str = None)
     
     row += 2
     
-    # ПОЗИЦИИ (упрощенно)
-    positions = order_data.get("positions", [])
-    
-    if positions:
-        ws.merge_cells(f'A{row}:F{row}')
-        cell = ws[f'A{row}']
-        cell.value = "ПОЗИЦИИ ЗАКАЗА"
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = center_alignment
-        cell.border = thin_border
-        row += 1
-        
-        for idx, pos in enumerate(positions, start=1):
-            pos_data = pos.get("data", {})
-            pw = pos_data.get("width", 0)
-            ph = pos_data.get("height", 0)
-            p_type = pos.get("product_type", "")
-            
-            ws[f'A{row}'] = f"Позиция {idx}:"
-            ws[f'A{row}'].font = bold_font
-            ws[f'B{row}'] = f"{p_type}, {pw} × {ph} мм"
-            ws[f'B{row}'].font = normal_font
-            row += 1
-    
-    row += 1
-    
-    # ДЕТАЛИЗАЦИЯ СТОИМОСТИ
-    part3 = result_data.get("part3_final", {})
-    
-    if part3:
-        ws.merge_cells(f'A{row}:F{row}')
-        cell = ws[f'A{row}']
-        cell.value = "ДЕТАЛИЗАЦИЯ СТОИМОСТИ"
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = center_alignment
-        row += 1
-        
-        # Выводим каждую позицию
-        for key, value in part3.items():
-            if value > 0:  # Показываем только ненулевые
-                ws[f'A{row}'] = key
-                ws[f'A{row}'].font = normal_font
-                ws[f'E{row}'] = f"{value:,.2f}"
-                ws[f'E{row}'].font = normal_font
-                ws[f'F{row}'] = "₸"
-                ws[f'F{row}'].font = normal_font
-                row += 1
-        
-        row += 1
+    # ИСПРАВЛЕНО: Упрощённое КП - только площадь и итого
     
     # ИТОГИ
     ws[f'A{row}'] = "Общая площадь:"
     ws[f'A{row}'].font = bold_font
-    ws[f'B{row}'] = f"{total_area:.3f} м²"
-    ws[f'B{row}'].font = normal_font
+    ws[f'E{row}'] = f"{total_area:.3f}"
+    ws[f'E{row}'].font = normal_font
+    ws[f'F{row}'] = "м²"
+    ws[f'F{row}'].font = normal_font
     
     row += 2
     ws.merge_cells(f'A{row}:D{row}')
@@ -248,34 +200,49 @@ def export_facade_to_excel(facade_result: Dict, order_number: str = None, output
     
     # Извлекаем данные из результата
     facade_type = facade_result.get('facade_type', 'Фасад')
-    total_positions = facade_result.get('total_positions', 0)
+    total_area = facade_result.get('metrics', {}).get('total_area', 0)
     total_cost = facade_result.get('total_cost', 0)
-    materials_cost = facade_result.get('materials_cost', 0)
+    part3 = facade_result.get('part3_final', {})
     
-    # Позиции
-    positions = facade_result.get('positions', [])
-    if positions:
-        ws[f'A{row}'] = "ПОЗИЦИИ:"
-        ws[f'A{row}'].font = Font(name='Arial', size=12, bold=True)
+    # Позиции - только общая площадь
+    ws[f'A{row}'] = "Общая площадь:"
+    ws[f'A{row}'].font = bold_font
+    ws[f'E{row}'] = f"{total_area:.2f}"
+    ws[f'E{row}'].font = normal_font
+    ws[f'F{row}'] = "м²"
+    ws[f'F{row}'].font = normal_font
+    
+    row += 2
+    
+    # ДЕТАЛИЗАЦИЯ
+    if part3:
+        ws.merge_cells(f'A{row}:F{row}')
+        cell = ws[f'A{row}']
+        cell.value = "ДЕТАЛИЗАЦИЯ СТОИМОСТИ"
+        cell.font = Font(name='Arial', size=12, bold=True)
+        cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
+        cell.alignment = center_alignment
         row += 1
         
-        for idx, pos in enumerate(positions, start=1):
-            geometry = pos.get('geometry', {})
-            ws[f'A{row}'] = f"Позиция {idx}:"
-            ws[f'B{row}'] = f"{geometry.get('width_m', 0):.1f} × {geometry.get('height_m', 0):.1f} м"
-            row += 1
+        for key, value in part3.items():
+            if value > 0:
+                ws[f'A{row}'] = key
+                ws[f'A{row}'].font = normal_font
+                ws[f'E{row}'] = f"{value:,.2f}"
+                ws[f'E{row}'].font = normal_font
+                ws[f'F{row}'] = "₸"
+                ws[f'F{row}'].font = normal_font
+                row += 1
+        
+        row += 1
     
-    row += 1
-    
-    # ИТОГИ
-    ws[f'A{row}'] = "Материалы:"
-    ws[f'E{row}'] = f"{materials_cost:,.2f} ₸"
-    row += 1
-    
+    # ИТОГО
     ws[f'A{row}'] = "ИТОГО к оплате:"
     ws[f'A{row}'].font = Font(name='Arial', size=14, bold=True)
-    ws[f'E{row}'] = f"{total_cost:,.2f} ₸"
+    ws[f'E{row}'] = f"{total_cost:,.2f}"
     ws[f'E{row}'].font = Font(name='Arial', size=14, bold=True)
+    ws[f'F{row}'] = "₸"
+    ws[f'F{row}'].font = Font(name='Arial', size=14, bold=True)
     
     # Ширина столбцов
     ws.column_dimensions['A'].width = 30
