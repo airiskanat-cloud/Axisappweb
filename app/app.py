@@ -475,7 +475,7 @@ if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=Tr
         except Exception as e:
             st.warning(f"⚠️ История не сохранена: {e}")
 
-                st.header("📊 Детальная смета AXIS")
+st.header("📊 Детальная смета AXIS")
                 
                 # Метрики вверху
                 m_col1, m_col2, m_col3 = st.columns(3)
