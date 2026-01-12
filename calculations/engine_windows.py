@@ -390,11 +390,11 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     # ===== ИТОГОВЫЙ РАСЧЕТ =====
     
     def get_price_from_ref2(key_word: str) -> float:
-        """Поиск цены в Справочнике-2 (теперь это простой словарь)"""
+        """Поиск цены в Справочнике-2"""
         price = ref2.get(key_word)
         if price is None:
-            # КРИТИЧНО: Если цены нет в справочнике, выводим предупреждение
-            print(f"⚠️ WARNING: Цена для '{key_word}' не найдена в Справочнике-2!")
+            print(f"⚠️ WARNING: Цена для '{key_word}' не найдена!")
+            print(f"   📋 Доступные ключи: {list(ref2.keys())[:10]}")  # Первые 10
             return 0.0
         return float(price)
     
