@@ -85,8 +85,7 @@ if not st.session_state.authenticated:
         else:
             st.error("Ошибка входа")
     st.stop()
-
-
+    
 # --- 2. ЗАГРУЗКА ДАННЫХ ---
 @st.cache_data(ttl=3600)
 def get_data():
