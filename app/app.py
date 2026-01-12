@@ -436,47 +436,49 @@ def render_windows_doors_page():
     st.divider()
 
     if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True):
-        if not st.session_state.positions:
-            st.error("❌ Добавьте хотя бы одну позицию!")
-        else:
-            # Формирование данных заказа
-            order_data = {
-                "common": {
-                    "order_number": order_num, 
-                    "toning_id": toning_id, 
-                    "assembly_id": assembly_id, 
-                    "installation_id": install_id
-                },
-                "positions": st.session_state.get("positions", [])
-            }
-            
-            # Расчет через движок (окна / фасады)
-try:
-    if st.session_state.menu_selection == "Фасады":
-        res = calculate_facade_smeta(order_data, ref2)
+    if not st.session_state.positions:
+        st.error("❌ Добавьте хотя бы одну позицию!")
     else:
-        res = calculate_window_smeta(order_data, ref1, ref2, ref3)
+        # Формирование данных заказа
+        order_data = {
+            "common": {
+                "order_number": order_num, 
+                "toning_id": toning_id, 
+                "assembly_id": assembly_id, 
+                "installation_id": install_id
+            },
+            "positions": st.session_state.get("positions", [])
+        }
 
-    # Сохранение результата в session_state для экспорта
-    st.session_state.last_result = res
-    st.session_state.last_order_data = order_data
+        # Расчет через движок (окна / фасады)
+        try:
+            if st.session_state.menu_selection == "Фасады":
+                res = calculate_facade_smeta(order_data, ref2)
+            else:
+                res = calculate_window_smeta(order_data, ref1, ref2, ref3)
 
-                
-                # СОХРАНЕНИЕ ИСТОРИИ В GOOGLE SHEETS
-                try:
-                    current_user = st.session_state.get("current_user", {})
-                    user_login = current_user.get("login", "unknown")
-                    save_history(
-                        GOOGLE_CREDENTIALS_PATH,
-                        SPREADSHEET_ID,
-                        user_login,
-                        order_data,
-                        res
-                    )
-                except Exception as e:
-                    st.warning(f"⚠️ История не сохранена: {e}")
+            # Сохранение результата в session_state для экспорта
+            st.session_state.last_result = res
+            st.session_state.last_order_data = order_data
 
-                st.header("📊 Детальная смета AXIS")
+        except Exception as e:
+            st.error(f"Ошибка расчета: {e}")
+            return  # ⬅️ важно: выходим из кнопки
+
+        # СОХРАНЕНИЕ ИСТОРИИ В GOOGLE SHEETS
+        try:
+            current_user = st.session_state.get("current_user", {})
+            user_login = current_user.get("login", "unknown")
+            save_history(
+                GOOGLE_CREDENTIALS_PATH,
+                SPREADSHEET_ID,
+                user_login,
+                order_data,
+                res
+            )
+        except Exception as e:
+            st.warning(f"⚠️ История не сохранена: {e}")
+
                 
                 # Метрики вверху
                 m_col1, m_col2, m_col3 = st.columns(3)
