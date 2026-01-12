@@ -404,28 +404,60 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     cost_glass = 0.0
     cost_lambri = 0.0
     
-    for position in positions:
+    print(f"\n{'='*60}")
+    print(f"🔍 ДИАГНОСТИКА РАСЧЁТА СТЕКЛОПАКЕТА И ЛАМБРИ")
+    print(f"{'='*60}")
+    print(f"Всего позиций: {len(positions)}")
+    
+    for pos_idx, position in enumerate(positions):
         pos_data = position.get("data", {})
         fill_cat = pos_data.get("fill_category", "Стеклопакет")
         glass_type = pos_data.get("glass_type", "Двойной")
-        W = pos_data.get("width", 0) / 1000
-        H = pos_data.get("height", 0) / 1000
+        
+        # ИСПРАВЛЕНО: Нормализуем чтение размеров - поддержка разных ключей
+        W = pos_data.get("width", 0)
+        if W == 0:
+            W = position.get("width", 0)  # Пробуем читать из корня position
+        W = W / 1000 if W > 0 else 0
+        
+        H = pos_data.get("height", 0)
+        if H == 0:
+            H = position.get("height", 0)  # Пробуем читать из корня position
+        H = H / 1000 if H > 0 else 0
+        
         pos_count = position.get("count", 1)
         pos_area = W * H * pos_count
+        
+        print(f"\n📦 Позиция {pos_idx + 1}:")
+        print(f"   Тип заполнения: {fill_cat}")
+        print(f"   Тип стекла: {glass_type}")
+        print(f"   Размеры: W={W:.3f}м × H={H:.3f}м")
+        print(f"   Количество: {pos_count}")
+        print(f"   Площадь: {pos_area:.3f} м²")
         
         if fill_cat == "Стеклопакет":
             # Стеклопакет: площадь × цена за м²
             price_glass = get_price_from_ref2(glass_type)
-            print(f"🔍 DEBUG Стеклопакет: glass_type='{glass_type}', price={price_glass}, area={pos_area:.3f}, cost={pos_area * price_glass:.2f}")
-            cost_glass += pos_area * price_glass
+            cost = pos_area * price_glass
+            cost_glass += cost
+            print(f"   ✅ Стеклопакет: {pos_area:.3f} м² × {price_glass} тг/м² = {cost:.2f} тг")
         elif "Ламбри" in fill_cat:
             # Ламбри: округляем до кратного 6м (хлысты), потом × цена за 1м
             price_lambri = get_price_from_ref2(fill_cat)
             # Округляем площадь до кратного 6 (завод отпускает хлыстами по 6м)
-            qty_hlysti = math.ceil(pos_area / 6)  # количество хлыстов
-            total_meters = qty_hlysti * 6  # итого метров к отгрузке
-            print(f"🔍 DEBUG Ламбри: fill_cat='{fill_cat}', price={price_lambri}, area={pos_area:.3f}, хлыстов={qty_hlysti}, метров={total_meters}, cost={total_meters * price_lambri:.2f}")
-            cost_lambri += total_meters * price_lambri
+            qty_hlysti = math.ceil(pos_area / 6) if pos_area > 0 else 0
+            total_meters = qty_hlysti * 6
+            cost = total_meters * price_lambri
+            cost_lambri += cost
+            print(f"   ✅ Ламбри: {pos_area:.3f} м² → {qty_hlysti} хлыстов × 6м = {total_meters}м × {price_lambri} тг/м = {cost:.2f} тг")
+        else:
+            print(f"   ⚠️ Неизвестный тип заполнения: {fill_cat}")
+    
+    print(f"\n{'='*60}")
+    print(f"📊 ИТОГО:")
+    print(f"   Стеклопакет: {cost_glass:.2f} тг")
+    print(f"   Ламбри: {cost_lambri:.2f} тг")
+    print(f"{'='*60}\n")
     
     # Тонировка
     cost_toning = 0.0
@@ -444,10 +476,18 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     # Монтаж
     cost_installation = 0.0
     installation = common.get("installation_id") or common.get("installation", "Нет")
+    
+    print(f"\n🔧 Расчёт монтажа: '{installation}'")
+    
     if installation != "Нет":
-        # ИСПРАВЛЕНО: ищем цену по конкретному типу монтажа, а не просто "Монтаж"
-        price_installation = get_price_from_ref2(installation)
+        # ИСПРАВЛЕНО: ищем цену по конкретному типу монтажа
+        # Нормализуем название - убираем лишние пробелы
+        installation_clean = " ".join(installation.split())
+        price_installation = get_price_from_ref2(installation_clean)
         cost_installation = total_area * price_installation
+        print(f"   ✅ {installation_clean}: {total_area:.3f} м² × {price_installation} тг/м² = {cost_installation:.2f} тг")
+    else:
+        print(f"   ⏭️ Монтаж не требуется")
     
     result["part3_final"] = {
         "Стеклопакет": round(cost_glass, 0),
