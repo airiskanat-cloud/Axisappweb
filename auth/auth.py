@@ -1,11 +1,15 @@
 import gspread
+import streamlit as st
 from google.oauth2.service_account import Credentials
 
 # Мы меняем load_users на загрузку через общую функцию из sheets_reader
 def load_users_from_sheet(credentials_path, spreadsheet_id):
     """Вспомогательная функция для получения списка пользователей из листа 'ПОЛЬЗОВАТЕЛИ'"""
     try:
-        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
         creds = Credentials.from_service_account_file(credentials_path, scopes=scopes)
         gc = gspread.authorize(creds)
         sh = gc.open_by_key(spreadsheet_id)
@@ -48,6 +52,7 @@ def authenticate(login, password, credentials_path, spreadsheet_id):
         print(f"Строка {i+1} в базе: логин ['{db_login}'], пароль ['{db_pass}']")
 
         if db_login == in_login and db_pass == in_pass:
+            st.session_state["authenticated"] = True
             print("✅ УСПЕХ: Совпадение найдено!")
             print("="*40 + "\n")
             return {"login": db_login}
