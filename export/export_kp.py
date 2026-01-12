@@ -218,29 +218,7 @@ def export_facade_to_excel(facade_result: Dict, order_number: str = None, output
     
     row += 2
     
-    # ДЕТАЛИЗАЦИЯ
-    if part3:
-        ws.merge_cells(f'A{row}:F{row}')
-        cell = ws[f'A{row}']
-        cell.value = "ДЕТАЛИЗАЦИЯ СТОИМОСТИ"
-        cell.font = Font(name='Arial', size=12, bold=True)
-        cell.fill = PatternFill(start_color="D3D3D3", end_color="D3D3D3", fill_type="solid")
-        cell.alignment = center_alignment
-        row += 1
-        
-        for key, value in part3.items():
-            if value > 0:
-                ws[f'A{row}'] = key
-                ws[f'A{row}'].font = normal_font
-                ws[f'E{row}'] = f"{value:,.2f}"
-                ws[f'E{row}'].font = normal_font
-                ws[f'F{row}'] = "₸"
-                ws[f'F{row}'].font = normal_font
-                row += 1
-        
-        row += 1
-    
-    # ИТОГО
+    # ИТОГО (БЕЗ ДЕТАЛИЗАЦИИ)
     ws[f'A{row}'] = "ИТОГО к оплате:"
     ws[f'A{row}'].font = Font(name='Arial', size=14, bold=True)
     ws[f'E{row}'] = f"{total_cost:,.2f}"

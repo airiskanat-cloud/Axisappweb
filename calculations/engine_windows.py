@@ -395,11 +395,18 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
         key_normalized = key_word.lower().replace(" / ", "/")
         price = ref2.get(key_normalized)
         
+        # Запасные значения если нет в справочнике
+        if price is None:
+            defaults = {
+                "ламбри без термо": 2248,
+                "ламбри с термо": 2800
+            }
+            price = defaults.get(key_normalized)
+        
         print(f"🔎 Ищем: '{key_word}' → normalized: '{key_normalized}' → найдено: {price}")
         
         if price is None:
             print(f"⚠️ WARNING: Цена НЕ НАЙДЕНА!")
-            print(f"   Доступные ключи ref2: {list(ref2.keys())}")
             return 0.0
         return float(price)
     
