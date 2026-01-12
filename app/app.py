@@ -20,6 +20,40 @@ from calculations.engine_windows import calculate_window_smeta, calculate_impost
 from export.export_kp import export_to_excel
 from history.save_history import save_history
 
+
+def facade_ui(prefix, pos_idx):
+    st.markdown(f"#### 🏗️ Настройка фасада №{pos_idx+1}")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        width = st.number_input("Общая ширина (мм)", min_value=100, value=3000, key=f"{prefix}_w")
+        height = st.number_input("Общая высота (мм)", min_value=100, value=4000, key=f"{prefix}_h")
+    
+    with col2:
+        cols = st.number_input("Кол-во вертикальных стоек", min_value=1, value=3, key=f"{prefix}_cols")
+        rows = st.number_input("Кол-во горизонтальных ригелей", min_value=1, value=2, key=f"{prefix}_rows")
+        
+    wind_load = st.select_slider("Ветровая нагрузка (кг/м²)", options=[30, 40, 50, 60, 80], value=50, key=f"{prefix}_wind")
+    
+    # Расчет требуемой инерции
+    span_width = (width / cols) / 1000 if cols > 0 else width / 1000
+    span_height = height / 1000
+    
+    # Расчет требуемой инерции (временно отключен - требует facade_pro)
+    # req_jx = calculate_required_jx(span_height, span_width, wind_load)
+    # best_mullion = find_best_mullion(req_jx)
+    # st.info(f"📊 **Тех. расчет:** Требуемый Jx = {req_jx} см⁴. \n\n "
+    #         f"✅ **Рекомендуемая стойка:** {best_mullion['art']} (Jx={best_mullion['jx']})")
+    
+    return {
+        "type": "Фасад",
+        "width": width,
+        "height": height,
+        "grid": {"cols": cols, "rows": rows},
+        "mullion_art": best_mullion['art'],
+        "wind_load": wind_load
+    }
+
 # --- КОНСТАНТЫ ИЗ ТЗ ---
 PRODUCT_TYPES = ["Окно с откр.", "Окно глух.", "Дверь 2-х створч.", "Дверь 1 створч.", "Фасад"]
 PROFILE_SYSTEMS = [
@@ -83,8 +117,8 @@ if not st.session_state.authenticated:
     st.stop()
 
 # --- 2. ЗАГРУЗКА ДАННЫХ ---
-# ВРЕМЕННО убран @st.cache_data для теста обновления справочников
-# После проверки ВЕРНИТЕ обратно: @st.cache_data
+
+@st.cache_data
 def get_data():
     r1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     r2 = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
@@ -251,11 +285,19 @@ with col_right:
             
             # НОВОЕ: Тип изделия и система на уровне позиции
             pc1, pc2 = st.columns(2)
+            
+            # Определяем текущий индекс для типа изделия
+            current_type = pos.get("product_type", "Окно с откр.")
+            try:
+                type_index = PRODUCT_TYPES.index(current_type)
+            except ValueError:
+                type_index = 0
+            
             pos["product_type"] = pc1.selectbox(
                 "Тип изделия", 
-                ["Окно с откр.", "Окно глух."],  # Только окна для Шага 1
+                PRODUCT_TYPES,  # ИСПРАВЛЕНО: Используем полный список (окна + двери + фасад)
                 key=f"pc_type{idx}",
-                index=0 if pos.get("product_type") == "Окно с откр." else 1
+                index=type_index
             )
             
             pos["system_id"] = pc2.selectbox(
