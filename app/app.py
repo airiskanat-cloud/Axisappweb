@@ -558,4 +558,11 @@ def render_windows_doors_page():
                 st.error(f"Ошибка при создании файла: {e}")
                 st.exception(e)
 
+# --- ЗАПУСК ОСНОВНОГО UI ---
+if 'menu_selection' not in st.session_state:
+    st.session_state.menu_selection = "Окна"
+
+render_windows_doors_page()
+
+
                 
