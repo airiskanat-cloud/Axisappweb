@@ -435,7 +435,7 @@ def render_windows_doors_page():
     # --- 6. РАСЧЕТ И ВЫВОД ---
     st.divider()
 
-    if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True):
+if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True):
     if not st.session_state.positions:
         st.error("❌ Добавьте хотя бы одну позицию!")
     else:
@@ -474,6 +474,7 @@ def render_windows_doors_page():
             )
         except Exception as e:
             st.warning(f"⚠️ История не сохранена: {e}")
+
 
                 
                 # Метрики вверху
