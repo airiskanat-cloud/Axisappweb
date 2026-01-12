@@ -437,7 +437,7 @@ def render_windows_doors_page():
 
     if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True):
     if not st.session_state.positions:
-        st.error("❌ Добавьте хотя бы одну позицию!")
+            st.error("❌ Добавьте хотя бы одну позицию!")
     else:
         # Формирование данных заказа
         order_data = {
