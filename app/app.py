@@ -86,17 +86,43 @@ if not st.session_state.authenticated:
             st.error("Ошибка входа")
     st.stop()
 
+
 # --- 2. ЗАГРУЗКА ДАННЫХ ---
 
-@st.cache_data
+@st.cache_data(ttl=3600)
 def get_data():
-    r1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
-    r2 = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
-    r3 = load_reference_3(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
-    return r1, r2, r3
+    try:
+        st.info("🔄 Начинаем загрузку справочников...")
+        
+        start = datetime.datetime.now()
+        with st.spinner('⏳ Загрузка Справочника-1 (материалы)...'):
+            r1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+        st.success(f"✅ Справочник-1 загружен за {(datetime.datetime.now() - start).seconds}с")
+        
+        start = datetime.datetime.now()
+        with st.spinner('⏳ Загрузка Справочника-2 (цены)...'):
+            r2 = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+        st.success(f"✅ Справочник-2 загружен за {(datetime.datetime.now() - start).seconds}с")
+        
+        start = datetime.datetime.now()
+        with st.spinner('⏳ Загрузка Справочника-3 (фурнитура)...'):
+            r3 = load_reference_3(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+        st.success(f"✅ Справочник-3 загружен за {(datetime.datetime.now() - start).seconds}с")
+        
+        return r1, r2, r3
+    except Exception as e:
+        st.error(f"❌ ОШИБКА при загрузке справочников: {e}")
+        st.exception(e)
+        st.stop()
 
-with st.spinner('Загрузка справочников...'):
+# Вызов с диагностикой
+try:
     ref1, ref2, ref3 = get_data()
+except Exception as e:
+    st.error(f"❌ Критическая ошибка: {e}")
+    st.stop()
+
+# --- 3. ФУНКЦИЯ КОНСТРУКТОР ОКНА ---
 
 # --- 3. ФУНКЦИЯ КОНСТРУКТОР ОКНА ---
 def window_door_ui(prefix, pos_idx, system_id, initial_data=None):
