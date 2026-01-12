@@ -20,6 +20,8 @@ from calculations.engine_windows import calculate_window_smeta, calculate_impost
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
 from export.export_kp import export_to_excel
 from history.save_history import save_history
+from calculations.engine_facade import calculate_facade_smeta
+
 
 # --- КОНСТАНТЫ ИЗ ТЗ ---
 # ИСПРАВЛЕНО: "Окно глух." теперь с ОДНИМ пробелом (как в Справочнике-1)
@@ -448,13 +450,17 @@ def render_windows_doors_page():
                 "positions": st.session_state.get("positions", [])
             }
             
-            # Расчет через новый движок для окон V2
-            try:
-                res = calculate_window_smeta(order_data, ref1, ref2, ref3)
-                
-                # Сохранение результата в session_state для экспорта
-                st.session_state.last_result = res
-                st.session_state.last_order_data = order_data
+            # Расчет через движок (окна / фасады)
+try:
+    if st.session_state.menu_selection == "Фасады":
+        res = calculate_facade_smeta(order_data, ref2)
+    else:
+        res = calculate_window_smeta(order_data, ref1, ref2, ref3)
+
+    # Сохранение результата в session_state для экспорта
+    st.session_state.last_result = res
+    st.session_state.last_order_data = order_data
+
                 
                 # СОХРАНЕНИЕ ИСТОРИИ В GOOGLE SHEETS
                 try:
