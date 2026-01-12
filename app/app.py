@@ -475,6 +475,8 @@ if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=Tr
         except Exception as e:
             st.warning(f"⚠️ История не сохранена: {e}")
 
+                st.header("📊 Детальная смета AXIS")
+                
                 # Метрики вверху
                 m_col1, m_col2, m_col3 = st.columns(3)
                 m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
