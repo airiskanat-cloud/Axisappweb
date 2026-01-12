@@ -20,8 +20,6 @@ from calculations.engine_windows import calculate_window_smeta, calculate_impost
 from export.export_kp import export_to_excel
 from history.save_history import save_history
 
-from calculations.facade_pro import calculate_required_jx, find_best_mullion
-
 def facade_ui(prefix, pos_idx):
     st.markdown(f"#### 🏗️ Настройка фасада №{pos_idx+1}")
     
@@ -36,15 +34,13 @@ def facade_ui(prefix, pos_idx):
         
     wind_load = st.select_slider("Ветровая нагрузка (кг/м²)", options=[30, 40, 50, 60, 80], value=50, key=f"{prefix}_wind")
     
-    # Расчет требуемой инерции
-    span_width = (width / cols) / 1000 if cols > 0 else width / 1000
-    span_height = height / 1000
-    
-    req_jx = calculate_required_jx(span_height, span_width, wind_load)
-    best_mullion = find_best_mullion(req_jx)
-    
-    st.info(f"📊 **Тех. расчет:** Требуемый Jx = {req_jx} см⁴. \n\n "
-            f"✅ **Рекомендуемая стойка:** {best_mullion['art']} (Jx={best_mullion['jx']})")
+    # Расчет требуемой инерции (временно отключен)
+    # span_width = (width / cols) / 1000 if cols > 0 else width / 1000
+    # span_height = height / 1000
+    # req_jx = calculate_required_jx(span_height, span_width, wind_load)
+    # best_mullion = find_best_mullion(req_jx)
+    # st.info(f"📊 **Тех. расчет:** Требуемый Jx = {req_jx} см⁴. \n\n "
+    #         f"✅ **Рекомендуемая стойка:** {best_mullion['art']} (Jx={best_mullion['jx']})")
     
     return {
         "type": "Фасад",
