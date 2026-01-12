@@ -475,15 +475,21 @@ if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=Tr
         except Exception as e:
             st.warning(f"⚠️ История не сохранена: {e}")
 
-st.header("📊 Детальная смета AXIS")
-                
-                # Метрики вверху
-                m_col1, m_col2, m_col3 = st.columns(3)
-                m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
-                m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м.п.")
-                m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
-                
-                st.divider()
+# ===== ПОКАЗ РЕЗУЛЬТАТОВ =====
+if "last_result" in st.session_state:
+    res = st.session_state.last_result
+
+    st.header("📊 Детальная смета AXIS")
+
+    m_col1, m_col2, m_col3 = st.columns(3)
+    m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
+    m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м")
+    m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
+
+    st.divider()
+
+    # дальше expanders и таблицы
+
                 
                 # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
                 with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
