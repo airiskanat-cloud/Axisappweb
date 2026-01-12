@@ -20,8 +20,6 @@ from calculations.engine_windows import calculate_window_smeta, calculate_impost
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
 from export.export_kp import export_to_excel
 from history.save_history import save_history
-from calculations.engine_facade import calculate_facade_smeta
-
 
 # --- КОНСТАНТЫ ИЗ ТЗ ---
 # ИСПРАВЛЕНО: "Окно глух." теперь с ОДНИМ пробелом (как в Справочнике-1)
@@ -85,18 +83,17 @@ if not st.session_state.authenticated:
         else:
             st.error("Ошибка входа")
     st.stop()
-    
+
 # --- 2. ЗАГРУЗКА ДАННЫХ ---
-@st.cache_data(ttl=3600)
+
+@st.cache_data
 def get_data():
     r1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     r2 = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     r3 = load_reference_3(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     return r1, r2, r3
 
-# Вызов с индикатором
-with st.spinner('⏳ Загрузка справочников из Google Sheets...'):
-    ref1, ref2, ref3 = get_data()
+ref1, ref2, ref3 = get_data()
 
 # --- 3. ФУНКЦИЯ КОНСТРУКТОР ОКНА ---
 def window_door_ui(prefix, pos_idx, system_id, initial_data=None):
@@ -432,6 +429,7 @@ def render_windows_doors_page():
                 # КРИТИЧНО: сохраняем data обратно в session_state
                 st.session_state.positions[idx]["data"] = data
 
+
     # --- 6. РАСЧЕТ И ВЫВОД ---
     st.divider()
 
@@ -439,104 +437,103 @@ def render_windows_doors_page():
         if not st.session_state.positions:
             st.error("❌ Добавьте хотя бы одну позицию!")
         else:
+            # Формирование данных заказа
             order_data = {
                 "common": {
-                    "order_number": order_num,
-                    "toning_id": toning_id,
-                    "assembly_id": assembly_id,
+                    "order_number": order_num, 
+                    "toning_id": toning_id, 
+                    "assembly_id": assembly_id, 
                     "installation_id": install_id
                 },
                 "positions": st.session_state.get("positions", [])
             }
-
+            
+            # Расчет через новый движок для окон V2
             try:
-                if st.session_state.menu_selection == "Фасады":
-                    res = calculate_facade_smeta(order_data, ref2)
-                else:
-                    res = calculate_window_smeta(order_data, ref1, ref2, ref3)
-
+                res = calculate_window_smeta(order_data, ref1, ref2, ref3)
+                
+                # Сохранение результата в session_state для экспорта
                 st.session_state.last_result = res
                 st.session_state.last_order_data = order_data
+                
+                # СОХРАНЕНИЕ ИСТОРИИ В GOOGLE SHEETS
+                try:
+                    current_user = st.session_state.get("current_user", {})
+                    user_login = current_user.get("login", "unknown")
+                    save_history(
+                        GOOGLE_CREDENTIALS_PATH,
+                        SPREADSHEET_ID,
+                        user_login,
+                        order_data,
+                        res
+                    )
+                except Exception as e:
+                    st.warning(f"⚠️ История не сохранена: {e}")
 
+                st.header("📊 Детальная смета AXIS")
+                
+                # Метрики вверху
+                m_col1, m_col2, m_col3 = st.columns(3)
+                m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
+                m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м.п.")
+                m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
+                
+                st.divider()
+                
+                # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
+                with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
+                    if res["part1_summary"]:
+                        st.markdown("#### 📊 Общий расчет элементов по типам изделия:")
+                        
+                        # Группируем по типу изделия
+                        by_type = {}
+                        for item in res["part1_summary"]:
+                            prod_type = item["Тип изделия"]
+                            if prod_type not in by_type:
+                                by_type[prod_type] = []
+                            by_type[prod_type].append(item)
+                        
+                        for prod_type, items in by_type.items():
+                            st.markdown(f"**{prod_type}:**")
+                            df = pd.DataFrame(items)
+                            df = df[["Категория", "Элемент", "Значение"]]
+                            st.dataframe(df, use_container_width=True, hide_index=True)
+                            st.markdown("---")
+                    else:
+                        st.info("Данные для габаритной ведомости отсутствуют")
+
+                # ЧАСТЬ 2: Ведомость материалов
+                with st.expander("🔹 ЧАСТЬ 2: Ведомость материалов (Артикулы)", expanded=True):
+                    if res["part2_materials"]:
+                        df2 = pd.DataFrame(res["part2_materials"])
+                        st.dataframe(df2, use_container_width=True, hide_index=True)
+                        
+                        # Итого по материалам
+                        total_mat = sum(m["Сумма"] for m in res["part2_materials"])
+                        st.metric("Итого материалы", f"{total_mat:,} ₸")
+                    else:
+                        st.warning("⚠️ Данные для ведомости материалов отсутствуют")
+                        st.info("Возможные причины: не найдены материалы в Справочнике-1 для выбранной системы")
+
+                # ЧАСТЬ 3: Итоговый расчет
+                with st.expander("🔹 ЧАСТЬ 3: Итоговый расчет", expanded=True):
+                    df3 = pd.DataFrame(res["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
+                    st.dataframe(df3, use_container_width=True, hide_index=True)
+                
+                # Отладочная информация (скрытая)
+                with st.expander("🔍 Отладочная информация", expanded=False):
+                    st.json(res["debug_info"])
+            
             except Exception as e:
-                st.error(f"Ошибка расчета: {e}")
+                st.error(f"❌ Ошибка при расчете: {e}")
                 st.exception(e)
-
-            try:
-                current_user = st.session_state.get("current_user", {})
-                user_login = current_user.get("login", "unknown")
-                save_history(
-                    GOOGLE_CREDENTIALS_PATH,
-                    SPREADSHEET_ID,
-                    user_login,
-                    order_data,
-                    res
-                )
-            except Exception as e:
-                st.warning(f"⚠️ История не сохранена: {e}")
-                
-    # ===== ПОКАЗ РЕЗУЛЬТАТОВ =====
-    if "last_result" in st.session_state:
-        res = st.session_state.last_result
-
-        st.header("📊 Детальная смета AXIS")
-
-        m_col1, m_col2, m_col3 = st.columns(3)
-        m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
-        m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м")
-        m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
-
-        st.divider()
-        
-        # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
-        with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
-            if res["part1_summary"]:
-                st.markdown("#### 📊 Общий расчет элементов по типам изделия:")
-                
-                # Группируем по типу изделия
-                by_type = {}
-                for item in res["part1_summary"]:
-                    prod_type = item["Тип изделия"]
-                    if prod_type not in by_type:
-                        by_type[prod_type] = []
-                    by_type[prod_type].append(item)
-                
-                for prod_type, items in by_type.items():
-                    st.markdown(f"**{prod_type}:**")
-                    df = pd.DataFrame(items)
-                    df = df[["Категория", "Элемент", "Значение"]]
-                    st.dataframe(df, use_container_width=True, hide_index=True)
-                    st.markdown("---")
-            else:
-                st.info("Данные для габаритной ведомости отсутствуют")
-
-        # ЧАСТЬ 2: Ведомость материалов
-        with st.expander("🔹 ЧАСТЬ 2: Ведомость материалов (Артикулы)", expanded=True):
-            if res["part2_materials"]:
-                df2 = pd.DataFrame(res["part2_materials"])
-                st.dataframe(df2, use_container_width=True, hide_index=True)
-                
-                # Итого по материалам
-                total_mat = sum(m["Сумма"] for m in res["part2_materials"])
-                st.metric("Итого материалы", f"{total_mat:,} ₸")
-            else:
-                st.warning("⚠️ Данные для ведомости материалов отсутствуют")
-                st.info("Возможные причины: не найдены материалы в Справочнике-1 для выбранной системы")
-
-        # ЧАСТЬ 3: Итоговый расчет
-        with st.expander("🔹 ЧАСТЬ 3: Итоговый расчет", expanded=True):
-            df3 = pd.DataFrame(res["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
-            st.dataframe(df3, use_container_width=True, hide_index=True)
-        
-        # Отладочная информация (скрытая)
-        with st.expander("🔍 Отладочная информация", expanded=False):
-            st.json(res["debug_info"])
 
     # Кнопка экспорта в Excel
     if 'last_result' in st.session_state and 'last_order_data' in st.session_state:
         st.divider()
         if st.button("📥 Скачать КП в Excel", type="secondary", use_container_width=True):
             try:
+                # Используем временную директорию
                 temp_dir = tempfile.gettempdir()
                 
                 excel_file = export_to_excel(
@@ -558,11 +555,487 @@ def render_windows_doors_page():
                 st.error(f"Ошибка при создании файла: {e}")
                 st.exception(e)
 
-# --- ЗАПУСК ОСНОВНОГО UI ---
-if 'menu_selection' not in st.session_state:
-    st.session_state.menu_selection = "Окна"
 
-render_windows_doors_page()
-
-
+# ========================================
+# ФУНКЦИЯ ДЛЯ СТРАНИЦЫ ФАСАДОВ
+# ========================================
+def render_facade_page():
+    """Страница расчета фасадов"""
+    
+    st.title("🏢 Расчет Фасадов")
+    st.markdown("---")
+    
+    # === ОБЩИЕ ПАРАМЕТРЫ ЗАКАЗА (ПЕРЕД ПОЗИЦИЯМИ!) ===
+    st.subheader("📋 Общие параметры заказа")
+    
+    col_order, col_ton = st.columns(2)
+    facade_order_num = col_order.text_input(
+        "Номер заказа", 
+        value=f"FAC-{datetime.datetime.now().strftime('%Y%m%d')}",
+        key="facade_order_num"
+    )
+    
+    facade_toning = col_ton.selectbox("Тонировка", TONING, key="facade_toning")
+    
+    col_asm, col_inst = st.columns(2)
+    facade_assembly = col_asm.selectbox("Сборка", ASSEMBLY, key="facade_assembly")
+    facade_installation = col_inst.selectbox("Монтаж", INSTALLATION, key="facade_installation")
+    
+    st.markdown("---")
+    
+    # === ТИП СИСТЕМЫ ===
+    st.subheader("🏗 Тип конструкции")
+    facade_type = st.radio(
+        "Выберите тип",
+        ["Фасадная система (Ruit 50F)", "Оконный тамбур (ALG)"],
+        horizontal=True,
+        key="facade_type_radio"
+    )
+    
+    st.markdown("---")
+    
+    # === ПОЗИЦИИ ФАСАДА ===
+    st.subheader("📦 Позиции фасада")
+    
+    if "facade_positions" not in st.session_state:
+        st.session_state.facade_positions = []
+    
+    st.subheader(f"Позиции фасада ({len(st.session_state.facade_positions)})")
+    
+    if st.button("➕ Добавить позицию фасада", use_container_width=True):
+        # Генерация CODE для фасада
+        facade_code = get_code_for_facade(facade_type)
+        
+        st.session_state.facade_positions.append({
+            "code": facade_code,  # Добавляем CODE
+            "facade_type": facade_type,  # Сохраняем тип для отображения
+            "width": 6.0,
+            "height": 3.0,
+            "columns": 3,
+            "rows": 2,
+            "filling_type": "blind",
+            "cells_data": []  # Данные для каждой ячейки
+        })
+        st.rerun()
+    
+    if not st.session_state.facade_positions:
+        st.info("👆 Нажмите кнопку выше, чтобы добавить первую позицию фасада")
+    
+    # === ОТОБРАЖЕНИЕ ПОЗИЦИЙ ===
+    for idx, pos in enumerate(st.session_state.facade_positions):
+        with st.expander(f"📦 Позиция фасада №{idx+1}", expanded=True):
+            
+            # Кнопка удаления
+            if st.button(f"🗑️ Удалить", key=f"del_fac_{idx}"):
+                st.session_state.facade_positions.pop(idx)
+                st.rerun()
+            
+            # === ГАБАРИТЫ ФАСАДА ===
+            st.markdown("### Габариты фасада")
+            col1, col2 = st.columns(2)
+            pos["width"] = col1.number_input(
+                "Ширина (м)", 
+                min_value=0.5, 
+                max_value=50.0,
+                value=pos.get("width", 6.0), 
+                step=0.1, 
+                key=f"fac_w_{idx}"
+            )
+            pos["height"] = col2.number_input(
+                "Высота (м)", 
+                min_value=0.5, 
+                max_value=20.0,
+                value=pos.get("height", 3.0), 
+                step=0.1, 
+                key=f"fac_h_{idx}"
+            )
+            
+            # === СЕТКА ===
+            st.markdown("### Разбивка на ячейки")
+            col3, col4 = st.columns(2)
+            pos["columns"] = col3.number_input(
+                "Количество столбцов", 
+                min_value=1, 
+                max_value=20,
+                value=pos.get("columns", 3), 
+                step=1, 
+                key=f"fac_col_{idx}"
+            )
+            pos["rows"] = col4.number_input(
+                "Количество рядов", 
+                min_value=1, 
+                max_value=10,
+                value=pos.get("rows", 2), 
+                step=1, 
+                key=f"fac_row_{idx}"
+            )
+            
+            # Расчет размера ячейки
+            cell_w_m = pos["width"] / pos["columns"]
+            cell_h_m = pos["height"] / pos["rows"]
+            cell_w_mm = cell_w_m * 1000
+            cell_h_mm = cell_h_m * 1000
+            
+            st.info(f"📐 Размер одной ячейки: {cell_w_m:.2f} × {cell_h_m:.2f} м ({cell_w_mm:.0f} × {cell_h_mm:.0f} мм)")
+            
+            # === ЗАПОЛНЕНИЕ ===
+            st.markdown("### Заполнение ячеек")
+            
+            fill_type = st.radio(
+                "Тип заполнения для ВСЕХ ячеек",
+                ["Глухое остекление", "Окно", "Дверь"],
+                key=f"fac_fill_{idx}"
+            )
+            
+            # === ГЛУХОЕ ОСТЕКЛЕНИЕ ===
+            if fill_type == "Глухое остекление":
+                pos["filling_type"] = "blind"
                 
+                panel_type = st.selectbox(
+                    "Заполнение панелей",
+                    ["Стеклопакет", "Ламбри без термо", "Ламбри с термо"],
+                    key=f"fac_panel_{idx}"
+                )
+                
+                if panel_type == "Стеклопакет":
+                    glass_type = st.selectbox(
+                        "Тип стеклопакета",
+                        GLASS_TYPES,
+                        key=f"fac_glass_{idx}"
+                    )
+                    pos["blind_data"] = {
+                        "panel_type": "glass",
+                        "glass_type": glass_type
+                    }
+                else:
+                    pos["blind_data"] = {
+                        "panel_type": panel_type,
+                        "glass_type": None
+                    }
+            
+            # === ОКНО ИЛИ ДВЕРЬ (ВСТАВКА) ===
+            elif fill_type in ["Окно", "Дверь"]:
+                pos["filling_type"] = "window" if fill_type == "Окно" else "door"
+                
+                st.info(f"🔧 Настройка вставки ({fill_type})")
+                
+                # Система профиля для вставки
+                # Получаем сохраненную систему или используем дефолтную
+                saved_system = pos.get("insert_system", "ALG 2030-73C")
+                system_options = ["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"]
+                
+                try:
+                    system_index = system_options.index(saved_system)
+                except ValueError:
+                    system_index = 0  # Дефолт на 73C если не найдено
+                
+                insert_system = st.selectbox(
+                    "Система профиля вставки",
+                    system_options,
+                    index=system_index,  # ← Используем сохраненный индекс
+                    key=f"fac_ins_sys_{idx}"
+                )
+                
+                # Вызываем форму окна/двери для вставки
+                with st.container():
+                    st.caption(f"⚠️ Максимальные размеры вставки: {cell_w_mm:.0f} × {cell_h_mm:.0f} мм")
+                    
+                    # Получаем ранее сохраненные данные (если есть)
+                    initial_insert_data = pos.get("insert_data", None)
+                    
+                    # Вызываем форму с начальными данными
+                    insert_data = window_door_ui(
+                        f"fac_insert_{idx}", 
+                        idx, 
+                        insert_system,
+                        initial_data=initial_insert_data  # ← Передаем сохраненные данные
+                    )
+                    
+                    # Сохраняем данные вставки
+                    pos["insert_data"] = insert_data
+                    pos["insert_system"] = insert_system
+    
+    # === КНОПКА РАСЧЕТА ===
+    st.markdown("---")
+    
+    if st.button("🚀 РАССЧИТАТЬ ФАСАД", type="primary", use_container_width=True):
+        if not st.session_state.facade_positions:
+            st.error("❌ Добавьте хотя бы одну позицию фасада!")
+        else:
+            try:
+                # Расчет площади и периметра
+                total_area = 0
+                total_perimeter = 0
+                results = []
+                
+                for idx, pos in enumerate(st.session_state.facade_positions):
+                    area = pos["width"] * pos["height"]
+                    perimeter = 2 * (pos["width"] + pos["height"])
+                    total_area += area
+                    total_perimeter += perimeter
+                    
+                    n_cells = pos["columns"] * pos["rows"]
+                    
+                    fill_name = {
+                        "blind": "Глухое остекление",
+                        "window": "Окно",
+                        "door": "Дверь"
+                    }.get(pos.get("filling_type", "blind"), "Неизвестно")
+                    
+                    results.append({
+                        "Позиция": idx + 1,
+                        "Габариты (м)": f"{pos['width']:.2f} × {pos['height']:.2f}",
+                        "Площадь (м²)": f"{area:.2f}",
+                        "Ячейки": f"{pos['columns']} × {pos['rows']} = {n_cells} шт",
+                        "Тип заполнения": fill_name
+                    })
+                
+                # УПРОЩЕННЫЙ РАСЧЕТ (т.к. нет справочника Ruit 50F)
+                # На основе реального проекта из PDF:
+                # 45.3 м² = 2,076,961 ₸ материалов (только профили + фурнитура)
+                # Это ~46,000 ₸/м²
+                
+                # Определяем тип системы
+                facade_type_value = st.session_state.get("facade_type_radio", "Фасадная система (Ruit 50F)")
+                
+                # Базовая стоимость профилей и материалов
+                if "ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)":
+                    # ОКОННАЯ СИСТЕМА (ALG 2030-45C и т.д.)
+                    # По чертежу "Женис 10": 36.1 м² = 678,198 ₸ → ~18,800 ₸/м²
+                    materials_cost = total_area * 18800
+                else:
+                    # ФАСАДНАЯ СИСТЕМА (Ruit 50F)
+                    # Включает: фасадные профили, дверные профили, фурнитуру, уплотнители
+                    materials_cost = total_area * 46000
+                
+                # Стеклопакеты/ламбри - собираем данные ПО ТИПАМ
+                glass_areas = {"Двойной": 0, "Тройной": 0, "Энергодвойной": 0}
+                lambri_area = 0
+                
+                for pos in st.session_state.facade_positions:
+                    area = pos["width"] * pos["height"]
+                    filling_type = pos.get("filling_type", "blind")
+                    
+                    # ГЛУХОЕ ОСТЕКЛЕНИЕ
+                    if filling_type == "blind":
+                        blind_data = pos.get("blind_data", {})
+                        panel_type = blind_data.get("panel_type", "glass")
+                        
+                        if panel_type == "glass":
+                            # Собираем площадь по типам стеклопакетов
+                            glass_type = blind_data.get("glass_type", "Двойной")
+                            glass_areas[glass_type] = glass_areas.get(glass_type, 0) + area
+                        else:
+                            # Собираем площадь ламбри
+                            lambri_area += area
+                    
+                    # ВСТАВКИ (ОКНА/ДВЕРИ) - собираем площадь стеклопакетов
+                    elif filling_type in ["window", "door"]:
+                        insert_data = pos.get("insert_data", {})
+                        fill_category = insert_data.get("fill_category", "Стеклопакет")
+                        
+                        if fill_category == "Стеклопакет":
+                            glass_type = insert_data.get("glass_type", "Двойной")
+                            
+                            # Площадь вставок
+                            n_cells = pos["columns"] * pos["rows"]
+                            cell_w = pos["width"] / pos["columns"]
+                            cell_h = pos["height"] / pos["rows"]
+                            insert_w = insert_data.get("width", cell_w * 1000) / 1000
+                            insert_h = insert_data.get("height", cell_h * 1000) / 1000
+                            insert_area = insert_w * insert_h * n_cells
+                            
+                            glass_areas[glass_type] = glass_areas.get(glass_type, 0) + insert_area
+                
+                # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
+                glass_cost = 0
+                price_map = {"Двойной": 9000, "Тройной": 12000, "Энергодвойной": 11000}
+                for glass_type, total_glass_area in glass_areas.items():
+                    if total_glass_area > 0:
+                        price_per_m2 = price_map.get(glass_type, 9000)
+                        glass_cost += total_glass_area * price_per_m2
+                
+                # РАСЧЕТ ЛАМБРИ (по общей площади)
+                lambri_cost = 0
+                if lambri_area > 0:
+                    import math
+                    
+                    # Фактический расход = общая площадь (м²)
+                    l_fact = lambri_area
+                    
+                    # Кол-во к отгрузке = общая площадь / 6 (норма)
+                    q_otgr = math.ceil(lambri_area / 6.0)
+                    
+                    # Стоимость из Справочника-2 за 1 м²
+                    price_per_m2_lambri = 2248  # ₸/м²
+                    
+                    # Сумма = (стоимость за 1 м² * 6) * кол-во к отгрузке
+                    norma = 6
+                    lambri_cost = (price_per_m2_lambri * norma) * q_otgr
+                
+                # Объединяем
+                glass_lambri_cost = glass_cost + lambri_cost
+                
+                # Тонировка
+                toning_cost = 0
+                if facade_toning == "Есть":
+                    toning_cost = total_area * 2000
+                
+                # Сборка
+                assembly_cost = 0
+                if facade_assembly == "Есть":
+                    assembly_cost = total_area * 10000
+                
+                # Монтаж
+                installation_cost = 0
+                if facade_installation == "Монтаж":
+                    installation_cost = total_area * 10000
+                elif facade_installation == "Демонтаж":
+                    installation_cost = total_area * 5000
+                elif facade_installation == "Демонтаж / Монтаж":
+                    installation_cost = total_area * 15000
+                elif facade_installation == "Сложный монтаж":
+                    installation_cost = total_area * 15000
+                
+                # Сумма без обеспечения
+                subtotal = materials_cost + glass_lambri_cost + toning_cost + assembly_cost + installation_cost
+                
+                # Обеспечение 65%
+                margin = subtotal * 0.65
+                total_cost = subtotal + margin
+                
+                # Сохраняем результат
+                st.session_state.last_facade_result = {
+                    "metrics": {
+                        "total_area": total_area,
+                        "total_perimeter": total_perimeter
+                    },
+                    "part3_final": {
+                        "Стеклопакет / Ламбри": round(glass_lambri_cost, 0),
+                        "Тонировка": round(toning_cost, 0),
+                        "Сборка": round(assembly_cost, 0),
+                        "Монтаж": round(installation_cost, 0),
+                        "Материалы": round(materials_cost, 0),
+                        "Обеспечение (65%)": round(margin, 0)
+                    },
+                    "total_with_margin": round(total_cost, 0),
+                    "positions": results,
+                    "order_number": facade_order_num
+                }
+                
+                # Вывод результатов
+                st.success("✅ Расчет выполнен!")
+                
+                # Метрики
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Общая площадь", f"{total_area:.2f} м²")
+                col2.metric("Суммарный периметр", f"{total_perimeter:.2f} м.п.")
+                col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸")
+                
+                st.markdown("---")
+                
+                # Таблица позиций
+                st.subheader("Детализация по позициям")
+                df = pd.DataFrame(results)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+                # Итоговый расчет
+                st.markdown("---")
+                st.subheader("💰 ЧАСТЬ 3: Итоговый расчет")
+                
+                part3_data = []
+                for key, value in st.session_state.last_facade_result["part3_final"].items():
+                    part3_data.append({"Наименование": key, "Сумма (₸)": f"{value:,.0f}"})
+                
+                df_part3 = pd.DataFrame(part3_data)
+                st.dataframe(df_part3, use_container_width=True, hide_index=True)
+                
+                st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 65%")
+                
+                st.warning("⚠️ Это упрощенный расчет. Для точной стоимости необходимо добавить расчет профилей из справочника 'Фасады - Профили'.")
+                
+            except Exception as e:
+                st.error(f"❌ Ошибка при расчете: {e}")
+                with st.expander("🔍 Детали ошибки"):
+                    import traceback
+                    st.code(traceback.format_exc())
+    
+                # Таблица результатов
+                st.subheader("Детализация по позициям")
+                df = pd.DataFrame(results)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+                # Предупреждение
+                st.warning("⚠️ Это упрощенный расчет. Для точной стоимости необходимо добавить расчет профилей, стеклопакетов и фурнитуры из справочников.")
+                
+            except Exception as e:
+                st.error(f"❌ Ошибка при расчете: {e}")
+                st.exception(e)
+    
+    # === КНОПКА ЭКСПОРТА ===
+    if 'last_facade_result' in st.session_state:
+        st.divider()
+        if st.button("📥 Скачать КП фасада в Excel", type="secondary", use_container_width=True):
+            try:
+                from export.export_kp import export_facade_to_excel
+                
+                temp_dir = tempfile.gettempdir()
+                order_num = f"FAC-{datetime.datetime.now().strftime('%Y%m%d%H%M')}"
+                
+                excel_file = export_facade_to_excel(
+                    st.session_state.last_facade_result,
+                    order_number=order_num,
+                    output_dir=temp_dir
+                )
+                
+                with open(excel_file, 'rb') as f:
+                    st.download_button(
+                        label="⬇️ Загрузить файл",
+                        data=f,
+                        file_name=f"KP_FACADE_{order_num}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                st.success("✅ Файл готов к скачиванию!")
+            except Exception as e:
+                st.error(f"Ошибка при создании файла: {e}")
+                st.exception(e)
+
+
+# ========================================
+# ФУНКЦИЯ ДЛЯ СТРАНИЦЫ ИСТОРИИ (ЗАГЛУШКА)
+# ========================================
+def render_history_page():
+    """Страница истории заказов"""
+    
+    st.title("📚 История заказов")
+    st.info("⚠️ Раздел истории в разработке")
+
+
+# ========================================
+# ГЛАВНОЕ МЕНЮ НАВИГАЦИИ
+# ========================================
+
+# Инициализация меню
+if 'menu_selection' not in st.session_state:
+    st.session_state.menu_selection = "Главная (Окна/Двери)"
+
+# Сайдбар с навигацией
+with st.sidebar:
+    st.title("📍 Навигация")
+    
+    menu_selection = st.radio(
+        "Выберите раздел:",
+        ["Главная (Окна/Двери)", "Фасады", "История"],
+        index=["Главная (Окна/Двери)", "Фасады", "История"].index(st.session_state.menu_selection)
+    )
+    
+    # Сохраняем выбор
+    st.session_state.menu_selection = menu_selection
+
+# Роутинг
+if st.session_state.menu_selection == "Главная (Окна/Двери)":
+    render_windows_doors_page()
+elif st.session_state.menu_selection == "Фасады":
+    render_facade_page()
+elif st.session_state.menu_selection == "История":
+    render_history_page()
