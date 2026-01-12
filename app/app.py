@@ -20,7 +20,7 @@ from calculations.engine_windows import calculate_window_smeta, calculate_impost
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
 from export.export_kp import export_to_excel
 from history.save_history import save_history
-# from calculations.engine_facade import calculate_facade_smeta
+from calculations.engine_facade import calculate_facade_smeta
 
 
 # --- КОНСТАНТЫ ИЗ ТЗ ---
@@ -95,7 +95,8 @@ def get_data():
     r3 = load_reference_3(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     return r1, r2, r3
 
-ref1, ref2, ref3 = get_data()
+with st.spinner('Загрузка справочников...'):
+    ref1, ref2, ref3 = get_data()
 
 # --- 3. ФУНКЦИЯ КОНСТРУКТОР ОКНА ---
 def window_door_ui(prefix, pos_idx, system_id, initial_data=None):
