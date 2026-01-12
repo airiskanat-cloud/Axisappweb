@@ -431,71 +431,71 @@ def render_windows_doors_page():
                 # КРИТИЧНО: сохраняем data обратно в session_state
                 st.session_state.positions[idx]["data"] = data
 
-
     # --- 6. РАСЧЕТ И ВЫВОД ---
     st.divider()
 
-if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True):
-    if not st.session_state.positions:
-        st.error("❌ Добавьте хотя бы одну позицию!")
-    else:
-        order_data = {
-            "common": {
-                "order_number": order_num,
-                "toning_id": toning_id,
-                "assembly_id": assembly_id,
-                "installation_id": install_id
-            },
-            "positions": st.session_state.get("positions", [])
-        }
+    if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True):
+        if not st.session_state.positions:
+            st.error("❌ Добавьте хотя бы одну позицию!")
+        else:
+            order_data = {
+                "common": {
+                    "order_number": order_num,
+                    "toning_id": toning_id,
+                    "assembly_id": assembly_id,
+                    "installation_id": install_id
+                },
+                "positions": st.session_state.get("positions", [])
+            }
 
-        try:
-            if st.session_state.menu_selection == "Фасады":
-                res = calculate_facade_smeta(order_data, ref2)
-            else:
-                res = calculate_window_smeta(order_data, ref1, ref2, ref3)
+            try:
+                if st.session_state.menu_selection == "Фасады":
+                    res = calculate_facade_smeta(order_data, ref2)
+                else:
+                    res = calculate_window_smeta(order_data, ref1, ref2, ref3)
 
-            st.session_state.last_result = res
-            st.session_state.last_order_data = order_data
+                st.session_state.last_result = res
+                st.session_state.last_order_data = order_data
 
-        except Exception as e:
-            st.error(f"Ошибка расчета: {e}")
-            return
+            except Exception as e:
+                st.error(f"Ошибка расчета: {e}")
+                st.exception(e)
 
-        try:
-            current_user = st.session_state.get("current_user", {})
-            user_login = current_user.get("login", "unknown")
-            save_history(
-                GOOGLE_CREDENTIALS_PATH,
-                SPREADSHEET_ID,
-                user_login,
-                order_data,
-                res
-            )
-        except Exception as e:
-            st.warning(f"⚠️ История не сохранена: {e}")
+            try:
+                current_user = st.session_state.get("current_user", {})
+                user_login = current_user.get("login", "unknown")
+                save_history(
+                    GOOGLE_CREDENTIALS_PATH,
+                    SPREADSHEET_ID,
+                    user_login,
+                    order_data,
+                    res
+                )
+            except Exception as e:
+                st.warning(f"⚠️ История не сохранена: {e}")
 
-# ===== ПОКАЗ РЕЗУЛЬТАТОВ =====
-if "last_result" in st.session_state:
-    res = st.session_state.last_result
+    # ===== ПОКАЗ РЕЗУЛЬТАТОВ =====
+    if "last_result" in st.session_state:
+        res = st.session_state.last_result
 
-    st.header("📊 Детальная смета AXIS")
+        st.header("📊 Детальная смета AXIS")
 
-    m_col1, m_col2, m_col3 = st.columns(3)
-    m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
-    m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м")
-    m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
+        m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м")
+        m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
 
-    st.divider()
-    # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
-with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
-                    if res["part1_summary"]:
-                        st.markdown("#### 📊 Общий расчет элементов по типам изделия:")
-                        
-                        # Группируем по типу изделия
-                        by_type = {}
-                        for item in res["part1_summary"]:
-                            prod_type = item["Тип изделия"]
+        st.divider()
+        
+        # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
+        with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
+            if res["part1_summary"]:
+                st.markdown("#### 📊 Общий расчет элементов по типам изделия:")
+                
+                # Группируем по типу изделия
+                by_type = {}
+                for item in res["part1_summary"]:
+                    prod_type = item["Тип изделия"]
                             if prod_type not in by_type:
                                 by_type[prod_type] = []
                             by_type[prod_type].append(item)
