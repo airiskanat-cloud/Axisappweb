@@ -487,12 +487,8 @@ if "last_result" in st.session_state:
     m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
 
     st.divider()
-
-    # дальше expanders и таблицы
-
-                
-                # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
-                with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
+    # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
+with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
                     if res["part1_summary"]:
                         st.markdown("#### 📊 Общий расчет элементов по типам изделия:")
                         
