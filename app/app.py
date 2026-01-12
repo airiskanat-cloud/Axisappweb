@@ -89,8 +89,12 @@ if not st.session_state.authenticated:
 @st.cache_data
 def get_data():
     r1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
-    r2 = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+    r2_raw = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     r3 = load_reference_3(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+    
+    # КРИТИЧНО: Нормализуем ВСЕ ключи ref2 в lowercase
+    r2 = {k.lower(): v for k, v in r2_raw.items()}
+    
     return r1, r2, r3
 
 ref1, ref2, ref3 = get_data()
