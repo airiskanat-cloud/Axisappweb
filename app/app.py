@@ -5,6 +5,7 @@ import pandas as pd
 from pathlib import Path
 import datetime
 import tempfile
+import math  # ДОБАВЛЕНО
 
 # --- ФИКСАЦИЯ ПУТЕЙ (Стандарт Axis Pro GF) ---
 current_file = Path(__file__).resolve()
@@ -951,8 +952,6 @@ def render_facade_page():
                 lambri_cost = 0
                 for lambri_type, lambri_area in lambri_areas.items():
                     if lambri_area > 0:
-                        import math
-                        
                         # Кол-во к отгрузке = ceil(площадь / 6)
                         q_otgr = math.ceil(lambri_area / 6.0)
                         
