@@ -748,6 +748,28 @@ def render_facade_page():
                 
                 st.info(f"🔧 Настройка вставки ({fill_type})")
                 
+                # ТИП ИЗДЕЛИЯ (ДОБАВЛЕНО)
+                if fill_type == "Дверь":
+                    product_types = ["Дверь 1 створч.", "Дверь 2-х створч."]
+                    saved_product = pos.get("insert_product_type", "Дверь 2-х створч.")
+                    try:
+                        product_index = product_types.index(saved_product)
+                    except ValueError:
+                        product_index = 1
+                    
+                    product_type = st.selectbox(
+                        "Тип изделия",
+                        product_types,
+                        index=product_index,
+                        key=f"fac_product_{idx}"
+                    )
+                    pos["insert_product_type"] = product_type
+                    sash_count = 1 if "1 створч" in product_type else 2
+                else:
+                    product_type = "Окно с откр."
+                    pos["insert_product_type"] = product_type
+                    sash_count = 2
+                
                 # Система профиля для вставки
                 # Получаем сохраненную систему или используем дефолтную
                 saved_system = pos.get("insert_system", "ALG 2030-73C")
@@ -779,6 +801,10 @@ def render_facade_page():
                         insert_system,
                         initial_data=initial_insert_data  # ← Передаем сохраненные данные
                     )
+                    
+                    # ИСПРАВЛЕНО: Добавляем тип изделия и количество створок
+                    insert_data["product_type"] = product_type
+                    insert_data["sash_count"] = sash_count
                     
                     # Сохраняем данные вставки
                     pos["insert_data"] = insert_data
@@ -862,14 +888,33 @@ def render_facade_page():
                     # Собираем данные о вставках (окна/двери)
                     facade_inserts = []
                     for pos in st.session_state.facade_positions:
-                        if pos.get("filling_type") in ["window", "door"]:
-                            facade_inserts.append({
-                                "type": pos.get("filling_type"),
-                                "width": pos.get("width", 0),
-                                "height": pos.get("height", 0),
-                                "system": pos.get("insert_data", {}).get("system", "ALG 2030-63C"),
-                                "data": pos.get("insert_data", {})
-                            })
+                        filling_type = pos.get("filling_type", "blind")
+                        
+                        # Если это окно или дверь
+                        if filling_type in ["window", "door"]:
+                            cols_pos = pos.get("columns", 3)
+                            rows_pos = pos.get("rows", 2)
+                            n_cells = cols_pos * rows_pos
+                            
+                            insert_data = pos.get("insert_data", {})
+                            
+                            # Для каждой ячейки создаём вставку
+                            for cell_idx in range(n_cells):
+                                facade_inserts.append({
+                                    "type": filling_type,
+                                    "width": insert_data.get("width", 1800) / 1000,  # в метры
+                                    "height": insert_data.get("height", 2200) / 1000,
+                                    "system": insert_data.get("system", "ALG 2030-63C"),
+                                    "product_type": insert_data.get("product_type", "Дверь 2-х створч."),  # ДОБАВЛЕНО
+                                    "data": {
+                                        "glass_type": insert_data.get("glass_type", "двойной"),
+                                        "fill_category": insert_data.get("fill_category", "Стеклопакет"),
+                                        "toning": "Нет",  # Тонировка по позиции
+                                        "assembly": "Нет",
+                                        "installation": "Нет",
+                                        "sash_count": insert_data.get("sash_count", 2)
+                                    }
+                                })
                     
                     # Для первой позиции берём габариты
                     first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
@@ -1084,8 +1129,18 @@ def render_facade_page():
                         st.dataframe(pd.DataFrame(skeleton_data), use_container_width=True, hide_index=True)
                         st.write(f"**Итого каркас:** {facade_calc.get('skeleton_cost', 0):,.0f} ₸")
                     
-                    if 'facade_calc' in locals() and facade_calc.get("inserts_cost", 0) > 0:
-                        st.write(f"**Материалы вставок (двери/окна):** {facade_calc.get('inserts_cost', 0):,.0f} ₸")
+                    # ДОБАВЛЕНО: Детализация вставок
+                    if 'facade_calc' in locals() and facade_calc.get("inserts_details"):
+                        st.write("**Материалы вставок (двери/окна):**")
+                        inserts_data = []
+                        for insert in facade_calc["inserts_details"]:
+                            inserts_data.append({
+                                "Изделие": insert["name"],
+                                "Размер": insert["size"],
+                                "Стоимость": f"{insert['cost']:,.0f} ₸"
+                            })
+                        st.dataframe(pd.DataFrame(inserts_data), use_container_width=True, hide_index=True)
+                        st.write(f"**Итого вставки:** {facade_calc.get('inserts_cost', 0):,.0f} ₸")
                     
                     st.markdown("---")
                 

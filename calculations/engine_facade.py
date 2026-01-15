@@ -348,17 +348,12 @@ def calculate_facade_materials(
             insert_system = insert.get('system', 'ALG 2030-63C')
             insert_w = insert.get('width', 0)
             insert_h = insert.get('height', 0)
+            product_type = insert.get('product_type', 'Дверь 2-х створч.')  # ДОБАВЛЕНО
             
-            print(f"\nВставка {i}: {insert_type} {insert_system} ({insert_w}м × {insert_h}м)")
+            print(f"\nВставка {i}: {product_type} {insert_system} ({insert_w}м × {insert_h}м)")
             
             # Формируем данные для расчёта через engine_windows
             from calculations.engine_windows import calculate_window_smeta
-            
-            # Определяем тип изделия
-            if insert_type == "door":
-                product_type = "Дверь 2-х створч." if insert.get('data', {}).get('sash_count', 2) == 2 else "Дверь 1 створч."
-            else:
-                product_type = "Окно с откр."
             
             # Данные вставки
             insert_order_data = {
@@ -369,7 +364,7 @@ def calculate_facade_materials(
                     "installation": insert.get('data', {}).get('installation', 'Нет')
                 },
                 "positions": [{
-                    "product_type": product_type,
+                    "product_type": product_type,  # Используем из вставки
                     "system": insert_system,
                     "width": insert_w * 1000,  # в мм
                     "height": insert_h * 1000,

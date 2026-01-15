@@ -64,13 +64,28 @@ def save_history(
         # Тип изделия
         facade_type = result.get("facade_type", "Окно/Дверь")
         
+        # DEBUG
+        print(f"\n=== СОХРАНЕНИЕ ИСТОРИИ ===")
+        print(f"Тип: {facade_type}")
+        print(f"Позиций: {len(positions)}")
+        if positions:
+            print(f"Первая позиция: {positions[0]}")
+        
         # Габариты позиций + вставки для фасада
         gabarits = []
         for idx, pos in enumerate(positions):
             w = pos.get("width", 0)
             h = pos.get("height", 0)
+            
+            print(f"Позиция {idx+1}: w={w}, h={h}, тип={type(w)}")
+            
+            # Конвертируем мм в метры для окон/дверей
+            if w > 100 or h > 100:  # Если больше 100, значит в мм
+                w = w / 1000
+                h = h / 1000
+            
             if w > 0 and h > 0:
-                pos_str = f"П{idx+1}: {w}м×{h}м"
+                pos_str = f"П{idx+1}: {w:.2f}м×{h:.2f}м"
                 
                 # Если фасад - добавляем сетку
                 cols = pos.get("columns", 0)
@@ -83,8 +98,13 @@ def save_history(
                 if inserts_data:
                     insert_w = inserts_data.get("width", 0)
                     insert_h = inserts_data.get("height", 0)
+                    # Конвертируем мм в метры
+                    if insert_w > 100:
+                        insert_w = insert_w / 1000
+                    if insert_h > 100:
+                        insert_h = insert_h / 1000
                     if insert_w > 0 and insert_h > 0:
-                        pos_str += f" | Вставка: {insert_w}×{insert_h}"
+                        pos_str += f" | Вставка: {insert_w:.2f}×{insert_h:.2f}"
                 
                 gabarits.append(pos_str)
         
