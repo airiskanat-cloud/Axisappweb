@@ -15,8 +15,9 @@ if str(root_dir) not in sys.path:
 # Импорты внутренних модулей
 from auth.auth import authenticate
 from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
-from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3
+from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3, load_facade_reference  # ДОБАВЛЕНО load_facade_reference
 from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING
+from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials  # ДОБАВЛЕНО
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
 from export.export_kp import export_to_excel
 from history.save_history import save_history
@@ -91,13 +92,14 @@ def get_data():
     r1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     r2_raw = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     r3 = load_reference_3(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
+    r_facade = load_facade_reference(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)  # ДОБАВЛЕНО
     
     # КРИТИЧНО: Нормализуем ВСЕ ключи ref2 в lowercase
     r2 = {k.lower(): v for k, v in r2_raw.items()}
     
-    return r1, r2, r3
+    return r1, r2, r3, r_facade  # ДОБАВЛЕН r_facade
 
-ref1, ref2, ref3 = get_data()
+ref1, ref2, ref3, ref_facade = get_data()  # ДОБАВЛЕН ref_facade
 
 # --- 3. ФУНКЦИЯ КОНСТРУКТОР ОКНА ---
 def window_door_ui(prefix, pos_idx, system_id, initial_data=None):
@@ -805,12 +807,75 @@ def render_facade_page():
                 # Базовая стоимость профилей и материалов
                 if "ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)":
                     # ОКОННАЯ СИСТЕМА (ALG 2030-45C и т.д.)
-                    # По чертежу "Женис 10": 36.1 м² = 678,198 ₸ → ~18,800 ₸/м²
-                    materials_cost = total_area * 18800
+                    # ИСПРАВЛЕНО: Используем точный расчёт из engine_facade
+                    
+                    first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
+                    W = first_pos.get("width", 6.0)
+                    H = first_pos.get("height", 3.5)
+                    cols = first_pos.get("columns", 3)
+                    rows = first_pos.get("rows", 2)
+                    count = len(st.session_state.facade_positions)
+                    
+                    print(f"\n🏗️ Вызов calculate_tambour_materials:")
+                    print(f"   W={W}, H={H}, cols={cols}, rows={rows}, count={count}")
+                    
+                    tambour_calc = calculate_tambour_materials(
+                        W=W,
+                        H=H,
+                        cols=cols,
+                        rows=rows,
+                        count=count,
+                        ref1=ref1,
+                        ref2=ref2,
+                        ref3=ref3
+                    )
+                    
+                    materials_cost = tambour_calc.get("total_cost", 0)
+                    print(f"   ✅ Материалы рассчитаны: {materials_cost:,.0f}₸")
                 else:
                     # ФАСАДНАЯ СИСТЕМА (Ruit 50F)
-                    # Включает: фасадные профили, дверные профили, фурнитуру, уплотнители
-                    materials_cost = total_area * 46000
+                    # ИСПРАВЛЕНО: Используем точный расчёт из engine_facade
+                    
+                    # Собираем данные о вставках (окна/двери)
+                    facade_inserts = []
+                    for pos in st.session_state.facade_positions:
+                        if pos.get("filling_type") in ["window", "door"]:
+                            facade_inserts.append({
+                                "type": pos.get("filling_type"),
+                                "width": pos.get("width", 0),
+                                "height": pos.get("height", 0),
+                                "system": pos.get("insert_data", {}).get("system", "ALG 2030-63C"),
+                                "data": pos.get("insert_data", {})
+                            })
+                    
+                    # Для первой позиции берём габариты
+                    first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
+                    W = first_pos.get("width", 6.0)
+                    H = first_pos.get("height", 3.5)
+                    cols = first_pos.get("columns", 3)
+                    rows = first_pos.get("rows", 2)
+                    count = len(st.session_state.facade_positions)
+                    
+                    print(f"\n🏗️ Вызов calculate_facade_materials:")
+                    print(f"   W={W}, H={H}, cols={cols}, rows={rows}, count={count}")
+                    print(f"   Вставок: {len(facade_inserts)}")
+                    
+                    # Вызываем расчёт
+                    facade_calc = calculate_facade_materials(
+                        W=W,
+                        H=H,
+                        cols=cols,
+                        rows=rows,
+                        count=count,
+                        inserts=facade_inserts,
+                        facade_profiles_ref=ref_facade,
+                        ref1=ref1,
+                        ref2=ref2,
+                        ref3=ref3
+                    )
+                    
+                    materials_cost = facade_calc.get("total_cost", 0)
+                    print(f"   ✅ Материалы рассчитаны: {materials_cost:,.0f}₸")
                 
                 # Стеклопакеты/ламбри - собираем данные ПО ТИПАМ
                 glass_areas = {"Двойной": 0, "Тройной": 0, "Энергодвойной": 0}
@@ -895,11 +960,25 @@ def render_facade_page():
                     price_installation = ref2.get(install_key, 10000)
                     installation_cost = total_area * price_installation
                 
-                # Сумма без обеспечения
-                subtotal = materials_cost + glass_cost + lambri_cost + toning_cost + assembly_cost + installation_cost
+                # ДОБАВЛЕНО: Дополнительные детали
+                additional_cost = 0
+                # Ищем "Нащельник" в ref2
+                additional_name = None
+                for key in ref2.keys():
+                    if "нащельник" in key.lower():
+                        additional_name = key
+                        break
                 
-                # Обеспечение 65%
-                margin = subtotal * 0.65
+                if additional_name:
+                    price_additional = ref2.get(additional_name, 0)
+                    # Формула: (периметр / 3) * цена
+                    additional_cost = (total_perimeter / 3) * price_additional
+                
+                # Сумма без обеспечения
+                subtotal = materials_cost + glass_cost + lambri_cost + toning_cost + assembly_cost + installation_cost + additional_cost
+                
+                # Обеспечение 81% (было 65%)
+                margin = subtotal * 0.81
                 total_cost = subtotal + margin
                 
                 # ИСПРАВЛЕНО: Сохраняем результат - стеклопакет и ламбри раздельно
@@ -916,8 +995,9 @@ def render_facade_page():
                         "Тонировка": round(toning_cost, 0),
                         "Сборка": round(assembly_cost, 0),
                         "Монтаж": round(installation_cost, 0),
+                        "Дополнительные детали": round(additional_cost, 0),  # ДОБАВЛЕНО
                         "Материалы": round(materials_cost, 0),
-                        "Обеспечение (65%)": round(margin, 0)
+                        "Обеспечение": round(margin, 0)  # Убрал "(65%)"
                     },
                     "total_cost": round(total_cost, 0),
                     "materials_cost": round(materials_cost, 0),
