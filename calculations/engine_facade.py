@@ -167,7 +167,15 @@ def calculate_facade_materials(
     
     # --- U-СОЕДИНИТЕЛИ РИГЕЛЯ ---
     count_u = 2 * count_r
-    price_u = 151  # Из справочника
+    
+    price_u = 151  # Запасное
+    for item in facade_profiles_ref:
+        elem = item.get('Элемент', '')
+        if 'U-соединитель' in elem or 'u-соединитель' in elem.lower():
+            price_u = parse_price(item.get('Цена за единицу', 0))
+            if price_u > 0:
+                break
+    
     cost_u = count_u * price_u
     skeleton_cost += cost_u
     
@@ -467,7 +475,10 @@ def calculate_tambour_materials(
     # Ищем цену рамы в ref1 (ALG профиль)
     price_frame = 3500  # Запасное значение
     for item in ref1:
-        if 'Рама' in item.get('Элемент', '') or 'рама' in item.get('Элемент', '').lower():
+        elem = item.get('Элемент', '')
+        system = item.get('Система', '')
+        # Ищем раму ALG
+        if ('рама' in elem.lower() or 'Рама' in elem) and 'ALG' in system:
             price_frame = item.get('Цена за единицу', 3500)
             break
     
@@ -571,7 +582,9 @@ def calculate_tambour_materials(
     
     price_bead = 600  # Запасное
     for item in ref1:
-        if 'штапик' in item.get('Элемент', '').lower():
+        elem = item.get('Элемент', '')
+        system = item.get('Система', '')
+        if 'штапик' in elem.lower() and 'ALG' in system:
             price_bead = item.get('Цена за единицу', 600)
             break
     
@@ -596,7 +609,9 @@ def calculate_tambour_materials(
     
     price_seal = 300  # Запасное
     for item in ref1:
-        if 'уплотн' in item.get('Элемент', '').lower():
+        elem = item.get('Элемент', '')
+        system = item.get('Система', '')
+        if 'уплотн' in elem.lower() and 'ALG' in system:
             price_seal = item.get('Цена за единицу', 300)
             break
     

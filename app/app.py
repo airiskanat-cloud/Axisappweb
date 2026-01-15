@@ -1114,7 +1114,22 @@ def render_facade_page():
                 st.subheader("💰 ЧАСТЬ 3: Итоговый расчет")
                 
                 # ИСПРАВЛЕНО: Показываем отдельно материалы каркаса и вставок
-                if "ALG" not in facade_type_value and facade_type_value != "Оконный тамбур (ALG)":
+                if "ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)":
+                    # Для тамбура показываем детализацию
+                    st.write("**Материалы тамбура (ALG):**")
+                    if 'tambour_calc' in locals() and tambour_calc.get("skeleton"):
+                        tambour_data = []
+                        for elem, data in tambour_calc["skeleton"].items():
+                            tambour_data.append({
+                                "Элемент": elem,
+                                "Количество": f"{data['quantity']:.2f} {data['unit']}",
+                                "Цена": f"{data['price']:,.0f} ₸",
+                                "Стоимость": f"{data['cost']:,.0f} ₸"
+                            })
+                        st.dataframe(pd.DataFrame(tambour_data), use_container_width=True, hide_index=True)
+                        st.write(f"**Итого материалы:** {tambour_calc.get('total_cost', 0):,.0f} ₸")
+                    st.markdown("---")
+                else:
                     # Для Ruit 50F показываем детализацию
                     st.write("**Материалы каркаса (Ruit 50F):**")
                     if 'facade_calc' in locals() and facade_calc.get("skeleton"):
