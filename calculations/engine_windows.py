@@ -544,6 +544,7 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     
     # === АЛИАСЫ ДЛЯ СОВМЕСТИМОСТИ С app.py ===
     result["part1_summary"] = result["part1_gabarits"]
+    result["materials_cost"] = round(subtotal, 0)  # ДОБАВЛЕНО для фасадных вставок
     
     return result
 

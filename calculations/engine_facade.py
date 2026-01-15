@@ -463,7 +463,14 @@ def calculate_tambour_materials(
     # --- РАМА (Frame) ---
     # Рассчитывается отдельно для каждой из сторон тамбура
     L_f = (W + H) * 2 * count
-    price_frame = 3500  # ~3500₸/м для ALG профиля рамы
+    
+    # Ищем цену рамы в ref1 (ALG профиль)
+    price_frame = 3500  # Запасное значение
+    for item in ref1:
+        if 'Рама' in item.get('Элемент', '') or 'рама' in item.get('Элемент', '').lower():
+            price_frame = item.get('Цена за единицу', 3500)
+            break
+    
     cost_frame = L_f * price_frame
     skeleton_cost += cost_frame
     
@@ -483,7 +490,13 @@ def calculate_tambour_materials(
     # --- СОЕДИНИТЕЛЬНАЯ ТРУБА 90° (арт. 2-00-2010) ---
     # Два вертикальных угла по всей высоте
     L_pipe = H * 2 * count
-    price_pipe = 2500  # ~2500₸/м
+    
+    price_pipe = 2500  # Запасное
+    for item in ref1:
+        if '2-00-2010' in item.get('Артикул', ''):
+            price_pipe = item.get('Цена за единицу', 2500)
+            break
+    
     cost_pipe = L_pipe * price_pipe
     skeleton_cost += cost_pipe
     
@@ -502,7 +515,13 @@ def calculate_tambour_materials(
     # --- АДАПТЕР ТРУБЫ ---
     # По 2 "защёлки" на каждый метр трубы для стыковки с рамами
     L_ada = H * 4 * count
-    price_adapter = 800  # ~800₸/м
+    
+    price_adapter = 800  # Запасное
+    for item in ref1:
+        if 'адаптер' in item.get('Элемент', '').lower():
+            price_adapter = item.get('Цена за единицу', 800)
+            break
+    
     cost_adapter = L_ada * price_adapter
     skeleton_cost += cost_adapter
     
@@ -521,7 +540,13 @@ def calculate_tambour_materials(
     # --- НАПРАВЛЯЮЩИЙ (арт. 2-00-5581) ---
     # Принудительно добавляется для соединения изделий
     L_guide = (W + H) * count * 1.05  # +5% запас
-    price_guide = 1200  # ~1200₸/м
+    
+    price_guide = 1200  # Запасное
+    for item in ref1:
+        if '2-00-5581' in item.get('Артикул', ''):
+            price_guide = item.get('Цена за единицу', 1200)
+            break
+    
     cost_guide = L_guide * price_guide
     skeleton_cost += cost_guide
     
@@ -543,7 +568,13 @@ def calculate_tambour_materials(
     w_g = w_cell - 0.1  # светопроём
     h_g = h_cell - 0.1
     L_b = (w_g + h_g) * 2 * n_cells
-    price_bead = 600  # ~600₸/м
+    
+    price_bead = 600  # Запасное
+    for item in ref1:
+        if 'штапик' in item.get('Элемент', '').lower():
+            price_bead = item.get('Цена за единицу', 600)
+            break
+    
     cost_bead = L_b * price_bead
     skeleton_cost += cost_bead
     
@@ -562,7 +593,13 @@ def calculate_tambour_materials(
     # --- УПЛОТНИТЕЛЬ ---
     # Два контура (внешний и под штапик) на каждое заполнение
     L_s = L_b * 2 * 1.05  # +5% запас
-    price_seal = 300  # ~300₸/м
+    
+    price_seal = 300  # Запасное
+    for item in ref1:
+        if 'уплотн' in item.get('Элемент', '').lower():
+            price_seal = item.get('Цена за единицу', 300)
+            break
+    
     cost_seal = L_s * price_seal
     skeleton_cost += cost_seal
     

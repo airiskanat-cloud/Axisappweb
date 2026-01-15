@@ -85,7 +85,12 @@ def save_history(
                 h = h / 1000
             
             if w > 0 and h > 0:
-                pos_str = f"П{idx+1}: {w:.2f}м×{h:.2f}м"
+                # Тип изделия
+                product_type = pos.get("product_type", "")
+                if product_type:
+                    pos_str = f"П{idx+1} ({product_type}): {w:.2f}м×{h:.2f}м"
+                else:
+                    pos_str = f"П{idx+1}: {w:.2f}м×{h:.2f}м"
                 
                 # Если фасад - добавляем сетку
                 cols = pos.get("columns", 0)
