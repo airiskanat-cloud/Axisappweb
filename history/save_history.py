@@ -61,11 +61,25 @@ def save_history(
         # Форматируем стоимость
         cost_formatted = f"{total_cost:,.0f}".replace(",", " ")
         
+        # Тип изделия
+        facade_type = result.get("facade_type", "Окно/Дверь")
+        
+        # Габариты позиций
+        gabarits = []
+        for pos in positions:
+            w = pos.get("width", 0)
+            h = pos.get("height", 0)
+            if w > 0 and h > 0:
+                gabarits.append(f"{w}×{h}")
+        gabarits_str = "; ".join(gabarits) if gabarits else "-"
+        
         # Строка для записи
         row = [
             timestamp,
             user_login,
+            facade_type,  # ДОБАВЛЕН тип
             order_number,
+            gabarits_str,  # ДОБАВЛЕНЫ габариты
             n_positions,
             f"{total_area:.2f}",
             cost_formatted

@@ -7,6 +7,23 @@ import math
 from typing import Dict, List, Any
 
 
+def parse_price(value):
+    """Безопасное преобразование цены в float"""
+    if value is None:
+        return 0.0
+    value = str(value).strip()
+    if value == "":
+        return 0.0
+    try:
+        # Убираем все виды пробелов
+        for space in ['\xa0', '\u00a0', '\u202f', '\u2009', ' ']:
+            value = value.replace(space, '')
+        value = value.replace(',', '.')
+        return float(value)
+    except:
+        return 0.0
+
+
 def calculate_facade_materials(
     W: float,  # Ширина фасада (м)
     H: float,  # Высота фасада (м)
@@ -86,7 +103,7 @@ def calculate_facade_materials(
     for item in facade_profiles_ref:
         elem = item.get('Элемент', '')
         if mullion_name in elem:
-            price_m = float(str(item.get('Цена за единицу', 0)).replace(' ', '').replace(',', ''))
+            price_m = parse_price(item.get('Цена за единицу', 0))
             break
     
     cost_m = final_m * price_m
@@ -128,7 +145,7 @@ def calculate_facade_materials(
     for item in facade_profiles_ref:
         elem = item.get('Элемент', '')
         if transom_name in elem:
-            price_r = float(str(item.get('Цена за единицу', 0)).replace(' ', '').replace(',', ''))
+            price_r = parse_price(item.get('Цена за единицу', 0))
             break
     
     cost_r = final_r * price_r
@@ -173,7 +190,7 @@ def calculate_facade_materials(
     for item in facade_profiles_ref:
         elem = item.get('Элемент', '')
         if 'Держатель СП' in elem:
-            price_holder = float(str(item.get('Цена за единицу', 0)).replace(' ', '').replace(',', ''))
+            price_holder = parse_price(item.get('Цена за единицу', 0))
             break
     
     if price_holder == 0:
@@ -204,7 +221,7 @@ def calculate_facade_materials(
     for item in facade_profiles_ref:
         elem = item.get('Элемент', '')
         if 'Термомост' in elem or 'термомост' in elem:
-            price_th = float(str(item.get('Цена за единицу', 0)).replace(' ', '').replace(',', ''))
+            price_th = parse_price(item.get('Цена за единицу', 0))
             break
     
     if price_th == 0:
@@ -235,7 +252,7 @@ def calculate_facade_materials(
     for item in facade_profiles_ref:
         elem = item.get('Элемент', '')
         if 'Прижимной профиль' in elem or 'прижимной' in elem.lower():
-            price_ext = float(str(item.get('Цена за единицу', 0)).replace(' ', '').replace(',', ''))
+            price_ext = parse_price(item.get('Цена за единицу', 0))
             break
     
     if price_ext == 0:
@@ -261,7 +278,7 @@ def calculate_facade_materials(
     for item in facade_profiles_ref:
         elem = item.get('Элемент', '')
         if 'Кронштейн' in elem or 'кронштейн' in elem.lower():
-            price_bracket = float(str(item.get('Цена за единицу', 0)).replace(' ', '').replace(',', ''))
+            price_bracket = parse_price(item.get('Цена за единицу', 0))
             break
     
     if price_bracket == 0:
