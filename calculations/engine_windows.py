@@ -501,18 +501,39 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     else:
         print(f"   ⏭️ Монтаж не требуется")
     
+    # ДОБАВЛЕНО: Дополнительные детали
+    cost_additional = 0.0
+    print(f"\n🔧 Расчёт дополнительных деталей:")
+    
+    # Ищем "Нащельник" в ref2
+    additional_name = None
+    for key in ref2.keys():
+        if "нащельник" in key.lower():
+            additional_name = key
+            break
+    
+    if additional_name:
+        price_additional = ref2.get(additional_name, 0)
+        # Формула: (периметр / 3) * цена
+        cost_additional = (total_perimeter / 3) * price_additional
+        print(f"   Формула: (периметр / 3) × цена")
+        print(f"   Расчёт: ({total_perimeter:.3f} / 3) × {price_additional} = {cost_additional:.2f} тг")
+    else:
+        print(f"   ⚠️ 'Нащельник' не найден в Справочнике-2")
+    
     result["part3_final"] = {
         "Стеклопакет": round(cost_glass, 0),
         "Ламбри": round(cost_lambri, 0),
         "Тонировка": round(cost_toning, 0),
         "Сборка": round(cost_assembly, 0),
         "Монтаж": round(cost_installation, 0),
+        "Дополнительные детали": round(cost_additional, 0),
         "Материалы": round(materials_sum, 0)
     }
     
     subtotal = sum(result["part3_final"].values())
-    margin = subtotal * 0.65
-    result["part3_final"]["Обеспечение (65%)"] = round(margin, 0)
+    margin = subtotal * 0.81  # ИЗМЕНЕНО: было 0.65, стало 0.81
+    result["part3_final"]["Обеспечение"] = round(margin, 0)  # Убрал "(65%)" из названия
     result["total_with_margin"] = round(subtotal + margin, 0)
     
     result["metrics"]["total_area"] = round(result["metrics"]["total_area"], 3)

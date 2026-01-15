@@ -90,6 +90,16 @@ def load_reference_2(spreadsheet_id, credentials_path):
             clean_price = parse_price(price)
             ref[clean_name] = clean_price
             print(f"DEBUG Монтаж: '{clean_name}' = {clean_price}")
+    
+    # ДОБАВЛЕНО: дополнительные детали
+    for row in data:
+        name = row[col("дополнительные детал")]
+        price = row[col("стоимость дополнительных детал")]
+        if name and price:
+            clean_name = name.strip()
+            clean_price = parse_price(price)
+            ref[clean_name] = clean_price
+            print(f"DEBUG Доп.детали: '{clean_name}' = {clean_price}")
 
     print("DEBUG ref2:", ref)
     return ref
