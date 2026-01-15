@@ -298,6 +298,34 @@ def calculate_facade_materials(
         "cost": cost_brackets
     }
     
+    # --- УПЛОТНИТЕЛЬ (3/5мм) ---
+    # Расход по 1м, запас 5%
+    L_seal = (L_m + L_r) * 2 * count * 1.05
+    price_seal = 0
+    for item in facade_profiles_ref:
+        elem = item.get('Элемент', '')
+        if 'Уплотнитель' in elem or 'уплотнитель' in elem.lower():
+            price_seal = parse_price(item.get('Цена за единицу', 0))
+            break
+    
+    if price_seal == 0:
+        price_seal = 300  # Запасное значение
+    
+    cost_seal = L_seal * price_seal
+    skeleton_cost += cost_seal
+    
+    print(f"\n8. УПЛОТНИТЕЛЬ:")
+    print(f"   Формула: (L_m + L_r) × 2 × count × 1.05")
+    print(f"   Расчёт: ({L_m:.2f} + {L_r:.2f}) × 2 × {count} × 1.05 = {L_seal:.2f}м")
+    print(f"   Стоимость: {cost_seal:,.0f}₸")
+    
+    result["skeleton"]["Уплотнитель"] = {
+        "quantity": L_seal,
+        "unit": "м",
+        "price": price_seal,
+        "cost": cost_seal
+    }
+    
     print(f"\n{'─'*70}")
     print(f"ИТОГО КАРКАС: {skeleton_cost:,.0f}₸")
     
@@ -310,22 +338,78 @@ def calculate_facade_materials(
     print("="*70)
     
     inserts_cost = 0
+    inserts_details = []
     
     if not inserts or len(inserts) == 0:
         print("\nВставок нет")
     else:
         for i, insert in enumerate(inserts, 1):
-            print(f"\nВставка {i}: {insert.get('type', 'Unknown')} {insert.get('system', 'Unknown')}")
+            insert_type = insert.get('type', 'Unknown')
+            insert_system = insert.get('system', 'ALG 2030-63C')
+            insert_w = insert.get('width', 0)
+            insert_h = insert.get('height', 0)
             
-            # TODO: Здесь нужен полный расчёт вставки через engine_windows
-            # Пока упрощённо
-            insert_cost = 250000  # Примерная стоимость двери
-            inserts_cost += insert_cost
+            print(f"\nВставка {i}: {insert_type} {insert_system} ({insert_w}м × {insert_h}м)")
             
-            print(f"   Стоимость: {insert_cost:,.0f}₸")
+            # Формируем данные для расчёта через engine_windows
+            from calculations.engine_windows import calculate_window_smeta
+            
+            # Определяем тип изделия
+            if insert_type == "door":
+                product_type = "Дверь 2-х створч." if insert.get('data', {}).get('sash_count', 2) == 2 else "Дверь 1 створч."
+            else:
+                product_type = "Окно с откр."
+            
+            # Данные вставки
+            insert_order_data = {
+                "common": {
+                    "order_number": f"INSERT_{i}",
+                    "toning": insert.get('data', {}).get('toning', 'Нет'),
+                    "assembly": insert.get('data', {}).get('assembly', 'Нет'),
+                    "installation": insert.get('data', {}).get('installation', 'Нет')
+                },
+                "positions": [{
+                    "product_type": product_type,
+                    "system": insert_system,
+                    "width": insert_w * 1000,  # в мм
+                    "height": insert_h * 1000,
+                    "count": 1,
+                    "fill_category": "Стеклопакет",
+                    "glass_type": insert.get('data', {}).get('glass_type', 'двойной'),
+                    "opening_type": "Откр.",
+                    "horizontal_imposts": 0,
+                    "vertical_imposts": 0
+                }]
+            }
+            
+            # Вызываем расчёт
+            try:
+                insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
+                insert_materials = insert_result.get("materials_cost", 0)
+                inserts_cost += insert_materials
+                
+                inserts_details.append({
+                    "name": f"{product_type} {insert_system}",
+                    "size": f"{insert_w}м × {insert_h}м",
+                    "cost": insert_materials
+                })
+                
+                print(f"   Материалы: {insert_materials:,.0f}₸")
+            except Exception as e:
+                print(f"   ⚠️ Ошибка расчёта вставки: {e}")
+                # Запасное значение
+                fallback_cost = 250000
+                inserts_cost += fallback_cost
+                inserts_details.append({
+                    "name": f"{product_type} {insert_system}",
+                    "size": f"{insert_w}м × {insert_h}м",
+                    "cost": fallback_cost
+                })
     
     print(f"\n{'─'*70}")
     print(f"ИТОГО ВСТАВКИ: {inserts_cost:,.0f}₸")
+    
+    result["inserts_details"] = inserts_details
     
     # ============================================================================
     # ИТОГО
@@ -497,6 +581,30 @@ def calculate_tambour_materials(
         "unit": "м",
         "price": price_seal,
         "cost": cost_seal
+    }
+    
+    # --- ЛАМБЕРИ (если требуется) ---
+    # Общая площадь ячейки делится на ширину панели (0.1м) + 5% запаса
+    S_cell = w_cell * h_cell
+    S_total = S_cell * n_cells
+    L_lam = (S_total / 0.1) * 1.05
+    
+    # Цена ламбери из ref2
+    price_lambri = ref2.get("ламбри без термо", 2248)  # По умолчанию без термо
+    cost_lambri = L_lam * price_lambri
+    skeleton_cost += cost_lambri
+    
+    print(f"\n7. ЛАМБЕРИ:")
+    print(f"   Формула: (S_total / 0.1) × 1.05")
+    print(f"   Расчёт: ({S_total:.2f} / 0.1) × 1.05 = {L_lam:.2f}м")
+    print(f"   Цена: {price_lambri:,}₸/м")
+    print(f"   Стоимость: {cost_lambri:,.0f}₸")
+    
+    result["skeleton"]["Ламбери"] = {
+        "quantity": L_lam,
+        "unit": "м",
+        "price": price_lambri,
+        "cost": cost_lambri
     }
     
     print(f"\n{'─'*70}")

@@ -64,25 +64,42 @@ def save_history(
         # Тип изделия
         facade_type = result.get("facade_type", "Окно/Дверь")
         
-        # Габариты позиций
+        # Габариты позиций + вставки для фасада
         gabarits = []
-        for pos in positions:
+        for idx, pos in enumerate(positions):
             w = pos.get("width", 0)
             h = pos.get("height", 0)
             if w > 0 and h > 0:
-                gabarits.append(f"{w}×{h}")
+                pos_str = f"П{idx+1}: {w}м×{h}м"
+                
+                # Если фасад - добавляем сетку
+                cols = pos.get("columns", 0)
+                rows = pos.get("rows", 0)
+                if cols > 0 and rows > 0:
+                    pos_str += f" ({cols}×{rows})"
+                
+                # Если есть вставки
+                inserts_data = pos.get("insert_data", {})
+                if inserts_data:
+                    insert_w = inserts_data.get("width", 0)
+                    insert_h = inserts_data.get("height", 0)
+                    if insert_w > 0 and insert_h > 0:
+                        pos_str += f" | Вставка: {insert_w}×{insert_h}"
+                
+                gabarits.append(pos_str)
+        
         gabarits_str = "; ".join(gabarits) if gabarits else "-"
         
-        # Строка для записи
+        # Строка для записи (ОБНОВЛЁННАЯ структура)
         row = [
-            timestamp,
-            user_login,
-            facade_type,  # ДОБАВЛЕН тип
-            order_number,
-            gabarits_str,  # ДОБАВЛЕНЫ габариты
-            n_positions,
-            f"{total_area:.2f}",
-            cost_formatted
+            timestamp,           # A: Дата
+            user_login,          # B: Пользователь
+            facade_type,         # C: Тип
+            order_number,        # D: Номер заказа
+            gabarits_str,        # E: Габариты (полные)
+            n_positions,         # F: Позиций
+            f"{total_area:.2f}", # G: Площадь
+            cost_formatted       # H: Стоимость
         ]
         
         # Добавляем строку в конец

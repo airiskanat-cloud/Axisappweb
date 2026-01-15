@@ -37,7 +37,7 @@ PROFILE_SYSTEMS = [
     "ALG 2030-Slim", 
     "Ruit 50F"
 ]
-GLASS_TYPES = ["Двойной", "Тройной", "Энергодвойной", "Энерготройной", "Одинарный 4мм", "Одинарный 6мм", "Одинарный 4мм закал", "Одинарный 6мм закал", "Нет"]
+# GLASS_TYPES теперь загружаются динамически из ref2 (удалён хардкод)
 PANELS = ["Стеклопакет", "Ламбри без термо", "Ламбри с термо"]
 TONING = ["Есть", "Нет"]
 ASSEMBLY = ["Есть", "Нет"]
@@ -100,6 +100,20 @@ def get_data():
     return r1, r2, r3, r_facade  # ДОБАВЛЕН r_facade
 
 ref1, ref2, ref3, ref_facade = get_data()  # ДОБАВЛЕН ref_facade
+
+# ДИНАМИЧЕСКАЯ загрузка типов стеклопакетов из ref2
+def get_glass_types():
+    """Получает список типов стеклопакетов из ref2"""
+    glass_types = []
+    for key in ref2.keys():
+        # Пропускаем служебные ключи
+        if key not in ['тонировка', 'сборка', 'монтаж', 'демонтаж/монтаж', 'сложный монтаж', 'нащельник']:
+            # Капитализируем первую букву
+            glass_types.append(key.capitalize())
+    # Сортируем для стабильности
+    return sorted(glass_types, key=lambda x: (x == 'Нет', x))
+
+GLASS_TYPES = get_glass_types()
 
 # --- 3. ФУНКЦИЯ КОНСТРУКТОР ОКНА ---
 def window_door_ui(prefix, pos_idx, system_id, initial_data=None):
@@ -363,6 +377,10 @@ def render_windows_doors_page():
             toning_id = st.selectbox("Тонировка", TONING, key="main_toning")
             assembly_id = st.selectbox("Сборка", ASSEMBLY, key="main_assembly")
             install_id = st.selectbox("Монтаж", INSTALLATION, key="main_install")
+            
+            # ДОБАВЛЕНО: Дополнительные детали
+            additional_options = ["Нет"] + [k.capitalize() for k in ref2.keys() if "нащельник" in k.lower()]
+            additional_id = st.selectbox("Дополнительные детали", additional_options, key="main_additional")
 
     with col_right:
         st.subheader(f"🪟 Список позиций")
@@ -583,9 +601,13 @@ def render_facade_page():
     
     facade_toning = col_ton.selectbox("Тонировка", TONING, key="facade_toning")
     
-    col_asm, col_inst = st.columns(2)
+    col_asm, col_inst, col_add = st.columns(3)
     facade_assembly = col_asm.selectbox("Сборка", ASSEMBLY, key="facade_assembly")
     facade_installation = col_inst.selectbox("Монтаж", INSTALLATION, key="facade_installation")
+    
+    # ДОБАВЛЕНО: Дополнительные детали
+    additional_options = ["Нет"] + [k.capitalize() for k in ref2.keys() if "нащельник" in k.lower()]
+    facade_additional = col_add.selectbox("Дополнительные детали", additional_options, key="facade_additional")
     
     st.markdown("---")
     
@@ -971,8 +993,8 @@ def render_facade_page():
                 
                 if additional_name:
                     price_additional = ref2.get(additional_name, 0)
-                    # Формула: (периметр / 3) * цена
-                    additional_cost = (total_perimeter / 3) * price_additional
+                    # Формула: ОКРУГЛЕНИЕ ВВЕРХ (периметр / 3) * цена
+                    additional_cost = math.ceil(total_perimeter / 3) * price_additional
                 
                 # Сумма без обеспечения
                 subtotal = materials_cost + glass_cost + lambri_cost + toning_cost + assembly_cost + installation_cost + additional_cost
@@ -1014,7 +1036,7 @@ def render_facade_page():
                             "order_number": facade_order_num,
                             "facade_type": "Фасад"
                         },
-                        "positions": results
+                        "positions": st.session_state.facade_positions  # ИСПРАВЛЕНО: передаём реальные позиции
                     }
                     
                     save_history(
@@ -1047,6 +1069,27 @@ def render_facade_page():
                 st.markdown("---")
                 st.subheader("💰 ЧАСТЬ 3: Итоговый расчет")
                 
+                # ИСПРАВЛЕНО: Показываем отдельно материалы каркаса и вставок
+                if "ALG" not in facade_type_value and facade_type_value != "Оконный тамбур (ALG)":
+                    # Для Ruit 50F показываем детализацию
+                    st.write("**Материалы каркаса (Ruit 50F):**")
+                    if 'facade_calc' in locals() and facade_calc.get("skeleton"):
+                        skeleton_data = []
+                        for elem, data in facade_calc["skeleton"].items():
+                            skeleton_data.append({
+                                "Элемент": elem,
+                                "Количество": f"{data['quantity']} {data['unit']}",
+                                "Цена": f"{data['price']:,.0f} ₸",
+                                "Стоимость": f"{data['cost']:,.0f} ₸"
+                            })
+                        st.dataframe(pd.DataFrame(skeleton_data), use_container_width=True, hide_index=True)
+                        st.write(f"**Итого каркас:** {facade_calc.get('skeleton_cost', 0):,.0f} ₸")
+                    
+                    if 'facade_calc' in locals() and facade_calc.get("inserts_cost", 0) > 0:
+                        st.write(f"**Материалы вставок (двери/окна):** {facade_calc.get('inserts_cost', 0):,.0f} ₸")
+                    
+                    st.markdown("---")
+                
                 part3_data = []
                 for key, value in st.session_state.last_facade_result["part3_final"].items():
                     part3_data.append({"Наименование": key, "Сумма (₸)": f"{value:,.0f}"})
@@ -1054,9 +1097,7 @@ def render_facade_page():
                 df_part3 = pd.DataFrame(part3_data)
                 st.dataframe(df_part3, use_container_width=True, hide_index=True)
                 
-                st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 65%")
-                
-                st.warning("⚠️ Это упрощенный расчет. Для точной стоимости необходимо добавить расчет профилей из справочника 'Фасады - Профили'.")
+                st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 81%")
                 
             except Exception as e:
                 st.error(f"❌ Ошибка при расчете: {e}")

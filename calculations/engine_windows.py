@@ -517,10 +517,11 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     
     if additional_name:
         price_additional = ref2.get(additional_name, 0)
-        # Формула: (периметр / 3) * цена
-        cost_additional = (total_perimeter / 3) * price_additional
-        print(f"   Формула: (периметр / 3) × цена")
-        print(f"   Расчёт: ({total_perimeter:.3f} / 3) × {price_additional} = {cost_additional:.2f} тг")
+        # Формула: ОКРУГЛЕНИЕ ВВЕРХ (периметр / 3) * цена
+        import math
+        cost_additional = math.ceil(total_perimeter / 3) * price_additional
+        print(f"   Формула: ⌈периметр / 3⌉ × цена")
+        print(f"   Расчёт: ⌈{total_perimeter:.3f} / 3⌉ × {price_additional} = {math.ceil(total_perimeter / 3)} × {price_additional} = {cost_additional:.2f} тг")
     else:
         print(f"   ⚠️ 'Нащельник' не найден в Справочнике-2")
     
