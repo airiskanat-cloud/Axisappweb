@@ -1112,7 +1112,57 @@ def render_history_page():
     """Страница истории заказов"""
     
     st.title("📚 История заказов")
-    st.info("⚠️ Раздел истории в разработке")
+    
+    try:
+        # Загружаем историю из Google Sheets
+        from google.oauth2.service_account import Credentials
+        import gspread
+        
+        scopes = [
+            'https://www.googleapis.com/auth/spreadsheets',
+            'https://www.googleapis.com/auth/drive'
+        ]
+        creds = Credentials.from_service_account_file(GOOGLE_CREDENTIALS_PATH, scopes=scopes)
+        gc = gspread.authorize(creds)
+        
+        sh = gc.open_by_key(SPREADSHEET_ID)
+        ws = sh.worksheet("ИСТОРИЯ")
+        
+        # Получаем все данные
+        data = ws.get_all_values()
+        
+        if len(data) <= 1:
+            st.info("📭 История пуста")
+            return
+        
+        # Заголовки
+        headers = data[0]
+        rows = data[1:]
+        
+        # Создаём DataFrame
+        import pandas as pd
+        df = pd.DataFrame(rows, columns=headers)
+        
+        # Сортируем по дате (новые сверху)
+        if len(df) > 0:
+            df = df.iloc[::-1]  # Разворачиваем
+            
+            st.write(f"**Всего записей:** {len(df)}")
+            
+            # Фильтр по пользователю
+            if "Пользователь" in df.columns:
+                users = df["Пользователь"].unique()
+                selected_user = st.selectbox("Фильтр по пользователю:", ["Все"] + list(users))
+                
+                if selected_user != "Все":
+                    df = df[df["Пользователь"] == selected_user]
+            
+            # Показываем таблицу
+            st.dataframe(df, use_container_width=True, hide_index=True)
+    
+    except Exception as e:
+        st.error(f"❌ Ошибка загрузки истории: {e}")
+        st.info("💡 Убедитесь что в Google Sheets есть лист 'ИСТОРИЯ' с колонками: Дата, Пользователь, Номер заказа, Позиций, Площадь, Стоимость")
 
 
 # ========================================

@@ -13,13 +13,21 @@ def parse_price(value):
     value = str(value).strip()
     if value == "":
         return 0.0
-
-    return float(
-        value
-        .replace('\xa0', '')  # неразрывный пробел
-        .replace(' ', '')    # обычный пробел
-        .replace(',', '.')   # запятая → точка
-    )
+    
+    # ИСПРАВЛЕНО: Защита от нечисловых значений + убираем ВСЕ пробелы
+    try:
+        # Убираем ВСЕ виды пробелов
+        cleaned = value
+        # Неразрывные пробелы разных типов
+        for space in ['\xa0', '\u00a0', '\u202f', '\u2009', ' ']:
+            cleaned = cleaned.replace(space, '')
+        # Запятая → точка
+        cleaned = cleaned.replace(',', '.')
+        return float(cleaned)
+    except (ValueError, AttributeError):
+        # Если не удалось конвертировать - возвращаем 0
+        print(f"⚠️ Не удалось распарсить цену: '{value}' - используется 0")
+        return 0.0
 
 # Названия листов из твоих справочников
 SHEET_REF1 = "Справочник1"

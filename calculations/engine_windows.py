@@ -505,6 +505,9 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     cost_additional = 0.0
     print(f"\n🔧 Расчёт дополнительных деталей:")
     
+    # Берём периметр из метрик
+    total_perimeter = result["metrics"]["total_perimeter"]
+    
     # Ищем "Нащельник" в ref2
     additional_name = None
     for key in ref2.keys():
