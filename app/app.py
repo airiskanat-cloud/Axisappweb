@@ -1127,6 +1127,9 @@ def render_facade_page():
                     
                     materials_cost = facade_calc.get("total_cost", 0)
                     print(f"   ✅ Материалы рассчитаны: {materials_cost:,.0f}₸")
+                    
+                    # ИСПРАВЛЕНО: Сохраняем facade_calc для отображения детализации
+                    facade_calc_saved = facade_calc
                 
                 # Стеклопакеты/ламбри - собираем данные ПО ТИПАМ
                 glass_areas = {"Двойной": 0, "Тройной": 0, "Энергодвойной": 0}
@@ -1150,7 +1153,7 @@ def render_facade_page():
                             lambri_type = panel_type
                             lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + area
                     
-                    # ВСТАВКИ (ОКНА/ДВЕРИ) - собираем площадь стеклопакетов
+                    # ВСТАВКИ (ОКНА/ДВЕРИ) - собираем площадь стеклопакетов И ЛАМБРИ
                     elif filling_type in ["window", "door"]:
                         insert_data = pos.get("insert_data", {})
                         fill_category = insert_data.get("fill_category", "Стеклопакет")
@@ -1168,6 +1171,20 @@ def render_facade_page():
                             insert_area = insert_w * insert_h * n_cells
                             
                             glass_areas[glass_type] = glass_areas.get(glass_type, 0) + insert_area
+                        
+                        # ИСПРАВЛЕНО: Добавлена обработка ламбри из вставок
+                        elif "Ламбри" in fill_category:
+                            lambri_type = fill_category  # "Ламбри без термо" или "Ламбри с термо"
+                            
+                            # Площадь вставок с ламбри
+                            n_cells = pos["columns"] * pos["rows"]
+                            cell_w = pos["width"] / pos["columns"]
+                            cell_h = pos["height"] / pos["rows"]
+                            insert_w = insert_data.get("width", cell_w * 1000) / 1000
+                            insert_h = insert_data.get("height", cell_h * 1000) / 1000
+                            insert_area = insert_w * insert_h * n_cells
+                            
+                            lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + insert_area
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
                 glass_cost = 0
@@ -1270,7 +1287,8 @@ def render_facade_page():
                 st.session_state.last_facade_result.update({
                     "total_cost": round(total_cost, 0),
                     "materials_cost": round(materials_cost, 0),
-                    "positions": results
+                    "positions": results,
+                    "facade_calc": facade_calc_saved  # ИСПРАВЛЕНО: Сохраняем для детализации
                 })
                 
                 # ИСПРАВЛЕНО: Сохранение в историю
@@ -1335,7 +1353,9 @@ def render_facade_page():
                 else:
                     # Для Ruit 50F показываем детализацию
                     st.write("**Материалы каркаса (Ruit 50F):**")
-                    if 'facade_calc' in locals() and facade_calc.get("skeleton"):
+                    # ИСПРАВЛЕНО: Берём из session_state вместо locals()
+                    facade_calc = st.session_state.get("last_facade_result", {}).get("facade_calc")
+                    if facade_calc and facade_calc.get("skeleton"):
                         skeleton_data = []
                         for elem, data in facade_calc["skeleton"].items():
                             skeleton_data.append({
@@ -1347,8 +1367,8 @@ def render_facade_page():
                         st.dataframe(pd.DataFrame(skeleton_data), use_container_width=True, hide_index=True)
                         st.write(f"**Итого каркас:** {facade_calc.get('skeleton_cost', 0):,.0f} ₸")
                     
-                    # ДОБАВЛЕНО: Детализация вставок
-                    if 'facade_calc' in locals() and facade_calc.get("inserts_details"):
+                    # ИСПРАВЛЕНО: Проверяем через session_state
+                    if facade_calc and facade_calc.get("inserts_details"):
                         st.write("**Материалы вставок (двери/окна):**")
                         inserts_data = []
                         for insert in facade_calc["inserts_details"]:
@@ -1615,6 +1635,29 @@ def render_tambour_page():
                     df3 = pd.DataFrame(result["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
                     st.dataframe(df3, use_container_width=True, hide_index=True)
                     st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{result['total_with_margin']:,.0f} ₸")
+                
+                # ДОБАВЛЕНО: Кнопка скачать КП
+                st.markdown("---")
+                if st.button("📥 Скачать КП в Excel", type="secondary", use_container_width=True, key="tambour_export_btn"):
+                    try:
+                        # Экспорт уже в начале файла импортирован
+                        temp_dir = tempfile.gettempdir()
+                        order_num = order_number
+                        excel_path = os.path.join(temp_dir, f"KP_{order_num}.xlsx")
+                        
+                        export_to_excel(order_data, result, excel_path)
+                        
+                        with open(excel_path, "rb") as f:
+                            st.download_button(
+                                label="💾 Сохранить файл",
+                                data=f,
+                                file_name=f"KP_{order_num}.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                use_container_width=True
+                            )
+                        st.success(f"✅ Файл {order_num}.xlsx готов к скачиванию")
+                    except Exception as e:
+                        st.error(f"❌ Ошибка экспорта: {e}")
                 
                 # Сохраняем в историю
                 save_history(

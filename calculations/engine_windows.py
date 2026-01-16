@@ -423,8 +423,9 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     
     for pos_idx, position in enumerate(positions):
         pos_data = position.get("data", {})
-        fill_cat = pos_data.get("fill_category", "Стеклопакет")
-        glass_type = pos_data.get("glass_type", "Двойной")
+        # ИСПРАВЛЕНО: Читаем из двух мест (для тамбура данные в position напрямую)
+        fill_cat = pos_data.get("fill_category") or position.get("fill_category", "Стеклопакет")
+        glass_type = pos_data.get("glass_type") or position.get("glass_type", "Двойной")
         
         # ИСПРАВЛЕНО: Нормализуем чтение размеров - поддержка разных ключей
         W = pos_data.get("width", 0)
