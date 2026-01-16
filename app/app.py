@@ -915,6 +915,10 @@ def render_facade_page():
     is_tambour = ("ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)")
     positions_list = st.session_state.get("tambour_positions" if is_tambour else "facade_positions", [])
     
+    print(f"DEBUG: facade_type_value = {facade_type_value}")
+    print(f"DEBUG: is_tambour = {is_tambour}")
+    print(f"DEBUG: positions count = {len(positions_list)}")
+    
     with col_calc:
         calc_button = st.button(
             "🚀 РАССЧИТАТЬ ТАМБУР" if is_tambour else "🚀 РАССЧИТАТЬ ФАСАД",
@@ -1585,7 +1589,8 @@ with st.sidebar:
     menu_selection = st.radio(
         "Выберите раздел:",
         ["Главная (Окна/Двери)", "Фасады", "История"],
-        index=["Главная (Окна/Двери)", "Фасады", "История"].index(st.session_state.menu_selection)
+        index=["Главная (Окна/Двери)", "Фасады", "История"].index(st.session_state.menu_selection),
+        key="menu_nav_radio"
     )
     
     # Сохраняем выбор
