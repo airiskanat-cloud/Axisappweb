@@ -71,7 +71,12 @@ def calculate_facade_materials(
         "skeleton": {},
         "inserts": {},
         "total_cost": 0,
-        "details": []
+        "details": [],
+        # ✅ ДОБАВЛЕНО: Метрики (площадь и периметр)
+        "metrics": {
+            "total_area": W * H * count,  # Общая площадь фасада
+            "total_perimeter": 2 * (W + H) * count  # Общий периметр
+        }
     }
     
     # ============================================================================
