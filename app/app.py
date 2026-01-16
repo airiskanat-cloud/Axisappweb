@@ -1089,36 +1089,35 @@ def render_facade_page():
         else:
             # ========== РАСЧЁТ ФАСАДА (Ruit 50F) ==========
             try:
-                # (СУЩЕСТВУЮЩИЙ КОД РАСЧЁТА ФАСАДА ОСТАЁТСЯ)
                 if not st.session_state.facade_positions:
                     st.error("❌ Добавьте хотя бы одну позицию фасада!")
                 else:
-                # Расчет площади и периметра
-                total_area = 0
-                total_perimeter = 0
-                results = []
+                    # Расчет площади и периметра
+                    total_area = 0
+                    total_perimeter = 0
+                    results = []
                 
-                for idx, pos in enumerate(st.session_state.facade_positions):
-                    area = pos["width"] * pos["height"]
-                    perimeter = 2 * (pos["width"] + pos["height"])
-                    total_area += area
-                    total_perimeter += perimeter
+                    for idx, pos in enumerate(st.session_state.facade_positions):
+                        area = pos["width"] * pos["height"]
+                        perimeter = 2 * (pos["width"] + pos["height"])
+                        total_area += area
+                        total_perimeter += perimeter
                     
-                    n_cells = pos["columns"] * pos["rows"]
-                    
-                    fill_name = {
-                        "blind": "Глухое остекление",
-                        "window": "Окно",
-                        "door": "Дверь"
-                    }.get(pos.get("filling_type", "blind"), "Неизвестно")
-                    
-                    results.append({
-                        "Позиция": idx + 1,
-                        "Габариты (м)": f"{pos['width']:.2f} × {pos['height']:.2f}",
-                        "Площадь (м²)": f"{area:.2f}",
-                        "Ячейки": f"{pos['columns']} × {pos['rows']} = {n_cells} шт",
-                        "Тип заполнения": fill_name
-                    })
+                        n_cells = pos["columns"] * pos["rows"]
+                        
+                        fill_name = {
+                            "blind": "Глухое остекление",
+                            "window": "Окно",
+                            "door": "Дверь"
+                        }.get(pos.get("filling_type", "blind"), "Неизвестно")
+                        
+                        results.append({
+                            "Позиция": idx + 1,
+                            "Габариты (м)": f"{pos['width']:.2f} × {pos['height']:.2f}",
+                            "Площадь (м²)": f"{area:.2f}",
+                            "Ячейки": f"{pos['columns']} × {pos['rows']} = {n_cells} шт",
+                            "Тип заполнения": fill_name
+                        })
                 
                 # УПРОЩЕННЫЙ РАСЧЕТ (т.к. нет справочника Ruit 50F)
                 # На основе реального проекта из PDF:
