@@ -571,6 +571,15 @@ def calculate_tambour_materials_v2(
             item_cost = item_result.get("materials_cost", 0)
             products_cost += item_cost
             
+            # ✅ ДОБАВЛЕНО: Берём метрики из результата calculate_window_smeta
+            item_metrics = item_result.get("metrics", {})
+            item_area = item_metrics.get("total_area", 0)
+            item_perimeter = item_metrics.get("total_perimeter", 0)
+            
+            # ✅ Суммируем метрики в общий result
+            result["metrics"]["total_area"] += item_area
+            result["metrics"]["total_perimeter"] += item_perimeter
+            
             result["products"].append({
                 "name": f"{product_type} {system}",
                 "size": f"{width}×{height}мм",
