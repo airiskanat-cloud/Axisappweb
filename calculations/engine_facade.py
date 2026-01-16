@@ -362,6 +362,10 @@ def calculate_facade_materials(
             
             # Формируем данные для расчёта через engine_windows
             from calculations.engine_windows import calculate_window_smeta
+            from app.code_mapper import get_code_for_windows_doors  # ДОБАВЛЕНО
+            
+            # Генерируем CODE
+            code = get_code_for_windows_doors(product_type, insert_system)
             
             # Данные вставки
             insert_order_data = {
@@ -372,8 +376,9 @@ def calculate_facade_materials(
                     "installation": insert.get('data', {}).get('installation', 'Нет')
                 },
                 "positions": [{
-                    "product_type": product_type,  # Используем из вставки
+                    "product_type": product_type,
                     "system": insert_system,
+                    "code": code,  # ДОБАВЛЕНО
                     "width": insert_w * 1000,  # в мм
                     "height": insert_h * 1000,
                     "count": 1,
@@ -388,7 +393,9 @@ def calculate_facade_materials(
             # Вызываем расчёт
             try:
                 insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
-                insert_materials = insert_result.get("materials_cost", 0)
+                
+                # ИСПРАВЛЕНО: Берём ТОЛЬКО материалы (профили + фурнитура), БЕЗ стекла
+                insert_materials = insert_result.get("part3_final", {}).get("Материалы", 0)
                 inserts_cost += insert_materials
                 
                 inserts_details.append({
@@ -397,7 +404,7 @@ def calculate_facade_materials(
                     "cost": insert_materials
                 })
                 
-                print(f"   Материалы: {insert_materials:,.0f}₸")
+                print(f"   Материалы (профили+фурнитура): {insert_materials:,.0f}₸")
             except Exception as e:
                 print(f"   ⚠️ Ошибка расчёта вставки: {e}")
                 # Запасное значение
@@ -426,6 +433,170 @@ def calculate_facade_materials(
     
     print("\n" + "="*70)
     print(f"ИТОГО МАТЕРИАЛЫ ФАСАДА: {total:,.0f}₸")
+    print("="*70)
+    
+    return result
+
+
+def calculate_tambour_materials_v2(
+    positions: List[Dict],
+    ref1: List[Dict],
+    ref2: Dict[str, float],
+    ref3: List[Dict]
+) -> Dict[str, Any]:
+    """
+    Расчёт материалов для оконного тамбура V2
+    
+    Тамбур = готовые двери/окна + соединительные элементы (направляющий, трубы)
+    """
+    
+    from calculations.engine_windows import calculate_window_smeta
+    from app.code_mapper import get_code_for_windows_doors
+    
+    print("\n" + "="*70)
+    print("РАСЧЁТ ОКОННОГО ТАМБУРА V2 (ИЗДЕЛИЯ + НАПРАВЛЯЮЩИЙ)")
+    print("="*70)
+    
+    result = {
+        "products": [],  # Изделия (двери/окна)
+        "connecting": {},  # Соединительные элементы
+        "total_products_cost": 0,
+        "total_connecting_cost": 0,
+        "total_cost": 0
+    }
+    
+    # ===== ЧАСТЬ 1: ИЗДЕЛИЯ (ДВЕРИ/ОКНА) =====
+    print("\nЧАСТЬ 1: ИЗДЕЛИЯ")
+    print("="*70)
+    
+    products_cost = 0
+    total_perimeter = 0
+    
+    for i, pos in enumerate(positions, 1):
+        product_type = pos.get("product_type", "Дверь 2-х створч.")
+        system = pos.get("system", "ALG 2030-63C")
+        width = pos.get("width", 1800)
+        height = pos.get("height", 2200)
+        glass_type = pos.get("glass_type", "двойной")
+        
+        print(f"\nИзделие {i}: {product_type} {system}")
+        print(f"  Размер: {width}мм × {height}мм")
+        print(f"  Стекло: {glass_type}")
+        
+        # Генерируем CODE
+        code = get_code_for_windows_doors(product_type, system)
+        
+        # Формируем данные для расчёта
+        order_data = {
+            "common": {
+                "order_number": f"TAMBOUR_ITEM_{i}",
+                "toning": "Нет",
+                "assembly": "Нет",
+                "installation": "Нет"
+            },
+            "positions": [{
+                "product_type": product_type,
+                "system": system,
+                "code": code,
+                "width": width,
+                "height": height,
+                "count": 1,
+                "fill_category": "Стеклопакет",
+                "glass_type": glass_type,
+                "opening_type": "Откр.",
+                "horizontal_imposts": 0,
+                "vertical_imposts": 0
+            }]
+        }
+        
+        # Вызываем расчёт
+        try:
+            item_result = calculate_window_smeta(order_data, ref1, ref2, ref3)
+            item_cost = item_result.get("materials_cost", 0)
+            products_cost += item_cost
+            
+            result["products"].append({
+                "name": f"{product_type} {system}",
+                "size": f"{width}×{height}мм",
+                "cost": item_cost
+            })
+            
+            # Считаем периметр для направляющего
+            total_perimeter += 2 * ((width + height) / 1000)  # в метры
+            
+            print(f"  ✅ Стоимость: {item_cost:,.0f}₸")
+        except Exception as e:
+            print(f"  ⚠️ Ошибка расчёта: {e}")
+    
+    result["total_products_cost"] = products_cost
+    
+    # ===== ЧАСТЬ 2: СОЕДИНИТЕЛЬНЫЕ ЭЛЕМЕНТЫ =====
+    print("\n" + "="*70)
+    print("ЧАСТЬ 2: СОЕДИНИТЕЛЬНЫЕ ЭЛЕМЕНТЫ")
+    print("="*70)
+    
+    connecting_cost = 0
+    
+    # --- НАПРАВЛЯЮЩИЙ (2-00-5581) ---
+    # Обязательно добавляется для соединения изделий
+    L_guide = total_perimeter * 1.05  # +5% запас
+    
+    price_guide = 1200  # Запасное
+    for item in ref1:
+        if '2-00-5581' in item.get('Артикул', ''):
+            price_guide = item.get('Цена за единицу', 1200)
+            break
+    
+    cost_guide = L_guide * price_guide
+    connecting_cost += cost_guide
+    
+    print(f"\n1. НАПРАВЛЯЮЩИЙ (2-00-5581):")
+    print(f"   Формула: Σ(периметры изделий) × 1.05")
+    print(f"   Расчёт: {total_perimeter:.2f}м × 1.05 = {L_guide:.2f}м")
+    print(f"   Цена: {price_guide:,}₸/м")
+    print(f"   Стоимость: {cost_guide:,.0f}₸")
+    
+    result["connecting"]["Направляющий"] = {
+        "quantity": L_guide,
+        "unit": "м",
+        "price": price_guide,
+        "cost": cost_guide
+    }
+    
+    # --- СОЕДИНИТЕЛЬНАЯ ТРУБА (опционально) ---
+    # Если изделий > 2, добавляем трубы для угловых соединений
+    if len(positions) > 2:
+        # Берём максимальную высоту
+        max_height = max(pos.get("height", 2200) for pos in positions) / 1000
+        L_pipe = max_height * 2  # Две вертикальные стойки
+        
+        price_pipe = 2500  # Запасное
+        for item in ref1:
+            if '2-00-2010' in item.get('Артикул', ''):
+                price_pipe = item.get('Цена за единицу', 2500)
+                break
+        
+        cost_pipe = L_pipe * price_pipe
+        connecting_cost += cost_pipe
+        
+        print(f"\n2. СОЕДИНИТЕЛЬНАЯ ТРУБА 90° (2-00-2010):")
+        print(f"   Длина: {L_pipe:.2f}м")
+        print(f"   Стоимость: {cost_pipe:,.0f}₸")
+        
+        result["connecting"]["Труба соединительная"] = {
+            "quantity": L_pipe,
+            "unit": "м",
+            "price": price_pipe,
+            "cost": cost_pipe
+        }
+    
+    result["total_connecting_cost"] = connecting_cost
+    result["total_cost"] = products_cost + connecting_cost
+    
+    print(f"\n{'='*70}")
+    print(f"ИТОГО ИЗДЕЛИЯ: {products_cost:,.0f}₸")
+    print(f"ИТОГО СОЕДИНЕНИЯ: {connecting_cost:,.0f}₸")
+    print(f"ВСЕГО: {result['total_cost']:,.0f}₸")
     print("="*70)
     
     return result

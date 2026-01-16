@@ -623,15 +623,95 @@ def render_facade_page():
     
     st.markdown("---")
     
-    # === ПОЗИЦИИ ФАСАДА ===
-    st.subheader("📦 Позиции фасада")
+    # ==========================================
+    # РАЗДЕЛЕНИЕ: Ruit 50F vs Оконный тамбур
+    # ==========================================
+    
+    if "ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)":
+        # ========== ОКОННЫЙ ТАМБУР ==========
+        st.subheader("🪟 Позиции тамбура (Изделия)")
+        
+        if "tambour_positions" not in st.session_state:
+            st.session_state.tambour_positions = []
+        
+        st.write(f"**Позиций: {len(st.session_state.tambour_positions)}**")
+        
+        if st.button("➕ Добавить изделие", use_container_width=True):
+            st.session_state.tambour_positions.append({
+                "product_type": "Дверь 2-х створч.",
+                "system": "ALG 2030-63C",
+                "width": 1800,
+                "height": 2200,
+                "glass_type": "двойной"
+            })
+            st.rerun()
+        
+        # Форма для каждого изделия
+        for idx, pos in enumerate(st.session_state.tambour_positions):
+            with st.expander(f"📦 Изделие №{idx+1}", expanded=True):
+                if st.button(f"🗑️ Удалить", key=f"del_tamb_{idx}"):
+                    st.session_state.tambour_positions.pop(idx)
+                    st.rerun()
+                
+                c1, c2 = st.columns(2)
+                
+                # Тип изделия
+                product_types = ["Дверь 1 створч.", "Дверь 2-х створч.", "Окно с откр.", "Окно глухое"]
+                pos["product_type"] = c1.selectbox(
+                    "Тип изделия",
+                    product_types,
+                    index=product_types.index(pos.get("product_type", "Дверь 2-х створч.")),
+                    key=f"tamb_type_{idx}"
+                )
+                
+                # Система
+                systems = ["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"]
+                pos["system"] = c2.selectbox(
+                    "Система",
+                    systems,
+                    index=systems.index(pos.get("system", "ALG 2030-63C")),
+                    key=f"tamb_sys_{idx}"
+                )
+                
+                # Габариты
+                c3, c4 = st.columns(2)
+                pos["width"] = c3.number_input(
+                    "Ширина (мм)",
+                    min_value=500,
+                    max_value=3000,
+                    value=pos.get("width", 1800),
+                    step=50,
+                    key=f"tamb_w_{idx}"
+                )
+                pos["height"] = c4.number_input(
+                    "Высота (мм)",
+                    min_value=500,
+                    max_value=3000,
+                    value=pos.get("height", 2200),
+                    step=50,
+                    key=f"tamb_h_{idx}"
+                )
+                
+                # Тип стеклопакета
+                pos["glass_type"] = st.selectbox(
+                    "Тип стеклопакета",
+                    GLASS_TYPES,
+                    index=GLASS_TYPES.index(pos.get("glass_type", "Двойной").capitalize()) if pos.get("glass_type", "Двойной").capitalize() in GLASS_TYPES else 0,
+                    key=f"tamb_glass_{idx}"
+                )
+    
+    else:
+        # ========== ФАСАДНАЯ СИСТЕМА (Ruit 50F) ==========
+        st.subheader("📦 Позиции фасада")
     
     if "facade_positions" not in st.session_state:
         st.session_state.facade_positions = []
     
     st.subheader(f"Позиции фасада ({len(st.session_state.facade_positions)})")
     
-    if st.button("➕ Добавить позицию фасада", use_container_width=True):
+    col_add, col_clear, col_new = st.columns(3)
+    
+    if col_add.button("➕ Добавить позицию", use_container_width=True):
         # Генерация CODE для фасада
         facade_code = get_code_for_facade(facade_type)
         
@@ -645,6 +725,17 @@ def render_facade_page():
             "filling_type": "blind",
             "cells_data": []  # Данные для каждой ячейки
         })
+        st.rerun()
+    
+    if col_clear.button("🗑️ Очистить всё", use_container_width=True):
+        st.session_state.facade_positions = []
+        if "last_facade_result" in st.session_state:
+            del st.session_state.last_facade_result
+        st.rerun()
+    
+    if col_new.button("🔄 Новый расчёт", use_container_width=True):
+        if "last_facade_result" in st.session_state:
+            del st.session_state.last_facade_result
         st.rerun()
     
     if not st.session_state.facade_positions:
@@ -810,14 +901,198 @@ def render_facade_page():
                     pos["insert_data"] = insert_data
                     pos["insert_system"] = insert_system
     
-    # === КНОПКА РАСЧЕТА ===
+    # ========== КОНЕЦ РАЗДЕЛЕНИЯ ==========
+    
+    # === КНОПКИ УПРАВЛЕНИЯ ===
     st.markdown("---")
     
-    if st.button("🚀 РАССЧИТАТЬ ФАСАД", type="primary", use_container_width=True):
-        if not st.session_state.facade_positions:
-            st.error("❌ Добавьте хотя бы одну позицию фасада!")
-        else:
+    col_calc, col_clear = st.columns([3, 1])
+    
+    # Определяем какие позиции используются
+    is_tambour = ("ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)")
+    positions_list = st.session_state.get("tambour_positions" if is_tambour else "facade_positions", [])
+    
+    with col_calc:
+        calc_button = st.button(
+            "🚀 РАССЧИТАТЬ ТАМБУР" if is_tambour else "🚀 РАССЧИТАТЬ ФАСАД",
+            type="primary",
+            use_container_width=True
+        )
+    
+    with col_clear:
+        if st.button("🗑️ Очистить", type="secondary", use_container_width=True):
+            if is_tambour:
+                st.session_state.tambour_positions = []
+            else:
+                st.session_state.facade_positions = []
+            if 'last_facade_result' in st.session_state:
+                del st.session_state.last_facade_result
+            st.rerun()
+    
+    if calc_button:
+        if not positions_list:
+            st.error("❌ Добавьте хотя бы одну позицию!")
+        elif is_tambour:
+            # ========== РАСЧЁТ ТАМБУРА ==========
             try:
+                from calculations.engine_facade import calculate_tambour_materials_v2
+                
+                print("\n🏗️ Вызов calculate_tambour_materials_v2:")
+                print(f"   Позиций: {len(st.session_state.tambour_positions)}")
+                
+                tambour_calc = calculate_tambour_materials_v2(
+                    positions=st.session_state.tambour_positions,
+                    ref1=ref1,
+                    ref2=ref2,
+                    ref3=ref3
+                )
+                
+                materials_cost = tambour_calc.get("total_cost", 0)
+                
+                # Считаем общую площадь и периметр
+                total_area = sum(
+                    (p["width"] * p["height"]) / 1000000
+                    for p in st.session_state.tambour_positions
+                )
+                total_perimeter = sum(
+                    2 * ((p["width"] + p["height"]) / 1000)
+                    for p in st.session_state.tambour_positions
+                )
+                
+                # Тонировка, Сборка, Монтаж
+                toning_cost = 0
+                if facade_toning == "Есть":
+                    toning_cost = total_area * ref2.get("тонировка", 0)
+                
+                assembly_cost = 0
+                if facade_assembly == "Есть":
+                    assembly_cost = total_area * ref2.get("сборка", 0)
+                
+                installation_cost = 0
+                if facade_installation != "Нет":
+                    install_key = facade_installation.lower().replace(" / ", "/")
+                    installation_cost = total_area * ref2.get(install_key, 0)
+                
+                # Дополнительные детали
+                additional_cost = 0
+                if facade_additional != "Нет":
+                    price_additional = ref2.get(facade_additional.lower(), 0)
+                    additional_cost = math.ceil(total_perimeter / 3) * price_additional
+                
+                # Сумма без обеспечения
+                subtotal = materials_cost + toning_cost + assembly_cost + installation_cost + additional_cost
+                
+                # Обеспечение 81%
+                margin = subtotal * 0.81
+                total_cost = subtotal + margin
+                
+                # Сохраняем результат
+                st.session_state.last_facade_result = {
+                    "facade_type": "Оконный тамбур",
+                    "order_number": facade_order_num,
+                    "metrics": {
+                        "total_area": total_area,
+                        "total_perimeter": total_perimeter
+                    },
+                    "tambour_calc": tambour_calc,
+                    "part3_final": {
+                        "Тонировка": round(toning_cost, 0),
+                        "Сборка": round(assembly_cost, 0),
+                        "Монтаж": round(installation_cost, 0),
+                        "Дополнительные детали": round(additional_cost, 0),
+                        "Материалы": round(materials_cost, 0),
+                        "Обеспечение": round(margin, 0)
+                    },
+                    "total_cost": total_cost
+                }
+                
+                # Сохранение истории
+                try:
+                    current_user = st.session_state.get("current_user", {})
+                    user_login = current_user.get("login", "unknown")
+                    
+                    tambour_order_data = {
+                        "common": {
+                            "order_number": facade_order_num,
+                            "facade_type": "Оконный тамбур"
+                        },
+                        "positions": st.session_state.tambour_positions
+                    }
+                    
+                    save_history(
+                        GOOGLE_CREDENTIALS_PATH,
+                        SPREADSHEET_ID,
+                        user_login,
+                        tambour_order_data,
+                        st.session_state.last_facade_result
+                    )
+                except Exception as e:
+                    print(f"⚠️ История тамбура не сохранена: {e}")
+                
+                # Вывод результатов
+                st.success("✅ Расчет тамбура выполнен!")
+                
+                # Метрики
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Общая площадь", f"{total_area:.2f} м²")
+                col2.metric("Суммарный периметр", f"{total_perimeter:.2f} м.п.")
+                col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸")
+                
+                st.markdown("---")
+                
+                # Детализация изделий
+                st.subheader("Изделия тамбура:")
+                products_data = []
+                for prod in tambour_calc["products"]:
+                    products_data.append({
+                        "Изделие": prod["name"],
+                        "Размер": prod["size"],
+                        "Стоимость": f"{prod['cost']:,.0f} ₸"
+                    })
+                st.dataframe(pd.DataFrame(products_data), use_container_width=True, hide_index=True)
+                st.write(f"**Итого изделия:** {tambour_calc['total_products_cost']:,.0f} ₸")
+                
+                st.markdown("---")
+                
+                # Детализация соединительных элементов
+                st.subheader("Соединительные элементы:")
+                conn_data = []
+                for elem, data in tambour_calc["connecting"].items():
+                    conn_data.append({
+                        "Элемент": elem,
+                        "Количество": f"{data['quantity']:.2f} {data['unit']}",
+                        "Цена": f"{data['price']:,.0f} ₸",
+                        "Стоимость": f"{data['cost']:,.0f} ₸"
+                    })
+                st.dataframe(pd.DataFrame(conn_data), use_container_width=True, hide_index=True)
+                st.write(f"**Итого соединения:** {tambour_calc['total_connecting_cost']:,.0f} ₸")
+                
+                st.markdown("---")
+                
+                # Итоговый расчет
+                st.subheader("💰 Итоговый расчет")
+                part3_data = []
+                for key, value in st.session_state.last_facade_result["part3_final"].items():
+                    part3_data.append({"Наименование": key, "Сумма (₸)": f"{value:,.0f}"})
+                
+                df_part3 = pd.DataFrame(part3_data)
+                st.dataframe(df_part3, use_container_width=True, hide_index=True)
+                
+                st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 81%")
+                
+            except Exception as e:
+                st.error(f"❌ Ошибка при расчете тамбура: {e}")
+                with st.expander("🔍 Детали ошибки"):
+                    import traceback
+                    st.code(traceback.format_exc())
+        
+        else:
+            # ========== РАСЧЁТ ФАСАДА (Ruit 50F) ==========
+            try:
+                # (СУЩЕСТВУЮЩИЙ КОД РАСЧЁТА ФАСАДА ОСТАЁТСЯ)
+                if not st.session_state.facade_positions:
+                    st.error("❌ Добавьте хотя бы одну позицию фасада!")
+                else:
                 # Расчет площади и периметра
                 total_area = 0
                 total_perimeter = 0
@@ -973,7 +1248,8 @@ def render_facade_page():
                         fill_category = insert_data.get("fill_category", "Стеклопакет")
                         
                         if fill_category == "Стеклопакет":
-                            glass_type = insert_data.get("glass_type", "Двойной")
+                            glass_type_raw = insert_data.get("glass_type", "двойной")
+                            glass_type = glass_type_raw.capitalize()  # двойной → Двойной
                             
                             # Площадь вставок
                             n_cells = pos["columns"] * pos["rows"]
@@ -1047,7 +1323,7 @@ def render_facade_page():
                 margin = subtotal * 0.81
                 total_cost = subtotal + margin
                 
-                # ИСПРАВЛЕНО: Сохраняем результат - стеклопакет и ламбри раздельно
+                # ИСПРАВЛЕНО: Сохраняем результат - стеклопакет ПО ТИПАМ
                 st.session_state.last_facade_result = {
                     "facade_type": "Фасад",
                     "order_number": facade_order_num,
@@ -1055,20 +1331,39 @@ def render_facade_page():
                         "total_area": total_area,
                         "total_perimeter": total_perimeter
                     },
-                    "part3_final": {
-                        "Стеклопакет": round(glass_cost, 0),
-                        "Ламбри": round(lambri_cost, 0),
-                        "Тонировка": round(toning_cost, 0),
-                        "Сборка": round(assembly_cost, 0),
-                        "Монтаж": round(installation_cost, 0),
-                        "Дополнительные детали": round(additional_cost, 0),  # ДОБАВЛЕНО
-                        "Материалы": round(materials_cost, 0),
-                        "Обеспечение": round(margin, 0)  # Убрал "(65%)"
-                    },
+                    "part3_final": {}
+                }
+                
+                # Добавляем стеклопакеты ПО ТИПАМ (только те, у которых площадь > 0)
+                for glass_type, glass_area in glass_areas.items():
+                    if glass_area > 0:
+                        price_glass = ref2.get(glass_type.lower(), 9000)
+                        cost_glass_type = glass_area * price_glass
+                        st.session_state.last_facade_result["part3_final"][f"Стеклопакет ({glass_type})"] = round(cost_glass_type, 0)
+                
+                # Добавляем ламбри ПО ТИПАМ
+                for lambri_type, lambri_area in lambri_areas.items():
+                    if lambri_area > 0:
+                        q_otgr = math.ceil(lambri_area / 6.0)
+                        price_lambri = ref2.get(lambri_type.lower(), 2248)
+                        cost_lambri_type = price_lambri * (q_otgr * 6)
+                        st.session_state.last_facade_result["part3_final"][f"Ламбри ({lambri_type})"] = round(cost_lambri_type, 0)
+                
+                # Остальные статьи
+                st.session_state.last_facade_result["part3_final"].update({
+                    "Тонировка": round(toning_cost, 0),
+                    "Сборка": round(assembly_cost, 0),
+                    "Монтаж": round(installation_cost, 0),
+                    "Дополнительные детали": round(additional_cost, 0),
+                    "Материалы": round(materials_cost, 0),
+                    "Обеспечение": round(margin, 0)
+                })
+                
+                st.session_state.last_facade_result.update({
                     "total_cost": round(total_cost, 0),
                     "materials_cost": round(materials_cost, 0),
                     "positions": results
-                }
+                })
                 
                 # ИСПРАВЛЕНО: Сохранение в историю
                 try:
