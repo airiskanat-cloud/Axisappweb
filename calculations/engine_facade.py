@@ -371,6 +371,7 @@ def calculate_facade_materials(
             code = get_code_for_windows_doors(product_type, insert_system)
             
             # Данные вставки
+            # ИСПРАВЛЕНО: Передаём ВСЕ данные из формы window_door_ui (аналогично разделу Окна/Двери)
             insert_order_data = {
                 "common": {
                     "order_number": f"INSERT_{i}",
@@ -381,15 +382,31 @@ def calculate_facade_materials(
                 "positions": [{
                     "product_type": product_type,
                     "system": insert_system,
-                    "code": code,  # ДОБАВЛЕНО
-                    "width": insert_w * 1000,  # в мм
-                    "height": insert_h * 1000,
+                    "code": code,
                     "count": 1,
-                    "fill_category": "Стеклопакет",
-                    "glass_type": insert.get('data', {}).get('glass_type', 'двойной'),
-                    "opening_type": "Откр.",
-                    "horizontal_imposts": 0,
-                    "vertical_imposts": 0
+                    
+                    # ✅ ИСПРАВЛЕНО: Передаём ВСЕ данные из формы!
+                    "data": {
+                        "width": insert_w * 1000,   # в мм
+                        "height": insert_h * 1000,  # в мм
+                        "count": 1,
+                        
+                        # Заполнение
+                        "fill_category": insert.get('data', {}).get('fill_category', 'Стеклопакет'),
+                        "glass_type": insert.get('data', {}).get('glass_type', 'двойной'),
+                        
+                        # Импосты (ВСЕ данные из формы)
+                        "imposts": insert.get('data', {}).get('imposts', {
+                            "auto_calculate": True,
+                            "has_left": False,
+                            "has_center": False,
+                            "has_right": False,
+                            "has_tor": False
+                        }),
+                        
+                        # Створки (ВСЕ данные из формы)
+                        "sashes": insert.get('data', {}).get('sashes', [])
+                    }
                 }]
             }
             
