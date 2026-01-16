@@ -1536,9 +1536,12 @@ def render_tambour_page():
                     "positions": []
                 }
                 
-                # Добавляем CODE к позициям
+                # Добавляем CODE к позициям И КОНВЕРТИРУЕМ ММ В МЕТРЫ
                 for pos in st.session_state.tambour_positions:
                     pos["code"] = get_code_for_windows_doors(pos["product_type"], pos["system_id"])
+                    # ВАЖНО: engine_windows ожидает метры!
+                    pos["width"] = pos["width"] / 1000.0
+                    pos["height"] = pos["height"] / 1000.0
                     order_data["positions"].append(pos)
                 
                 # РАСЧЁТ ИЗДЕЛИЙ (как в окнах)
@@ -1563,8 +1566,8 @@ def render_tambour_page():
                     "Артикул": "2-00-5581-60-0000",
                     "Наименование": "Направляющий профиль",
                     "Количество": f"{L_guide:.2f} м",
-                    "Цена": f"{price_guide:,.0f} ₸",
-                    "Сумма": f"{cost_guide:,.0f} ₸"
+                    "Цена": round(price_guide, 0),
+                    "Сумма": round(cost_guide, 0)
                 })
                 
                 # Обновляем "Материалы" в итогах
