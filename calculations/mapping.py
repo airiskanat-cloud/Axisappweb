@@ -26,7 +26,12 @@ def get_code_for_windows_doors(product_type: str, system: str) -> str:
         "ALG 2030-63C": "63C",
         "ALG 2030-55C": "55C",
         "ALG 2030-45C": "45C",
-        "ALG 2030-SLIM": "SLIM"
+        "ALG 2030-SLIM": "SLIM",
+        # RUIT системы
+        "ALG RUIT 73I 22MM": "73C",
+        "ALG RUIT 63I": "63C",
+        "ALG RUIT 55I": "55C",
+        "ALG RUIT 45I": "45C"
     }
     
     system_key = None

@@ -1562,10 +1562,15 @@ def render_tambour_page():
                 
                 cost_guide = L_guide * price_guide
                 
-                # Добавляем к материалам
+                # ПРАВИЛЬНЫЙ ПЕРЕСЧЁТ:
+                # 1. Убираем старое обеспечение
+                old_margin = result["part3_final"].pop("Обеспечение", 0)
+                old_total = result["total_with_margin"] - old_margin
+                
+                # 2. Добавляем направляющий к материалам (НЕ к итогам!)
                 result["part3_final"]["Направляющий"] = round(cost_guide, 0)
                 
-                # Пересчитываем итого
+                # 3. Пересчитываем всё заново
                 subtotal_with_guide = sum(result["part3_final"].values())
                 margin = subtotal_with_guide * 0.81
                 result["part3_final"]["Обеспечение"] = round(margin, 0)
