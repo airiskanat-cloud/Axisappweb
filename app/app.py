@@ -621,6 +621,9 @@ def render_facade_page():
         key="facade_type_radio"
     )
     
+    # Получаем значение для использования в логике
+    facade_type_value = facade_type
+    
     st.markdown("---")
     
     # ==========================================
@@ -1125,8 +1128,6 @@ def render_facade_page():
                 # Это ~46,000 ₸/м²
                 
                 # Определяем тип системы
-                facade_type_value = st.session_state.get("facade_type_radio", "Фасадная система (Ruit 50F)")
-                
                 # Базовая стоимость профилей и материалов
                 if "ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)":
                     # ОКОННАЯ СИСТЕМА (ALG 2030-45C и т.д.)
