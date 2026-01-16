@@ -576,9 +576,19 @@ def calculate_tambour_materials_v2(
             item_area = item_metrics.get("total_area", 0)
             item_perimeter = item_metrics.get("total_perimeter", 0)
             
+            # 🔧 DEBUG:
+            print(f"\n🔧 DEBUG МЕТРИКИ ИЗДЕЛИЯ {i}:")
+            print(f"   item_result keys: {list(item_result.keys())}")
+            print(f"   item_metrics: {item_metrics}")
+            print(f"   item_area: {item_area}")
+            print(f"   item_perimeter: {item_perimeter}")
+            
             # ✅ Суммируем метрики в общий result
             result["metrics"]["total_area"] += item_area
             result["metrics"]["total_perimeter"] += item_perimeter
+            
+            # 🔧 DEBUG:
+            print(f"   result['metrics'] ПОСЛЕ: {result['metrics']}")
             
             result["products"].append({
                 "name": f"{product_type} {system}",
