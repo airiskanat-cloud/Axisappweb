@@ -1259,13 +1259,10 @@ def render_facade_page():
                             glass_type_raw = insert_data.get("glass_type", "двойной")
                             glass_type = glass_type_raw.capitalize()  # двойной → Двойной
                             
-                            # Площадь вставок
-                            n_cells = pos["columns"] * pos["rows"]
-                            cell_w = pos["width"] / pos["columns"]
-                            cell_h = pos["height"] / pos["rows"]
-                            insert_w = insert_data.get("width", cell_w * 1000) / 1000
-                            insert_h = insert_data.get("height", cell_h * 1000) / 1000
-                            insert_area = insert_w * insert_h * n_cells
+                            # ✅ ИСПРАВЛЕНО: Площадь ОДНОЙ вставки (не умножаем на n_cells)
+                            insert_w = insert_data.get("width", 1800) / 1000
+                            insert_h = insert_data.get("height", 2200) / 1000
+                            insert_area = insert_w * insert_h  # ✅ БЕЗ умножения на количество ячеек!
                             
                             glass_areas[glass_type] = glass_areas.get(glass_type, 0) + insert_area
                         
@@ -1273,13 +1270,10 @@ def render_facade_page():
                         elif "Ламбри" in fill_category:
                             lambri_type = fill_category  # "Ламбри без термо" или "Ламбри с термо"
                             
-                            # Площадь вставок с ламбри
-                            n_cells = pos["columns"] * pos["rows"]
-                            cell_w = pos["width"] / pos["columns"]
-                            cell_h = pos["height"] / pos["rows"]
-                            insert_w = insert_data.get("width", cell_w * 1000) / 1000
-                            insert_h = insert_data.get("height", cell_h * 1000) / 1000
-                            insert_area = insert_w * insert_h * n_cells
+                            # ✅ ИСПРАВЛЕНО: Площадь ОДНОЙ вставки (не умножаем на n_cells)
+                            insert_w = insert_data.get("width", 1800) / 1000
+                            insert_h = insert_data.get("height", 2200) / 1000
+                            insert_area = insert_w * insert_h  # ✅ БЕЗ умножения на количество ячеек!
                             
                             lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + insert_area
                 
@@ -1358,30 +1352,26 @@ def render_facade_page():
                 
                 # === ДОБАВЛЯЕМ В ИТОГИ ОБЯЗАТЕЛЬНО (ДАЖЕ ЕСЛИ 0) ===
                 
-                # Стеклопакеты ПО ТИПАМ (ВСЕГДА показываем)
+                # Стеклопакеты - ОБЩАЯ СУММА (БЕЗ РАЗБИВКИ ПО ТИПАМ)
                 total_glass_cost_all = 0
                 for glass_type, glass_area in glass_areas.items():
                     price_glass = ref2.get(glass_type.lower(), 9000)
                     cost_glass_type = glass_area * price_glass if glass_area > 0 else 0
-                    st.session_state.last_facade_result["part3_final"][f"Стеклопакет ({glass_type})"] = round(cost_glass_type, 0)
                     total_glass_cost_all += cost_glass_type
                 
-                # Если НИ ОДНОГО типа стеклопакета не было, добавим общую строку
-                if not glass_areas:
-                    st.session_state.last_facade_result["part3_final"]["Стеклопакет"] = 0
+                # ОДНА строка для всего стеклопакета
+                st.session_state.last_facade_result["part3_final"]["Стеклопакет"] = round(total_glass_cost_all, 0)
                 
-                # Ламбри ПО ТИПАМ (ВСЕГДА показываем)
+                # Ламбри - ОБЩАЯ СУММА (БЕЗ РАЗБИВКИ ПО ТИПАМ)
                 total_lambri_cost_all = 0
                 for lambri_type, lambri_area in lambri_areas.items():
                     q_otgr = math.ceil(lambri_area / 6.0) if lambri_area > 0 else 0
                     price_lambri = ref2.get(lambri_type.lower(), 2248)
                     cost_lambri_type = price_lambri * (q_otgr * 6) if lambri_area > 0 else 0
-                    st.session_state.last_facade_result["part3_final"][f"Ламбри ({lambri_type})"] = round(cost_lambri_type, 0)
                     total_lambri_cost_all += cost_lambri_type
                 
-                # Если НИ ОДНОГО типа ламбри не было, добавим общую строку
-                if not lambri_areas:
-                    st.session_state.last_facade_result["part3_final"]["Ламбри"] = 0
+                # ОДНА строка для всего ламбри
+                st.session_state.last_facade_result["part3_final"]["Ламбри"] = round(total_lambri_cost_all, 0)
                 
                 # Остальные статьи
                 st.session_state.last_facade_result["part3_final"].update({
