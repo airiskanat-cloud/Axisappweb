@@ -431,12 +431,14 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
         W = pos_data.get("width", 0)
         if W == 0:
             W = position.get("width", 0)  # Пробуем читать из корня position
-        W = W / 1000 if W > 0 else 0
+        # Умное определение: если < 100, значит уже в метрах!
+        W = W / 1000 if W >= 100 else W
         
         H = pos_data.get("height", 0)
         if H == 0:
             H = position.get("height", 0)  # Пробуем читать из корня position
-        H = H / 1000 if H > 0 else 0
+        # Умное определение: если < 100, значит уже в метрах!
+        H = H / 1000 if H >= 100 else H
         
         pos_count = position.get("count", 1)
         pos_area = W * H * pos_count

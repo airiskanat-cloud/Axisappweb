@@ -1070,6 +1070,7 @@ def render_facade_page():
                     
                     # Собираем данные о вставках (окна/двери)
                     facade_inserts = []
+                    facade_calc_saved = None  # ИСПРАВЛЕНО: Инициализируем заранее
                     for pos in st.session_state.facade_positions:
                         filling_type = pos.get("filling_type", "blind")
                         
