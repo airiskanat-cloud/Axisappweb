@@ -1519,28 +1519,44 @@ def render_facade_page():
 # ========================================
 
 def render_tambour_page():
-    """Оконный тамбур - готовые двери/окна + направляющий"""
+    """Оконный тамбур - как Окна/Двери + направляющий"""
     st.header("🪟 Оконный тамбур")
-    st.info("Тамбур = готовые двери/окна соединённые направляющим профилем")
+    st.info("Тамбур = готовые двери/окна + направляющий профиль")
     
-    # Общие данные
-    st.subheader("📋 Общие данные")
-    order_num = st.text_input("Номер заказа", key="tamb_order")
+    # === ОБЩИЕ ДАННЫЕ ===
+    st.subheader("📋 Общие данные заказа")
+    col1, col2, col3, col4 = st.columns(4)
     
-    # Позиции
+    order_number = col1.text_input("Номер заказа", value="", key="tambour_order_number")
+    
+    toning = col2.selectbox("Тонировка", ["Нет", "Есть"], key="tambour_toning")
+    assembly = col3.selectbox("Сборка", ["Нет", "Есть"], key="tambour_assembly")
+    
+    installation_options = ["Нет", "Монтаж", "Демонтаж/Монтаж", "Сложный монтаж"]
+    installation = col4.selectbox("Монтаж", installation_options, key="tambour_installation")
+    
+    # Дополнительные детали
+    additional_options = ["Нет"] + [k.capitalize() for k in ref2.keys() if "нащельник" in k.lower()]
+    additional = st.selectbox("Дополнительные детали", additional_options, key="tambour_additional")
+    
+    st.markdown("---")
+    
+    # === ПОЗИЦИИ ===
     if "tambour_positions" not in st.session_state:
         st.session_state.tambour_positions = []
     
-    st.markdown("---")
-    st.subheader(f"📦 Позиции ({len(st.session_state.tambour_positions)})")
+    st.subheader(f"📦 Позиции тамбура ({len(st.session_state.tambour_positions)})")
     
-    col_add, col_clear = st.columns([3, 1])
-    if col_add.button("➕ Добавить", use_container_width=True, key="tamb_add"):
+    col_add, col_clear, col_new = st.columns(3)
+    
+    if col_add.button("➕ Добавить позицию", use_container_width=True, key="tambour_add_btn"):
         st.session_state.tambour_positions.append({
             "product_type": "Дверь 2-х створч.",
             "system_id": "ALG 2030-63C",
             "width": 1800,
             "height": 2200,
+            "count": 1,
+            "fill_category": "Стеклопакет",
             "glass_type": "Двойной",
             "opening_type": "Откр.",
             "horizontal_imposts": 0,
@@ -1548,81 +1564,143 @@ def render_tambour_page():
         })
         st.rerun()
     
-    if col_clear.button("🗑️ Очистить", use_container_width=True, key="tamb_clear_all"):
+    if col_clear.button("🗑️ Очистить всё", use_container_width=True, key="tambour_clear_btn"):
         st.session_state.tambour_positions = []
         st.rerun()
     
-    # Формы
-    for idx in range(len(st.session_state.tambour_positions)):
-        pos = st.session_state.tambour_positions[idx]
-        
-        with st.expander(f"📦 Позиция {idx+1}", expanded=True):
-            if st.button(f"🗑️ Удалить", key=f"tamb_del_{idx}"):
+    # Формы позиций - ИСПОЛЬЗУЕМ window_door_ui
+    for idx, pos in enumerate(st.session_state.tambour_positions):
+        with st.expander(f"📦 Позиция {idx+1}: {pos.get('product_type', 'Изделие')}", expanded=True):
+            if st.button(f"🗑️ Удалить позицию", key=f"tambour_del_{idx}"):
                 st.session_state.tambour_positions.pop(idx)
                 st.rerun()
             
-            col1, col2 = st.columns(2)
+            # Тип изделия и система
+            col_type, col_sys = st.columns(2)
             
-            pos["product_type"] = col1.selectbox(
+            product_type = col_type.selectbox(
                 "Тип изделия",
                 ["Дверь 1 створч.", "Дверь 2-х створч.", "Окно с откр.", "Окно глухое"],
                 index=["Дверь 1 створч.", "Дверь 2-х створч.", "Окно с откр.", "Окно глухое"].index(pos.get("product_type", "Дверь 2-х створч.")),
-                key=f"tamb_type_{idx}"
+                key=f"tambour_type_{idx}"
             )
+            pos["product_type"] = product_type
             
-            pos["system_id"] = col2.selectbox(
-                "Система",
+            system_id = col_sys.selectbox(
+                "Система профиля",
                 ["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"],
-                key=f"tamb_sys_{idx}"
+                index=["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"].index(pos.get("system_id", "ALG 2030-63C")),
+                key=f"tambour_sys_{idx}"
             )
+            pos["system_id"] = system_id
             
-            col3, col4 = st.columns(2)
-            pos["width"] = col3.number_input("Ширина (мм)", 500, 5000, pos.get("width", 1800), 50, key=f"tamb_w_{idx}")
-            pos["height"] = col4.number_input("Высота (мм)", 500, 5000, pos.get("height", 2200), 50, key=f"tamb_h_{idx}")
+            # Используем window_door_ui для остальных параметров
+            initial_data = {
+                "width": pos.get("width", 1800),
+                "height": pos.get("height", 2200),
+                "fill_category": pos.get("fill_category", "Стеклопакет"),
+                "glass_type": pos.get("glass_type", "Двойной"),
+                "opening_type": pos.get("opening_type", "Откр."),
+                "horizontal_imposts": pos.get("horizontal_imposts", 0),
+                "vertical_imposts": pos.get("vertical_imposts", 0)
+            }
             
-            col5, col6 = st.columns(2)
-            pos["horizontal_imposts"] = col5.number_input("Импосты горизонт.", 0, 5, pos.get("horizontal_imposts", 0), key=f"tamb_himp_{idx}")
-            pos["vertical_imposts"] = col6.number_input("Импосты вертик.", 0, 5, pos.get("vertical_imposts", 0), key=f"tamb_vimp_{idx}")
+            # Вызываем форму
+            form_data = window_door_ui(f"tambour_form_{idx}", idx, system_id, initial_data)
             
-            if "глухое" not in pos["product_type"].lower():
-                pos["opening_type"] = st.selectbox("Открывание", ["Откр.", "П/откр."], key=f"tamb_open_{idx}")
-            else:
-                pos["opening_type"] = "Глухое"
-            
-            pos["glass_type"] = st.selectbox("Стеклопакет", GLASS_TYPES, key=f"tamb_glass_{idx}")
+            # Обновляем позицию
+            pos.update(form_data)
+            pos["count"] = 1  # Всегда 1 для тамбура
     
-    # Расчёт
+    # === КНОПКА РАСЧЁТА ===
     st.markdown("---")
-    if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True, key="tamb_calc"):
+    
+    if st.button("🚀 РАССЧИТАТЬ ТАМБУР", type="primary", use_container_width=True, key="tambour_calc_btn"):
         if not st.session_state.tambour_positions:
-            st.error("❌ Добавьте позиции!")
+            st.error("❌ Добавьте хотя бы одну позицию!")
         else:
             try:
-                from calculations.engine_facade import calculate_tambour_materials_v2
+                from calculations.engine_windows import calculate_window_smeta
                 from app.code_mapper import get_code_for_windows_doors
                 
+                # Формируем order_data КАК В ОКНАХ
+                order_data = {
+                    "common": {
+                        "order_number": order_number,
+                        "toning": toning,
+                        "assembly": assembly,
+                        "installation": installation
+                    },
+                    "positions": []
+                }
+                
+                # Добавляем CODE к позициям
                 for pos in st.session_state.tambour_positions:
                     pos["code"] = get_code_for_windows_doors(pos["product_type"], pos["system_id"])
-                    pos["fill_category"] = "Стеклопакет"
-                    pos["count"] = 1
+                    order_data["positions"].append(pos)
                 
-                result = calculate_tambour_materials_v2(st.session_state.tambour_positions, ref1, ref2, ref3)
+                # РАСЧЁТ ИЗДЕЛИЙ (как в окнах)
+                result = calculate_window_smeta(order_data, ref1, ref2, ref3)
                 
-                st.success("✅ Готово!")
-                st.metric("💰 ИТОГО", f"{result['total_cost']:,.0f} ₸")
+                # ДОБАВЛЯЕМ НАПРАВЛЯЮЩИЙ
+                total_perimeter = result["metrics"]["total_perimeter"]
+                L_guide = total_perimeter * 1.05
                 
-                st.subheader("Изделия:")
-                for p in result["products"]:
-                    st.write(f"• {p['name']} - {p['cost']:,.0f} ₸")
-                st.write(f"**Итого: {result['total_products_cost']:,.0f} ₸**")
+                # Цена направляющего
+                price_guide = 1200
+                for item in ref1:
+                    if '2-00-5581' in item.get('Артикул', ''):
+                        price_guide = item.get('Цена за единицу', 1200)
+                        break
                 
-                st.subheader("Соединения:")
-                for k, v in result["connecting"].items():
-                    st.write(f"• {k}: {v['quantity']:.2f} {v['unit']} - {v['cost']:,.0f} ₸")
-                st.write(f"**Итого: {result['total_connecting_cost']:,.0f} ₸**")
+                cost_guide = L_guide * price_guide
+                
+                # Добавляем к материалам
+                result["part3_final"]["Направляющий"] = round(cost_guide, 0)
+                
+                # Пересчитываем итого
+                subtotal_with_guide = sum(result["part3_final"].values())
+                margin = subtotal_with_guide * 0.81
+                result["part3_final"]["Обеспечение"] = round(margin, 0)
+                result["total_with_margin"] = round(subtotal_with_guide + margin, 0)
+                
+                # === ВЫВОД РЕЗУЛЬТАТОВ ===
+                st.success("✅ Расчет выполнен!")
+                
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Общая площадь", f"{result['metrics']['total_area']:.3f} м²")
+                col2.metric("Периметр", f"{total_perimeter:.3f} м.п.")
+                col3.metric("💰 ИТОГО", f"{result['total_with_margin']:,.0f} ₸")
+                
+                st.markdown("---")
+                
+                # Таблица позиций
+                with st.expander("📊 Позиции", expanded=True):
+                    positions_df = []
+                    for i, p in enumerate(st.session_state.tambour_positions, 1):
+                        positions_df.append({
+                            "№": i,
+                            "Изделие": p["product_type"],
+                            "Система": p["system_id"],
+                            "Размер": f"{p['width']}×{p['height']} мм",
+                            "Стекло": p["glass_type"]
+                        })
+                    st.dataframe(pd.DataFrame(positions_df), use_container_width=True, hide_index=True)
+                
+                # Материалы
+                with st.expander("📦 Материалы (Артикулы)", expanded=True):
+                    if result["part2_materials"]:
+                        df2 = pd.DataFrame(result["part2_materials"])
+                        st.dataframe(df2, use_container_width=True, hide_index=True)
+                
+                # Итоговый расчёт
+                with st.expander("💰 Итоговый расчет", expanded=True):
+                    df3 = pd.DataFrame(result["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
+                    st.dataframe(df3, use_container_width=True, hide_index=True)
+                    st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{result['total_with_margin']:,.0f} ₸")
                 
             except Exception as e:
-                st.error(f"❌ {e}")
+                st.error(f"❌ Ошибка: {e}")
                 import traceback
                 st.code(traceback.format_exc())
 
@@ -1701,7 +1779,7 @@ with st.sidebar:
         "Выберите раздел:",
         ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"],
         index=["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"].index(st.session_state.menu_selection) if st.session_state.menu_selection in ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"] else 0,
-        key="menu_nav_radio"
+        key="sidebar_navigation"
     )
     
     # Сохраняем выбор
