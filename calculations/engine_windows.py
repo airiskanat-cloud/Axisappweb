@@ -377,7 +377,7 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
     # Если в габаритной ведомости не нашли, считаем из позиций
     if total_area_calc == 0:
         for context in all_contexts:
-            print(f"🔍 DEBUG: area={context['area_m2']:.3f} м² × count={context['count']} = {context['area_m2'] * context['count']:.3f} м²")
+            # Площадь считается через формулы Справочника-3 (выше в коде)
             total_area_calc += context["area_m2"] * context["count"]
     
     if total_perimeter_calc == 0:

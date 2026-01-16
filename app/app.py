@@ -711,6 +711,64 @@ def render_facade_page():
             
             st.info(f"📐 Размер одной ячейки: {cell_w_m:.2f} × {cell_h_m:.2f} м ({cell_w_mm:.0f} × {cell_h_mm:.0f} мм)")
             
+            # === ДОБАВЛЕНО: ВЫБОР ОСНОВНОГО ЗАПОЛНЕНИЯ ФАСАДА ===
+            st.markdown("---")
+            st.markdown("### 🎨 Основное заполнение фасада")
+            st.caption("Это заполнение применяется ко ВСЕМ глухим ячейкам фасада")
+            
+            # Сохраняем в session_state для использования
+            if 'facade_main_filling' not in st.session_state:
+                st.session_state.facade_main_filling = {}
+            
+            main_panel_category = st.selectbox(
+                "Категория заполнения основного фасада",
+                ["Стеклопакет", "Ламбри"],
+                key=f"main_panel_cat_{idx}",
+                help="Выберите чем будут заполнены основные (глухие) ячейки"
+            )
+            
+            if main_panel_category == "Стеклопакет":
+                # Динамически из Справочника-2
+                main_glass_type = st.selectbox(
+                    "Тип стеклопакета основного фасада",
+                    GLASS_TYPES,
+                    key=f"main_glass_{idx}",
+                    help="Тип стеклопакета для основных ячеек"
+                )
+                
+                st.session_state.facade_main_filling[idx] = {
+                    "category": "Стеклопакет",
+                    "type": main_glass_type
+                }
+                
+                st.success(f"✅ Основное заполнение: Стеклопакет - {main_glass_type}")
+            
+            else:
+                # Ламбри - загружаем типы из ref2
+                lambri_types = []
+                for key in ref2.keys():
+                    if "ламбри" in key.lower():
+                        lambri_types.append(key)
+                
+                if not lambri_types:
+                    lambri_types = ["Ламбри без термо", "Ламбри с термо"]
+                
+                main_lambri_type = st.selectbox(
+                    "Тип ламбри основного фасада",
+                    lambri_types,
+                    key=f"main_lambri_{idx}",
+                    help="Тип ламбри для основных ячеек"
+                )
+                
+                st.session_state.facade_main_filling[idx] = {
+                    "category": "Ламбри",
+                    "type": main_lambri_type
+                }
+                
+                st.success(f"✅ Основное заполнение: Ламбри - {main_lambri_type}")
+            
+            st.markdown("---")
+            
             # === ЗАПОЛНЕНИЕ ===
             st.markdown("### Заполнение ячеек")
             
@@ -724,32 +782,107 @@ def render_facade_page():
             if fill_type == "Глухое остекление":
                 pos["filling_type"] = "blind"
                 
-                panel_type = st.selectbox(
-                    "Заполнение панелей",
-                    ["Стеклопакет", "Ламбри без термо", "Ламбри с термо"],
-                    key=f"fac_panel_{idx}"
-                )
+                st.info("✨ Используется основное заполнение фасада (выбрано выше)")
                 
-                if panel_type == "Стеклопакет":
-                    glass_type = st.selectbox(
-                        "Тип стеклопакета",
-                        GLASS_TYPES,
-                        key=f"fac_glass_{idx}"
-                    )
+                # Берём из session_state
+                main_filling = st.session_state.facade_main_filling.get(idx, {
+                    "category": "Стеклопакет",
+                    "type": GLASS_TYPES[0] if GLASS_TYPES else "двойной"
+                })
+                
+                if main_filling["category"] == "Стеклопакет":
                     pos["blind_data"] = {
                         "panel_type": "glass",
-                        "glass_type": glass_type
+                        "glass_type": main_filling["type"]
                     }
+                    st.write(f"🔹 Заполнение: **Стеклопакет** - {main_filling['type']}")
                 else:
                     pos["blind_data"] = {
-                        "panel_type": panel_type,
+                        "panel_type": main_filling["type"],  # "Ламбри без термо" или "Ламбри с термо"
                         "glass_type": None
                     }
+                    st.write(f"🔹 Заполнение: **Ламбри** - {main_filling['type']}")
             
             # === ОКНО ИЛИ ДВЕРЬ (ВСТАВКА) ===
             elif fill_type in ["Окно", "Дверь"]:
                 pos["filling_type"] = "window" if fill_type == "Окно" else "door"
                 
+                # === ДОБАВЛЕНО: ВЫБОР ЯЧЕЙКИ ДЛЯ ВСТАВКИ ===
+                st.markdown("### 📍 Размещение вставки в фасаде")
+                st.caption("Укажите в какой ячейке разместить вставку (дверь/окно)")
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    insert_col = st.number_input(
+                        "Столбец (от 1)",
+                        min_value=1,
+                        max_value=pos.get("columns", 3),
+                        value=pos.get("insert_col", 1),
+                        step=1,
+                        key=f"insert_col_{idx}",
+                        help="Номер столбца слева направо"
+                    )
+                
+                with col2:
+                    insert_row = st.number_input(
+                        "Ряд (от 1)",
+                        min_value=1,
+                        max_value=pos.get("rows", 2),
+                        value=pos.get("insert_row", 1),
+                        step=1,
+                        key=f"insert_row_{idx}",
+                        help="Номер ряда сверху вниз"
+                    )
+                
+                # Визуализация
+                st.info(f"🎯 Вставка будет размещена: **Столбец {insert_col}, Ряд {insert_row}**")
+                
+                # Сохраняем
+                pos["insert_col"] = insert_col
+                pos["insert_row"] = insert_row
+                
+                st.markdown("---")
+                
+                # === ДОБАВЛЕНО: ВЫБОР ЗАПОЛНЕНИЯ ВСТАВКИ ===
+                st.markdown("### 🎨 Заполнение вставки")
+                st.caption("Выберите чем будет заполнена вставка (может отличаться от основного фасада)")
+                
+                insert_panel_category = st.selectbox(
+                    "Категория заполнения вставки",
+                    ["Стеклопакет", "Ламбри"],
+                    key=f"insert_panel_cat_{idx}",
+                    help="Заполнение для этой конкретной вставки"
+                )
+                
+                if insert_panel_category == "Стеклопакет":
+                    insert_glass_type = st.selectbox(
+                        "Тип стеклопакета вставки",
+                        GLASS_TYPES,
+                        key=f"insert_glass_{idx}"
+                    )
+                    insert_fill_category = "Стеклопакет"
+                    insert_fill_type = insert_glass_type
+                else:
+                    # Ламбри
+                    lambri_types = []
+                    for key in ref2.keys():
+                        if "ламбри" in key.lower():
+                            lambri_types.append(key)
+                    if not lambri_types:
+                        lambri_types = ["Ламбри без термо", "Ламбри с термо"]
+                    
+                    insert_lambri_type = st.selectbox(
+                        "Тип ламбри вставки",
+                        lambri_types,
+                        key=f"insert_lambri_{idx}"
+                    )
+                    insert_fill_category = "Ламбри"
+                    insert_fill_type = insert_lambri_type
+                
+                st.success(f"✅ Заполнение вставки: {insert_fill_category} - {insert_fill_type}")
+                
+                st.markdown("---")
                 st.info(f"🔧 Настройка вставки ({fill_type})")
                 
                 # ТИП ИЗДЕЛИЯ (ДОБАВЛЕНО)
@@ -809,6 +942,13 @@ def render_facade_page():
                     # ИСПРАВЛЕНО: Добавляем тип изделия и количество створок
                     insert_data["product_type"] = product_type
                     insert_data["sash_count"] = sash_count
+                    
+                    # ДОБАВЛЕНО: Сохраняем заполнение вставки
+                    insert_data["fill_category"] = insert_fill_category
+                    if insert_fill_category == "Стеклопакет":
+                        insert_data["glass_type"] = insert_fill_type
+                    else:
+                        insert_data["lambri_type"] = insert_fill_type
                     
                     # Сохраняем данные вставки
                     pos["insert_data"] = insert_data
@@ -1076,29 +1216,29 @@ def render_facade_page():
                         
                         # Если это окно или дверь
                         if filling_type in ["window", "door"]:
-                            cols_pos = pos.get("columns", 3)
-                            rows_pos = pos.get("rows", 2)
-                            n_cells = cols_pos * rows_pos
-                            
                             insert_data = pos.get("insert_data", {})
                             
-                            # Для каждой ячейки создаём вставку
-                            for cell_idx in range(n_cells):
-                                facade_inserts.append({
-                                    "type": filling_type,
-                                    "width": insert_data.get("width", 1800) / 1000,  # в метры
-                                    "height": insert_data.get("height", 2200) / 1000,
-                                    "system": insert_data.get("system", "ALG 2030-63C"),
-                                    "product_type": insert_data.get("product_type", "Дверь 2-х створч."),  # ДОБАВЛЕНО
-                                    "data": {
-                                        "glass_type": insert_data.get("glass_type", "двойной"),
-                                        "fill_category": insert_data.get("fill_category", "Стеклопакет"),
-                                        "toning": "Нет",  # Тонировка по позиции
-                                        "assembly": "Нет",
-                                        "installation": "Нет",
-                                        "sash_count": insert_data.get("sash_count", 2)
-                                    }
-                                })
+                            # ИСПРАВЛЕНО: Создаём ОДНУ вставку в указанной ячейке (не цикл!)
+                            facade_inserts.append({
+                                "type": filling_type,
+                                "cell_col": pos.get("insert_col", 1),
+                                "cell_row": pos.get("insert_row", 1),
+                                "width": insert_data.get("width", 1800) / 1000,  # в метры
+                                "height": insert_data.get("height", 2200) / 1000,
+                                "system": insert_data.get("system", "ALG 2030-63C"),
+                                "product_type": insert_data.get("product_type", "Дверь 2-х створч."),
+                                "data": {
+                                    "glass_type": insert_data.get("glass_type", "двойной"),
+                                    "fill_category": insert_data.get("fill_category", "Стеклопакет"),
+                                    "lambri_type": insert_data.get("lambri_type", "Ламбри без термо"),
+                                    "toning": "Нет",
+                                    "assembly": "Нет",
+                                    "installation": "Нет",
+                                    "sash_count": insert_data.get("sash_count", 2)
+                                }
+                            })
+                            
+                            print(f"📍 Вставка создана: тип={filling_type}, ячейка=({pos.get('insert_col', 1)}, {pos.get('insert_row', 1)})")
                     
                     # Для первой позиции берём габариты
                     first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
