@@ -1252,29 +1252,42 @@ def render_facade_page():
                     
                     # ВСТАВКИ (ОКНА/ДВЕРИ) - собираем площадь стеклопакетов И ЛАМБРИ
                     elif filling_type in ["window", "door"]:
+                        # ✅ ИСПРАВЛЕНО: Сначала считаем ОСНОВНОЙ ФАСАД (глухие ячейки)
+                        blind_data = pos.get("blind_data", {})
+                        panel_type = blind_data.get("panel_type", "glass")
+                        
+                        # Площадь ВСЕГО ФАСАДА
+                        total_facade_area = pos["width"] * pos["height"]
+                        
+                        # Площадь ВСТАВКИ
                         insert_data = pos.get("insert_data", {})
+                        insert_w = insert_data.get("width", 1800) / 1000
+                        insert_h = insert_data.get("height", 2200) / 1000
+                        insert_area = insert_w * insert_h
+                        
+                        # Площадь ОСНОВНОГО ФАСАДА (всё минус вставка)
+                        main_facade_area = total_facade_area - insert_area
+                        
+                        # ✅ СЧИТАЕМ ОСНОВНОЙ ФАСАД (глухие ячейки):
+                        if panel_type == "glass":
+                            # Основной фасад - стеклопакет
+                            glass_type = blind_data.get("glass_type", "Двойной")
+                            glass_areas[glass_type] = glass_areas.get(glass_type, 0) + main_facade_area
+                        else:
+                            # Основной фасад - ламбри
+                            lambri_type = panel_type
+                            lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + main_facade_area
+                        
+                        # ✅ ТЕПЕРЬ СЧИТАЕМ ВСТАВКУ:
                         fill_category = insert_data.get("fill_category", "Стеклопакет")
                         
                         if fill_category == "Стеклопакет":
                             glass_type_raw = insert_data.get("glass_type", "двойной")
                             glass_type = glass_type_raw.capitalize()  # двойной → Двойной
-                            
-                            # ✅ ИСПРАВЛЕНО: Площадь ОДНОЙ вставки (не умножаем на n_cells)
-                            insert_w = insert_data.get("width", 1800) / 1000
-                            insert_h = insert_data.get("height", 2200) / 1000
-                            insert_area = insert_w * insert_h  # ✅ БЕЗ умножения на количество ячеек!
-                            
                             glass_areas[glass_type] = glass_areas.get(glass_type, 0) + insert_area
                         
-                        # ИСПРАВЛЕНО: Добавлена обработка ламбри из вставок
                         elif "Ламбри" in fill_category:
                             lambri_type = fill_category  # "Ламбри без термо" или "Ламбри с термо"
-                            
-                            # ✅ ИСПРАВЛЕНО: Площадь ОДНОЙ вставки (не умножаем на n_cells)
-                            insert_w = insert_data.get("width", 1800) / 1000
-                            insert_h = insert_data.get("height", 2200) / 1000
-                            insert_area = insert_w * insert_h  # ✅ БЕЗ умножения на количество ячеек!
-                            
                             lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + insert_area
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
