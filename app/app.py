@@ -612,100 +612,15 @@ def render_facade_page():
     
     st.markdown("---")
     
-    # === ТИП СИСТЕМЫ ===
-    st.subheader("🏗 Тип конструкции")
-    facade_type = st.radio(
-        "Выберите тип",
-        ["Фасадная система (Ruit 50F)", "Оконный тамбур (ALG)"],
-        horizontal=True,
-        key="facade_type_radio"
-    )
+    st.markdown("---")
     
-    # Получаем значение для использования в логике
-    facade_type_value = facade_type
+    # Только Ruit 50F (тамбур в отдельном разделе)
+    facade_type_value = "Фасадная система (Ruit 50F)"
     
     st.markdown("---")
     
-    # ==========================================
-    # РАЗДЕЛЕНИЕ: Ruit 50F vs Оконный тамбур
-    # ==========================================
-    
-    if "ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)":
-        # ========== ОКОННЫЙ ТАМБУР ==========
-        st.subheader("🪟 Позиции тамбура (Изделия)")
-        
-        if "tambour_positions" not in st.session_state:
-            st.session_state.tambour_positions = []
-        
-        st.write(f"**Позиций: {len(st.session_state.tambour_positions)}**")
-        
-        if st.button("➕ Добавить изделие", use_container_width=True):
-            st.session_state.tambour_positions.append({
-                "product_type": "Дверь 2-х створч.",
-                "system": "ALG 2030-63C",
-                "width": 1800,
-                "height": 2200,
-                "glass_type": "двойной"
-            })
-            st.rerun()
-        
-        # Форма для каждого изделия
-        for idx, pos in enumerate(st.session_state.tambour_positions):
-            with st.expander(f"📦 Изделие №{idx+1}", expanded=True):
-                if st.button(f"🗑️ Удалить", key=f"del_tamb_{idx}"):
-                    st.session_state.tambour_positions.pop(idx)
-                    st.rerun()
-                
-                c1, c2 = st.columns(2)
-                
-                # Тип изделия
-                product_types = ["Дверь 1 створч.", "Дверь 2-х створч.", "Окно с откр.", "Окно глухое"]
-                pos["product_type"] = c1.selectbox(
-                    "Тип изделия",
-                    product_types,
-                    index=product_types.index(pos.get("product_type", "Дверь 2-х створч.")),
-                    key=f"tamb_type_{idx}"
-                )
-                
-                # Система
-                systems = ["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"]
-                pos["system"] = c2.selectbox(
-                    "Система",
-                    systems,
-                    index=systems.index(pos.get("system", "ALG 2030-63C")),
-                    key=f"tamb_sys_{idx}"
-                )
-                
-                # Габариты
-                c3, c4 = st.columns(2)
-                pos["width"] = c3.number_input(
-                    "Ширина (мм)",
-                    min_value=500,
-                    max_value=3000,
-                    value=pos.get("width", 1800),
-                    step=50,
-                    key=f"tamb_w_{idx}"
-                )
-                pos["height"] = c4.number_input(
-                    "Высота (мм)",
-                    min_value=500,
-                    max_value=3000,
-                    value=pos.get("height", 2200),
-                    step=50,
-                    key=f"tamb_h_{idx}"
-                )
-                
-                # Тип стеклопакета
-                pos["glass_type"] = st.selectbox(
-                    "Тип стеклопакета",
-                    GLASS_TYPES,
-                    index=GLASS_TYPES.index(pos.get("glass_type", "Двойной").capitalize()) if pos.get("glass_type", "Двойной").capitalize() in GLASS_TYPES else 0,
-                    key=f"tamb_glass_{idx}"
-                )
-    
-    else:
-        # ========== ФАСАДНАЯ СИСТЕМА (Ruit 50F) ==========
-        st.subheader("📦 Позиции фасада")
+    # ========== ФАСАДНАЯ СИСТЕМА (Ruit 50F) ==========
+    st.subheader("📦 Позиции фасада")
     
     if "facade_positions" not in st.session_state:
         st.session_state.facade_positions = []
@@ -912,26 +827,21 @@ def render_facade_page():
     col_calc, col_clear = st.columns([3, 1])
     
     # Определяем какие позиции используются
-    is_tambour = ("ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)")
-    positions_list = st.session_state.get("tambour_positions" if is_tambour else "facade_positions", [])
+    positions_list = st.session_state.get("facade_positions", [])
     
     print(f"DEBUG: facade_type_value = {facade_type_value}")
-    print(f"DEBUG: is_tambour = {is_tambour}")
     print(f"DEBUG: positions count = {len(positions_list)}")
     
     with col_calc:
         calc_button = st.button(
-            "🚀 РАССЧИТАТЬ ТАМБУР" if is_tambour else "🚀 РАССЧИТАТЬ ФАСАД",
+            "🚀 РАССЧИТАТЬ ФАСАД","🚀 РАССЧИТАТЬ ФАСАД",
             type="primary",
             use_container_width=True
         )
     
     with col_clear:
         if st.button("🗑️ Очистить", type="secondary", use_container_width=True):
-            if is_tambour:
-                st.session_state.tambour_positions = []
-            else:
-                st.session_state.facade_positions = []
+            st.session_state.facade_positions = []
             if 'last_facade_result' in st.session_state:
                 del st.session_state.last_facade_result
             st.rerun()
@@ -939,7 +849,6 @@ def render_facade_page():
     if calc_button:
         if not positions_list:
             st.error("❌ Добавьте хотя бы одну позицию!")
-        elif is_tambour:
             # ========== РАСЧЁТ ТАМБУРА ==========
             try:
                 from calculations.engine_facade import calculate_tambour_materials_v2
