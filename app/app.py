@@ -1517,6 +1517,117 @@ def render_facade_page():
 # ========================================
 # ФУНКЦИЯ ДЛЯ СТРАНИЦЫ ИСТОРИИ (ЗАГЛУШКА)
 # ========================================
+
+def render_tambour_page():
+    """Оконный тамбур - готовые двери/окна + направляющий"""
+    st.header("🪟 Оконный тамбур")
+    st.info("Тамбур = готовые двери/окна соединённые направляющим профилем")
+    
+    # Общие данные
+    st.subheader("📋 Общие данные")
+    order_num = st.text_input("Номер заказа", key="tamb_order")
+    
+    # Позиции
+    if "tambour_positions" not in st.session_state:
+        st.session_state.tambour_positions = []
+    
+    st.markdown("---")
+    st.subheader(f"📦 Позиции ({len(st.session_state.tambour_positions)})")
+    
+    col_add, col_clear = st.columns([3, 1])
+    if col_add.button("➕ Добавить", use_container_width=True, key="tamb_add"):
+        st.session_state.tambour_positions.append({
+            "product_type": "Дверь 2-х створч.",
+            "system_id": "ALG 2030-63C",
+            "width": 1800,
+            "height": 2200,
+            "glass_type": "Двойной",
+            "opening_type": "Откр.",
+            "horizontal_imposts": 0,
+            "vertical_imposts": 0
+        })
+        st.rerun()
+    
+    if col_clear.button("🗑️ Очистить", use_container_width=True, key="tamb_clear_all"):
+        st.session_state.tambour_positions = []
+        st.rerun()
+    
+    # Формы
+    for idx in range(len(st.session_state.tambour_positions)):
+        pos = st.session_state.tambour_positions[idx]
+        
+        with st.expander(f"📦 Позиция {idx+1}", expanded=True):
+            if st.button(f"🗑️ Удалить", key=f"tamb_del_{idx}"):
+                st.session_state.tambour_positions.pop(idx)
+                st.rerun()
+            
+            col1, col2 = st.columns(2)
+            
+            pos["product_type"] = col1.selectbox(
+                "Тип изделия",
+                ["Дверь 1 створч.", "Дверь 2-х створч.", "Окно с откр.", "Окно глухое"],
+                index=["Дверь 1 створч.", "Дверь 2-х створч.", "Окно с откр.", "Окно глухое"].index(pos.get("product_type", "Дверь 2-х створч.")),
+                key=f"tamb_type_{idx}"
+            )
+            
+            pos["system_id"] = col2.selectbox(
+                "Система",
+                ["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"],
+                key=f"tamb_sys_{idx}"
+            )
+            
+            col3, col4 = st.columns(2)
+            pos["width"] = col3.number_input("Ширина (мм)", 500, 5000, pos.get("width", 1800), 50, key=f"tamb_w_{idx}")
+            pos["height"] = col4.number_input("Высота (мм)", 500, 5000, pos.get("height", 2200), 50, key=f"tamb_h_{idx}")
+            
+            col5, col6 = st.columns(2)
+            pos["horizontal_imposts"] = col5.number_input("Импосты горизонт.", 0, 5, pos.get("horizontal_imposts", 0), key=f"tamb_himp_{idx}")
+            pos["vertical_imposts"] = col6.number_input("Импосты вертик.", 0, 5, pos.get("vertical_imposts", 0), key=f"tamb_vimp_{idx}")
+            
+            if "глухое" not in pos["product_type"].lower():
+                pos["opening_type"] = st.selectbox("Открывание", ["Откр.", "П/откр."], key=f"tamb_open_{idx}")
+            else:
+                pos["opening_type"] = "Глухое"
+            
+            pos["glass_type"] = st.selectbox("Стеклопакет", GLASS_TYPES, key=f"tamb_glass_{idx}")
+    
+    # Расчёт
+    st.markdown("---")
+    if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True, key="tamb_calc"):
+        if not st.session_state.tambour_positions:
+            st.error("❌ Добавьте позиции!")
+        else:
+            try:
+                from calculations.engine_facade import calculate_tambour_materials_v2
+                from app.code_mapper import get_code_for_windows_doors
+                
+                for pos in st.session_state.tambour_positions:
+                    pos["code"] = get_code_for_windows_doors(pos["product_type"], pos["system_id"])
+                    pos["fill_category"] = "Стеклопакет"
+                    pos["count"] = 1
+                
+                result = calculate_tambour_materials_v2(st.session_state.tambour_positions, ref1, ref2, ref3)
+                
+                st.success("✅ Готово!")
+                st.metric("💰 ИТОГО", f"{result['total_cost']:,.0f} ₸")
+                
+                st.subheader("Изделия:")
+                for p in result["products"]:
+                    st.write(f"• {p['name']} - {p['cost']:,.0f} ₸")
+                st.write(f"**Итого: {result['total_products_cost']:,.0f} ₸**")
+                
+                st.subheader("Соединения:")
+                for k, v in result["connecting"].items():
+                    st.write(f"• {k}: {v['quantity']:.2f} {v['unit']} - {v['cost']:,.0f} ₸")
+                st.write(f"**Итого: {result['total_connecting_cost']:,.0f} ₸**")
+                
+            except Exception as e:
+                st.error(f"❌ {e}")
+                import traceback
+                st.code(traceback.format_exc())
+
+
+
 def render_history_page():
     """Страница истории заказов"""
     
@@ -1588,8 +1699,8 @@ with st.sidebar:
     
     menu_selection = st.radio(
         "Выберите раздел:",
-        ["Главная (Окна/Двери)", "Фасады", "История"],
-        index=["Главная (Окна/Двери)", "Фасады", "История"].index(st.session_state.menu_selection),
+        ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"],
+        index=["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"].index(st.session_state.menu_selection) if st.session_state.menu_selection in ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"] else 0,
         key="menu_nav_radio"
     )
     
@@ -1601,5 +1712,7 @@ if st.session_state.menu_selection == "Главная (Окна/Двери)":
     render_windows_doors_page()
 elif st.session_state.menu_selection == "Фасады":
     render_facade_page()
+elif st.session_state.menu_selection == "Оконный тамбур":
+    render_tambour_page()
 elif st.session_state.menu_selection == "История":
     render_history_page()

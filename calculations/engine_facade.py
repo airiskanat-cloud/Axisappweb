@@ -478,10 +478,15 @@ def calculate_tambour_materials_v2(
         width = pos.get("width", 1800)
         height = pos.get("height", 2200)
         glass_type = pos.get("glass_type", "двойной")
+        opening_type = pos.get("opening_type", "Откр.")
+        h_imposts = pos.get("horizontal_imposts", 0)
+        v_imposts = pos.get("vertical_imposts", 0)
         
         print(f"\nИзделие {i}: {product_type} {system}")
         print(f"  Размер: {width}мм × {height}мм")
         print(f"  Стекло: {glass_type}")
+        print(f"  Открывание: {opening_type}")
+        print(f"  Импосты: {h_imposts}H × {v_imposts}V")
         
         # Генерируем CODE
         code = get_code_for_windows_doors(product_type, system)
@@ -503,9 +508,9 @@ def calculate_tambour_materials_v2(
                 "count": 1,
                 "fill_category": "Стеклопакет",
                 "glass_type": glass_type,
-                "opening_type": "Откр.",
-                "horizontal_imposts": 0,
-                "vertical_imposts": 0
+                "opening_type": opening_type,
+                "horizontal_imposts": h_imposts,
+                "vertical_imposts": v_imposts
             }]
         }
         
