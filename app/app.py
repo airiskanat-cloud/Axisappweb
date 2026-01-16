@@ -612,13 +612,8 @@ def render_facade_page():
     
     st.markdown("---")
     
-    st.markdown("---")
-    
     # Только Ruit 50F (тамбур в отдельном разделе)
     facade_type_value = "Фасадная система (Ruit 50F)"
-    
-    st.markdown("---")
-    
     # ========== ФАСАДНАЯ СИСТЕМА (Ruit 50F) ==========
     st.subheader("📦 Позиции фасада")
     
@@ -635,7 +630,7 @@ def render_facade_page():
         
         st.session_state.facade_positions.append({
             "code": facade_code,  # Добавляем CODE
-            "facade_type": facade_type,  # Сохраняем тип для отображения
+            "facade_type": facade_type_value,  # Сохраняем тип для отображения
             "width": 6.0,
             "height": 3.0,
             "columns": 3,
@@ -1549,32 +1544,39 @@ def render_tambour_page():
                 # РАСЧЁТ ИЗДЕЛИЙ (как в окнах)
                 result = calculate_window_smeta(order_data, ref1, ref2, ref3)
                 
+                # DEBUG
+                st.write("DEBUG result metrics:", result["metrics"])
+                
                 # ДОБАВЛЯЕМ НАПРАВЛЯЮЩИЙ
                 total_perimeter = result["metrics"]["total_perimeter"]
                 L_guide = total_perimeter * 1.05
                 
-                # Цена направляющего
-                price_guide = 1200
-                for item in ref1:
-                    if '2-00-5581' in item.get('Артикул', ''):
-                        price_guide = item.get('Цена за единицу', 1200)
-                        break
+                # Цена направляющего из ref2 (Справочник2)
+                price_guide = ref2.get("2-00-5581-60-0000", 1200)
+                if not isinstance(price_guide, (int, float)):
+                    price_guide = 1200
                 
                 cost_guide = L_guide * price_guide
                 
-                # ПРАВИЛЬНЫЙ ПЕРЕСЧЁТ:
-                # 1. Убираем старое обеспечение
+                # Добавляем в МАТЕРИАЛЫ (part2), не в итоги!
+                result["part2_materials"].append({
+                    "Артикул": "2-00-5581-60-0000",
+                    "Наименование": "Направляющий профиль",
+                    "Количество": f"{L_guide:.2f} м",
+                    "Цена": f"{price_guide:,.0f} ₸",
+                    "Сумма": f"{cost_guide:,.0f} ₸"
+                })
+                
+                # Обновляем "Материалы" в итогах
+                old_materials = result["part3_final"].get("Материалы", 0)
+                result["part3_final"]["Материалы"] = round(old_materials + cost_guide, 0)
+                
+                # Пересчитываем обеспечение и итого
                 old_margin = result["part3_final"].pop("Обеспечение", 0)
-                old_total = result["total_with_margin"] - old_margin
-                
-                # 2. Добавляем направляющий к материалам (НЕ к итогам!)
-                result["part3_final"]["Направляющий"] = round(cost_guide, 0)
-                
-                # 3. Пересчитываем всё заново
-                subtotal_with_guide = sum(result["part3_final"].values())
-                margin = subtotal_with_guide * 0.81
+                subtotal = sum(result["part3_final"].values())
+                margin = subtotal * 0.81
                 result["part3_final"]["Обеспечение"] = round(margin, 0)
-                result["total_with_margin"] = round(subtotal_with_guide + margin, 0)
+                result["total_with_margin"] = round(subtotal + margin, 0)
                 
                 # === ВЫВОД РЕЗУЛЬТАТОВ ===
                 st.success("✅ Расчет выполнен!")
@@ -1610,6 +1612,19 @@ def render_tambour_page():
                     df3 = pd.DataFrame(result["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
                     st.dataframe(df3, use_container_width=True, hide_index=True)
                     st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{result['total_with_margin']:,.0f} ₸")
+                
+                # Сохраняем в историю
+                history_data = {
+                    "order_number": order_number,
+                    "facade_type": "Оконный тамбур",
+                    "total_area": result['metrics']['total_area'],
+                    "total_perimeter": total_perimeter,
+                    "total_cost": result['total_with_margin'],
+                    "width": sum(p['width'] for p in st.session_state.tambour_positions) / len(st.session_state.tambour_positions),
+                    "height": sum(p['height'] for p in st.session_state.tambour_positions) / len(st.session_state.tambour_positions),
+                    "positions_count": len(st.session_state.tambour_positions)
+                }
+                save_history(history_data)
                 
             except Exception as e:
                 st.error(f"❌ Ошибка: {e}")
