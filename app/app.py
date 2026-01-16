@@ -18,9 +18,9 @@ from auth.auth import authenticate
 from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
 from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3, load_facade_reference  # ДОБАВЛЕНО load_facade_reference
 from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING
-from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials  # ДОБАВЛЕНО
+from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials, calculate_tambour_materials_v2  # ДОБАВЛЕНО
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
-from export.export_kp import export_to_excel
+from export.export_kp import export_to_excel, export_facade_to_excel
 from history.save_history import save_history
 
 # --- КОНСТАНТЫ ИЗ ТЗ ---
@@ -846,7 +846,7 @@ def render_facade_page():
             st.error("❌ Добавьте хотя бы одну позицию!")
             # ========== РАСЧЁТ ТАМБУРА ==========
             try:
-                from calculations.engine_facade import calculate_tambour_materials_v2
+                # Импорт уже в начале файла
                 
                 print("\n🏗️ Вызов calculate_tambour_materials_v2:")
                 print(f"   Позиций: {len(st.session_state.tambour_positions)}")
@@ -1394,7 +1394,7 @@ def render_facade_page():
         st.divider()
         if st.button("📥 Скачать КП фасада в Excel", type="secondary", use_container_width=True):
             try:
-                from export.export_kp import export_facade_to_excel
+                # Импорт уже в начале файла
                 
                 temp_dir = tempfile.gettempdir()
                 order_num = f"FAC-{datetime.datetime.now().strftime('%Y%m%d%H%M')}"
