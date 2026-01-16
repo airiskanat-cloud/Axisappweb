@@ -1619,8 +1619,7 @@ def render_tambour_page():
             st.error("❌ Добавьте хотя бы одну позицию!")
         else:
             try:
-                from calculations.engine_windows import calculate_window_smeta
-                from app.code_mapper import get_code_for_windows_doors
+                # Импорты уже в начале файла
                 
                 # Формируем order_data КАК В ОКНАХ
                 order_data = {
