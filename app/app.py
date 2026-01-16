@@ -843,46 +843,6 @@ def render_facade_page():
                 pos["insert_row"] = insert_row
                 
                 st.markdown("---")
-                
-                # === ДОБАВЛЕНО: ВЫБОР ЗАПОЛНЕНИЯ ВСТАВКИ ===
-                st.markdown("### 🎨 Заполнение вставки")
-                st.caption("Выберите чем будет заполнена вставка (может отличаться от основного фасада)")
-                
-                insert_panel_category = st.selectbox(
-                    "Категория заполнения вставки",
-                    ["Стеклопакет", "Ламбри"],
-                    key=f"insert_panel_cat_{idx}",
-                    help="Заполнение для этой конкретной вставки"
-                )
-                
-                if insert_panel_category == "Стеклопакет":
-                    insert_glass_type = st.selectbox(
-                        "Тип стеклопакета вставки",
-                        GLASS_TYPES,
-                        key=f"insert_glass_{idx}"
-                    )
-                    insert_fill_category = "Стеклопакет"
-                    insert_fill_type = insert_glass_type
-                else:
-                    # Ламбри
-                    lambri_types = []
-                    for key in ref2.keys():
-                        if "ламбри" in key.lower():
-                            lambri_types.append(key)
-                    if not lambri_types:
-                        lambri_types = ["Ламбри без термо", "Ламбри с термо"]
-                    
-                    insert_lambri_type = st.selectbox(
-                        "Тип ламбри вставки",
-                        lambri_types,
-                        key=f"insert_lambri_{idx}"
-                    )
-                    insert_fill_category = "Ламбри"
-                    insert_fill_type = insert_lambri_type
-                
-                st.success(f"✅ Заполнение вставки: {insert_fill_category} - {insert_fill_type}")
-                
-                st.markdown("---")
                 st.info(f"🔧 Настройка вставки ({fill_type})")
                 
                 # ТИП ИЗДЕЛИЯ (ДОБАВЛЕНО)
@@ -943,12 +903,7 @@ def render_facade_page():
                     insert_data["product_type"] = product_type
                     insert_data["sash_count"] = sash_count
                     
-                    # ДОБАВЛЕНО: Сохраняем заполнение вставки
-                    insert_data["fill_category"] = insert_fill_category
-                    if insert_fill_category == "Стеклопакет":
-                        insert_data["glass_type"] = insert_fill_type
-                    else:
-                        insert_data["lambri_type"] = insert_fill_type
+                    # Заполнение УЖЕ установлено в window_door_ui (форма спросила)
                     
                     # Сохраняем данные вставки
                     pos["insert_data"] = insert_data
@@ -1000,15 +955,12 @@ def render_facade_page():
                 
                 materials_cost = tambour_calc.get("total_cost", 0)
                 
-                # Считаем общую площадь и периметр
-                total_area = sum(
-                    (p["width"] * p["height"]) / 1000000
-                    for p in st.session_state.tambour_positions
-                )
-                total_perimeter = sum(
-                    2 * ((p["width"] + p["height"]) / 1000)
-                    for p in st.session_state.tambour_positions
-                )
+                # ✅ ИСПРАВЛЕНО: Берём метрики ИЗ РЕЗУЛЬТАТА (как в окнах/дверях)
+                total_area = tambour_calc["metrics"]["total_area"]
+                total_perimeter = tambour_calc["metrics"]["total_perimeter"]
+                
+                # ✅ ДОБАВЛЕНО: Сохраняем для экспорта (будет создан ниже)
+                # tambour_order_data будет создан в блоке истории
                 
                 # Тонировка, Сборка, Монтаж
                 toning_cost = 0
@@ -1069,6 +1021,10 @@ def render_facade_page():
                         },
                         "positions": st.session_state.tambour_positions
                     }
+                    
+                    # ✅ ДОБАВЛЕНО: Сохраняем для экспорта (как в окнах/дверях)
+                    st.session_state.last_tambour_order_data = tambour_order_data
+                    st.session_state.last_tambour_result = tambour_calc
                     
                     save_history(
                         GOOGLE_CREDENTIALS_PATH,
@@ -1822,33 +1778,30 @@ def render_tambour_page():
                 st.markdown("---")
                 if st.button("📥 Скачать КП в Excel", type="secondary", use_container_width=True, key="tambour_export_btn"):
                     try:
-                        # Экспорт уже в начале файла импортирован
+                        # ✅ ИСПРАВЛЕНО: Используем session_state (как в окнах/дверях)
                         temp_dir = tempfile.gettempdir()
-                        order_num = order_number
+                        order_num = st.session_state.last_tambour_order_data["common"]["order_number"]
                         excel_path = os.path.join(temp_dir, f"KP_{order_num}.xlsx")
                         
-                        export_to_excel(order_data, result, excel_path)
+                        export_to_excel(
+                            st.session_state.last_tambour_order_data,
+                            st.session_state.last_tambour_result,
+                            excel_path
+                        )
                         
                         with open(excel_path, "rb") as f:
                             st.download_button(
                                 label="💾 Сохранить файл",
                                 data=f,
-                                file_name=f"KP_{order_num}.xlsx",
+                                file_name=f"KP_TAMBOUR_{order_num}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                                 use_container_width=True
                             )
-                        st.success(f"✅ Файл {order_num}.xlsx готов к скачиванию")
+                        st.success(f"✅ Файл KP_TAMBOUR_{order_num}.xlsx готов к скачиванию")
                     except Exception as e:
                         st.error(f"❌ Ошибка экспорта: {e}")
-                
-                # Сохраняем в историю
-                save_history(
-                    credentials_path=GOOGLE_CREDENTIALS_PATH,
-                    spreadsheet_id=SPREADSHEET_ID,
-                    user_login=st.session_state.get("user_email", "unknown"),
-                    order_data=order_data,
-                    result=result
-                )
+                        import traceback
+                        st.code(traceback.format_exc())
                 
             except Exception as e:
                 st.error(f"❌ Ошибка: {e}")

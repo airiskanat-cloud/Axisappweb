@@ -481,7 +481,13 @@ def calculate_tambour_materials_v2(
         "connecting": {},  # Соединительные элементы
         "total_products_cost": 0,
         "total_connecting_cost": 0,
-        "total_cost": 0
+        "total_cost": 0,
+        
+        # ✅ ДОБАВЛЕНО: Метрики (как в engine_windows)
+        "metrics": {
+            "total_area": 0.0,
+            "total_perimeter": 0.0
+        }
     }
     
     # ===== ЧАСТЬ 1: ИЗДЕЛИЯ (ДВЕРИ/ОКНА) =====
@@ -507,10 +513,20 @@ def calculate_tambour_materials_v2(
         print(f"  Открывание: {opening_type}")
         print(f"  Импосты: {h_imposts}H × {v_imposts}V")
         
+        # ✅ ДОБАВЛЕНО: Считаем метрики
+        width_m = width / 1000
+        height_m = height / 1000
+        area = width_m * height_m
+        perimeter = 2 * (width_m + height_m)
+        
+        result["metrics"]["total_area"] += area
+        result["metrics"]["total_perimeter"] += perimeter
+        
         # Генерируем CODE
         code = get_code_for_windows_doors(product_type, system)
         
         # Формируем данные для расчёта
+        # ✅ ИСПРАВЛЕНО: Полные данные в "data" (как в окнах/дверях)
         order_data = {
             "common": {
                 "order_number": f"TAMBOUR_ITEM_{i}",
@@ -522,14 +538,30 @@ def calculate_tambour_materials_v2(
                 "product_type": product_type,
                 "system": system,
                 "code": code,
-                "width": width,
-                "height": height,
                 "count": 1,
-                "fill_category": "Стеклопакет",
-                "glass_type": glass_type,
-                "opening_type": opening_type,
-                "horizontal_imposts": h_imposts,
-                "vertical_imposts": v_imposts
+                
+                # ✅ ВСЕ ДАННЫЕ В "data":
+                "data": {
+                    "width": width,
+                    "height": height,
+                    "count": 1,
+                    
+                    # Заполнение
+                    "fill_category": pos.get("fill_category", "Стеклопакет"),
+                    "glass_type": pos.get("glass_type", glass_type),
+                    
+                    # Импосты (правильный формат)
+                    "imposts": pos.get("imposts", {
+                        "auto_calculate": True,
+                        "has_left": False,
+                        "has_center": False,
+                        "has_right": False,
+                        "has_tor": False
+                    }),
+                    
+                    # Створки
+                    "sashes": pos.get("sashes", [])
+                }
             }]
         }
         
