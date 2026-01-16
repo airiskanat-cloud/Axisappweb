@@ -1619,7 +1619,8 @@ def render_tambour_page():
             st.error("❌ Добавьте хотя бы одну позицию!")
         else:
             try:
-                # Импорты уже в начале файла
+                from calculations.engine_windows import calculate_window_smeta
+                from app.code_mapper import get_code_for_windows_doors
                 
                 # Формируем order_data КАК В ОКНАХ
                 order_data = {
@@ -1776,7 +1777,7 @@ with st.sidebar:
     menu_selection = st.radio(
         "Выберите раздел:",
         ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"],
-        ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"].index(st.session_state.menu_selection) if st.session_state.menu_selection in ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"] else 0,
+        index=["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"].index(st.session_state.menu_selection) if st.session_state.menu_selection in ["Главная (Окна/Двери)", "Фасады", "Оконный тамбур", "История"] else 0,
         key="sidebar_navigation"
     )
     

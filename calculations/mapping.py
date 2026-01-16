@@ -1,112 +1,92 @@
-# mapping.py
-# =========================================================
-# Единый слой сопоставления UI → code
-# Форма НЕ меняется, вся логика сосредоточена здесь
-# =========================================================
+"""
+Маппинг типов изделий и систем на CODE для поиска в Справочнике1
+"""
 
-
-# ---------------------------------------------------------
-# ОКНА / ДВЕРИ
-# (Тип изделия + Система профиля)
-# ---------------------------------------------------------
-
-UI_TO_CODE = {
-    # ===== ОКНА ОТКРЫВАЮЩИЕСЯ =====
-    ("Окно с откр.", "ALG 2030-63C"): "WINDOW_OPEN_2030_63C",
-    ("Окно с откр.", "ALG 2030-55C"): "WINDOW_OPEN_2030_55C",
-    ("Окно с откр.", "ALG 2030-45C"): "WINDOW_OPEN_2030_45C",
-    ("Окно с откр.", "ALG 2030-73C"): "WINDOW_OPEN_2030_73C",
-    ("Окно с откр.", "ALG RUIT 73i 22MM"): "WINDOW_OPEN_2030_73C",
-    ("Окно с откр.", "ALG RUIT 73i"): "WINDOW_OPEN_2030_73C",
-    ("Окно с откр.", "ALG RUIT 63i"): "WINDOW_OPEN_2030_63C",
-    ("Окно с откр.", "ALG RUIT 55i"): "WINDOW_OPEN_2030_55C",
-    ("Окно с откр.", "ALG RUIT 45i"): "WINDOW_OPEN_2030_45C",
-
-    # ===== ОКНА ГЛУХИЕ =====
-    ("Окно глух.", "ALG 2030-63C"): "WINDOW_FIXED_2030_63C",
-    ("Окно глух.", "ALG 2030-55C"): "WINDOW_FIXED_2030_55C",
-    ("Окно глух.", "ALG 2030-45C"): "WINDOW_FIXED_2030_45C",
-    ("Окно глух.", "ALG 2030-73C"): "WINDOW_FIXED_2030_73C",
-    ("Окно глух.", "ALG RUIT 73i 22MM"): "WINDOW_FIXED_2030_73C",
-    ("Окно глух.", "ALG RUIT 73i"): "WINDOW_FIXED_2030_73C",
-    ("Окно глух.", "ALG RUIT 63i"): "WINDOW_FIXED_2030_63C",
-    ("Окно глух.", "ALG RUIT 55i"): "WINDOW_FIXED_2030_55C",
-    ("Окно глух.", "ALG RUIT 45i"): "WINDOW_FIXED_2030_45C",
-
-    # ===== ДВЕРИ 1-СТВОРЧАТЫЕ =====
-    ("Дверь 1 створч.", "ALG 2030-45C"): "DOOR_SINGLE_2030_45C",
-    ("Дверь 1 створч.", "ALG 2030-55C"): "DOOR_SINGLE_2030_55C",
-    ("Дверь 1 створч.", "ALG 2030-63C"): "DOOR_SINGLE_2030_63C",
-    ("Дверь 1 створч.", "ALG 2030-73C"): "DOOR_SINGLE_2030_73C",
-    ("Дверь 1 створч.", "ALG 2030-Slim"): "DOOR_SINGLE_2030_SLIM",
-    ("Дверь 1 створч.", "ALG RUIT 73i 22MM"): "DOOR_SINGLE_2030_73C",
-    ("Дверь 1 створч.", "ALG RUIT 73i"): "DOOR_SINGLE_2030_73C",
-    ("Дверь 1 створч.", "ALG RUIT 63i"): "DOOR_SINGLE_2030_63C",
-    ("Дверь 1 створч.", "ALG RUIT 55i"): "DOOR_SINGLE_2030_55C",
-    ("Дверь 1 створч.", "ALG RUIT 45i"): "DOOR_SINGLE_2030_45C",
-
-    # ===== ДВЕРИ 2-Х СТВОРЧАТЫЕ =====
-    ("Дверь 2-х створч.", "ALG 2030-45C"): "DOOR_DOUBLE_2030_45C",
-    ("Дверь 2-х створч.", "ALG 2030-55C"): "DOOR_DOUBLE_2030_55C",
-    ("Дверь 2-х створч.", "ALG 2030-63C"): "DOOR_DOUBLE_2030_63C",
-    ("Дверь 2-х створч.", "ALG 2030-73C"): "DOOR_DOUBLE_2030_73C",
-    ("Дверь 2-х створч.", "ALG 2030-Slim"): "DOOR_DOUBLE_2030_SLIM",
-    ("Дверь 2-х створч.", "ALG RUIT 73i 22MM"): "DOOR_DOUBLE_2030_73C",
-    ("Дверь 2-х створч.", "ALG RUIT 73i"): "DOOR_DOUBLE_2030_73C",
-    ("Дверь 2-х створч.", "ALG RUIT 63i"): "DOOR_DOUBLE_2030_63C",
-    ("Дверь 2-х створч.", "ALG RUIT 55i"): "DOOR_DOUBLE_2030_55C",
-    ("Дверь 2-х створч.", "ALG RUIT 45i"): "DOOR_DOUBLE_2030_45C",
-}
-
-
-# ---------------------------------------------------------
-# ФАСАДЫ
-# (radio-button "Тип конструкции")
-# ---------------------------------------------------------
-# ВАЖНО:
-# - фасады НЕ используют "Система профиля"
-# - фасады определяются ТОЛЬКО по выбору типа конструкции
-# ---------------------------------------------------------
-
-FACADE_TYPE_TO_CODE = {
-    # Фасадная система (стойка-ригель)
-    "Фасадная система (Ruit 50F)": "FACADE_SYSTEM_RUIT_50F",
-
-    # Оконный / витражный фасад на оконной системе
-    "Оконный тамбур (ALG)": "FACADE_WINDOW_ALG_2030",
-}
-
-
-# ---------------------------------------------------------
-# ПУБЛИЧНЫЕ ФУНКЦИИ
-# ---------------------------------------------------------
-
-def get_code_for_windows_doors(product_type: str, profile_system: str) -> str:
+def get_code_for_windows_doors(product_type: str, system: str) -> str:
     """
-    Возвращает code для окон и дверей по данным формы
+    Генерирует CODE для окон/дверей по типу изделия и системе
+    
+    Args:
+        product_type: "Окно с откр.", "Окно глухое", "Дверь 1 створч.", "Дверь 2-х створч."
+        system: "ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C", "ALG 2030-Slim"
+    
+    Returns:
+        CODE для поиска в Справочнике1
+    
+    Raises:
+        ValueError: Если комбинация не найдена
     """
-    key = (product_type.strip(), profile_system.strip())
-
-    if key not in UI_TO_CODE:
-        raise ValueError(
-            f"[MAPPING ERROR] Не найден code для комбинации: "
-            f"Тип изделия='{product_type}', "
-            f"Система профиля='{profile_system}'"
-        )
-
-    return UI_TO_CODE[key]
+    
+    # Нормализация системы
+    system_normalized = system.upper().strip()
+    
+    # Извлекаем толщину системы
+    system_map = {
+        "ALG 2030-73C": "73C",
+        "ALG 2030-63C": "63C",
+        "ALG 2030-55C": "55C",
+        "ALG 2030-45C": "45C",
+        "ALG 2030-SLIM": "SLIM"
+    }
+    
+    system_key = None
+    for key, value in system_map.items():
+        if key in system_normalized:
+            system_key = value
+            break
+    
+    if not system_key:
+        raise ValueError(f"[MAPPING ERROR] Неизвестная система: {system}")
+    
+    # Маппинг по типу изделия
+    product_type_lower = product_type.lower()
+    
+    # ОКНА
+    if "окно" in product_type_lower:
+        if "глух" in product_type_lower:
+            # Окно глухое = FIXED
+            code = f"WINDOW_FIXED_2030_{system_key}"
+        else:
+            # Окно с откр.
+            code = f"WINDOW_OPEN_2030_{system_key}"
+    
+    # ДВЕРИ
+    elif "дверь" in product_type_lower:
+        if "1" in product_type or "одн" in product_type_lower:
+            # Дверь 1 створч.
+            code = f"DOOR_SINGLE_2030_{system_key}"
+        elif "2" in product_type or "двух" in product_type_lower:
+            # Дверь 2-х створч.
+            code = f"DOOR_DOUBLE_2030_{system_key}"
+        else:
+            raise ValueError(f"[MAPPING ERROR] Неизвестный тип двери: {product_type}")
+    
+    else:
+        raise ValueError(f"[MAPPING ERROR] Неизвестный тип изделия: {product_type}")
+    
+    return code
 
 
 def get_code_for_facade(facade_type: str) -> str:
     """
-    Возвращает code для фасадов по radio-button 'Тип конструкции'
+    Генерирует CODE для фасадных систем
+    
+    Args:
+        facade_type: "Фасадная система (Ruit 50F)" или "Оконный тамбур (ALG)"
+    
+    Returns:
+        CODE для фасада
     """
-    key = facade_type.strip()
+    
+    if "Ruit 50F" in facade_type or "ruit" in facade_type.lower():
+        return "FACADE_RUIT_50F"
+    elif "ALG" in facade_type or "тамбур" in facade_type.lower():
+        return "FACADE_TAMBOUR_ALG"
+    else:
+        return "FACADE_RUIT_50F"  # По умолчанию
 
-    if key not in FACADE_TYPE_TO_CODE:
-        raise ValueError(
-            f"[MAPPING ERROR] Не найден code для фасада: "
-            f"Тип конструкции='{facade_type}'"
-        )
 
-    return FACADE_TYPE_TO_CODE[key]
+# Для обратной совместимости
+def get_code_for_position(product_type: str, system: str) -> str:
+    """Алиас для get_code_for_windows_doors"""
+    return get_code_for_windows_doors(product_type, system)
