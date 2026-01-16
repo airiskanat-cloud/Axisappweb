@@ -1538,18 +1538,18 @@ def render_tambour_page():
                 
                 # Добавляем CODE к позициям И КОНВЕРТИРУЕМ ММ В МЕТРЫ
                 for pos in st.session_state.tambour_positions:
-                    pos["code"] = get_code_for_windows_doors(pos["product_type"], pos["system_id"])
-                    # ВАЖНО: engine_windows ожидает метры!
-                    pos["width"] = pos["width"] / 1000.0
-                    pos["height"] = pos["height"] / 1000.0
-                    order_data["positions"].append(pos)
+                    # ВАЖНО: Создаём КОПИЮ чтобы не менять session_state!
+                    pos_copy = pos.copy()
+                    pos_copy["code"] = get_code_for_windows_doors(pos["product_type"], pos["system_id"])
+                    # engine_windows ожидает метры, в session_state хранятся мм
+                    pos_copy["width"] = pos["width"] / 1000.0
+                    pos_copy["height"] = pos["height"] / 1000.0
+                    order_data["positions"].append(pos_copy)
                 
                 # РАСЧЁТ ИЗДЕЛИЙ (как в окнах)
                 result = calculate_window_smeta(order_data, ref1, ref2, ref3)
                 
                 # DEBUG
-                st.write("DEBUG result metrics:", result["metrics"])
-                
                 # ДОБАВЛЯЕМ НАПРАВЛЯЮЩИЙ
                 total_perimeter = result["metrics"]["total_perimeter"]
                 L_guide = total_perimeter * 1.05
@@ -1617,17 +1617,13 @@ def render_tambour_page():
                     st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{result['total_with_margin']:,.0f} ₸")
                 
                 # Сохраняем в историю
-                history_data = {
-                    "order_number": order_number,
-                    "facade_type": "Оконный тамбур",
-                    "total_area": result['metrics']['total_area'],
-                    "total_perimeter": total_perimeter,
-                    "total_cost": result['total_with_margin'],
-                    "width": sum(p['width'] for p in st.session_state.tambour_positions) / len(st.session_state.tambour_positions),
-                    "height": sum(p['height'] for p in st.session_state.tambour_positions) / len(st.session_state.tambour_positions),
-                    "positions_count": len(st.session_state.tambour_positions)
-                }
-                save_history(history_data)
+                save_history(
+                    credentials_path=GOOGLE_CREDENTIALS_PATH,
+                    spreadsheet_id=SPREADSHEET_ID,
+                    user_login=st.session_state.get("user_email", "unknown"),
+                    order_data=order_data,
+                    result=result
+                )
                 
             except Exception as e:
                 st.error(f"❌ Ошибка: {e}")
