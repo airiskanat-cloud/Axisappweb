@@ -76,6 +76,20 @@ def load_reference_2(spreadsheet_id, credentials_path):
         price = row[col("стоимость стеклопакет")]
         if name and price:
             ref[name.strip()] = parse_price(price)
+    
+    # === ДОБАВЛЕНО: ПАНЕЛИ (Ламбри) из колонки C ===
+    for row in data:
+        try:
+            panel_name = row[col("панели")]
+            panel_price = row[col("стоимость панелей")]
+            if panel_name and panel_price:
+                clean_name = panel_name.strip()
+                clean_price = parse_price(panel_price)
+                ref[clean_name] = clean_price
+                print(f"DEBUG Панели: '{clean_name}' = {clean_price}₸/м")
+        except ValueError:
+            # Колонка "Панели" может отсутствовать в некоторых версиях справочника
+            pass
 
     # тонировка
     for row in data:

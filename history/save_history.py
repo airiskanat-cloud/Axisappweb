@@ -40,7 +40,11 @@ def save_history(
         ws = sh.worksheet("ИСТОРИЯ")
         
         # Данные для записи
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # ИСПРАВЛЕНО: Формат времени ДД.ММ.ГГГГ ЧЧ:ММ
+        now = datetime.datetime.now()
+        date_str = now.strftime("%d.%m.%Y")  # 16.01.2026
+        time_str = now.strftime("%H:%M")      # 19:06
+        timestamp = f"{date_str} {time_str}"
         
         # Извлекаем данные
         common = order_data.get("common", {})
@@ -61,12 +65,18 @@ def save_history(
         # Форматируем стоимость
         cost_formatted = f"{total_cost:,.0f}".replace(",", " ")
         
-        # Тип изделия
-        facade_type = result.get("facade_type", "Окно/Дверь")
+        # ИСПРАВЛЕНО: Определяем тип изделия ОБЯЗАТЕЛЬНО для корректной истории
+        calc_type = "Окно/Дверь"  # По умолчанию
+        facade_type = result.get("facade_type", "")
+        if facade_type:
+            if "тамбур" in facade_type.lower():
+                calc_type = "Оконный тамбур"
+            elif "фасад" in facade_type.lower():
+                calc_type = "Фасад"
         
         # DEBUG
         print(f"\n=== СОХРАНЕНИЕ ИСТОРИИ ===")
-        print(f"Тип: {facade_type}")
+        print(f"Тип расчёта: {calc_type}")
         print(f"Позиций: {len(positions)}")
         if positions:
             print(f"Первая позиция: {positions[0]}")
@@ -115,11 +125,11 @@ def save_history(
         
         gabarits_str = "; ".join(gabarits) if gabarits else "-"
         
-        # Строка для записи (ОБНОВЛЁННАЯ структура)
+        # Строка для записи (ОБНОВЛЁННАЯ структура с типом изделия)
         row = [
-            timestamp,           # A: Дата
+            timestamp,           # A: Дата и время
             user_login,          # B: Пользователь
-            facade_type,         # C: Тип
+            calc_type,           # C: Тип изделия (ОБЯЗАТЕЛЬНО!)
             order_number,        # D: Номер заказа
             gabarits_str,        # E: Габариты (полные)
             n_positions,         # F: Позиций

@@ -1260,20 +1260,32 @@ def render_facade_page():
                     "part3_final": {}
                 }
                 
-                # Добавляем стеклопакеты ПО ТИПАМ (только те, у которых площадь > 0)
-                for glass_type, glass_area in glass_areas.items():
-                    if glass_area > 0:
-                        price_glass = ref2.get(glass_type.lower(), 9000)
-                        cost_glass_type = glass_area * price_glass
-                        st.session_state.last_facade_result["part3_final"][f"Стеклопакет ({glass_type})"] = round(cost_glass_type, 0)
+                # === ДОБАВЛЯЕМ В ИТОГИ ОБЯЗАТЕЛЬНО (ДАЖЕ ЕСЛИ 0) ===
                 
-                # Добавляем ламбри ПО ТИПАМ
+                # Стеклопакеты ПО ТИПАМ (ВСЕГДА показываем)
+                total_glass_cost_all = 0
+                for glass_type, glass_area in glass_areas.items():
+                    price_glass = ref2.get(glass_type.lower(), 9000)
+                    cost_glass_type = glass_area * price_glass if glass_area > 0 else 0
+                    st.session_state.last_facade_result["part3_final"][f"Стеклопакет ({glass_type})"] = round(cost_glass_type, 0)
+                    total_glass_cost_all += cost_glass_type
+                
+                # Если НИ ОДНОГО типа стеклопакета не было, добавим общую строку
+                if not glass_areas:
+                    st.session_state.last_facade_result["part3_final"]["Стеклопакет"] = 0
+                
+                # Ламбри ПО ТИПАМ (ВСЕГДА показываем)
+                total_lambri_cost_all = 0
                 for lambri_type, lambri_area in lambri_areas.items():
-                    if lambri_area > 0:
-                        q_otgr = math.ceil(lambri_area / 6.0)
-                        price_lambri = ref2.get(lambri_type.lower(), 2248)
-                        cost_lambri_type = price_lambri * (q_otgr * 6)
-                        st.session_state.last_facade_result["part3_final"][f"Ламбри ({lambri_type})"] = round(cost_lambri_type, 0)
+                    q_otgr = math.ceil(lambri_area / 6.0) if lambri_area > 0 else 0
+                    price_lambri = ref2.get(lambri_type.lower(), 2248)
+                    cost_lambri_type = price_lambri * (q_otgr * 6) if lambri_area > 0 else 0
+                    st.session_state.last_facade_result["part3_final"][f"Ламбри ({lambri_type})"] = round(cost_lambri_type, 0)
+                    total_lambri_cost_all += cost_lambri_type
+                
+                # Если НИ ОДНОГО типа ламбри не было, добавим общую строку
+                if not lambri_areas:
+                    st.session_state.last_facade_result["part3_final"]["Ламбри"] = 0
                 
                 # Остальные статьи
                 st.session_state.last_facade_result["part3_final"].update({
@@ -1570,15 +1582,44 @@ def render_tambour_page():
                 # РАСЧЁТ ИЗДЕЛИЙ (как в окнах)
                 result = calculate_window_smeta(order_data, ref1, ref2, ref3)
                 
-                # DEBUG
-                # ДОБАВЛЯЕМ НАПРАВЛЯЮЩИЙ
-                total_perimeter = result["metrics"]["total_perimeter"]
-                L_guide = total_perimeter * 1.05
+                # === ДОБАВЛЯЕМ НАПРАВЛЯЮЩИЙ ПО ФОРМУЛЕ ИЗ СПРАВОЧНИКА-1 ===
+                # ПРАВИЛО: Количество стыков = max(1, количество позиций - 1)
+                count_joints = max(1, len(st.session_state.tambour_positions) - 1)
                 
-                # Цена направляющего из ref2 (Справочник2)
-                price_guide = ref2.get("2-00-5581-60-0000", 1200)
-                if not isinstance(price_guide, (int, float)):
-                    price_guide = 1200
+                # Берём максимальную высоту из позиций
+                max_height = max(pos["height"] for pos in st.session_state.tambour_positions) / 1000  # в метры
+                
+                # ФОРМУЛА ИЗ СПРАВОЧНИКА-1: H × 2 × count_joints
+                L_guide_raw = max_height * 2 * count_joints
+                
+                # Округление до хлыстов 6м (как весь алюминий)
+                sticks_guide = math.ceil(L_guide_raw / 6.0)
+                L_guide = sticks_guide * 6.0
+                
+                print(f"\n🔧 DEBUG Направляющий:")
+                print(f"  Позиций в тамбуре: {len(st.session_state.tambour_positions)}")
+                print(f"  Стыков (по правилу): {count_joints}")
+                print(f"  Высота: {max_height:.2f}м")
+                print(f"  Формула: {max_height:.2f} × 2 × {count_joints} = {L_guide_raw:.2f}м")
+                print(f"  Округление: ⌈{L_guide_raw:.2f}/6⌉ = {sticks_guide} хлыстов × 6м = {L_guide:.2f}м")
+                
+                # Ищем цену в ref1 (Справочник-1)
+                price_guide = 3846  # Запасное из ТЗ
+                
+                for item in ref1:
+                    art = item.get("Артикул", "")
+                    if "2-00-5581-60-0000" in art or "2-00-5581" in art:
+                        price_guide = item.get("Цена за единицу", 3846)
+                        if isinstance(price_guide, str):
+                            # Парсим если строка
+                            try:
+                                price_guide = float(price_guide.replace(" ", "").replace(",", "."))
+                            except:
+                                price_guide = 3846
+                        print(f"DEBUG: Найден направляющий - арт: {art}, цена: {price_guide}₸/м")
+                        break
+                
+                print(f"DEBUG: Используемая цена направляющего = {price_guide}₸/м")
                 
                 cost_guide = L_guide * price_guide
                 
@@ -1607,7 +1648,7 @@ def render_tambour_page():
                 
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Общая площадь", f"{result['metrics']['total_area']:.3f} м²")
-                col2.metric("Периметр", f"{total_perimeter:.3f} м.п.")
+                col2.metric("Периметр", f"{result['metrics']['total_perimeter']:.3f} м.п.")
                 col3.metric("💰 ИТОГО", f"{result['total_with_margin']:,.0f} ₸")
                 
                 st.markdown("---")
