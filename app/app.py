@@ -1673,9 +1673,25 @@ def render_tambour_page():
                     # ВАЖНО: Создаём КОПИЮ чтобы не менять session_state!
                     pos_copy = pos.copy()
                     pos_copy["code"] = get_code_for_windows_doors(pos["product_type"], pos["system_id"])
-                    # engine_windows ожидает метры, в session_state хранятся мм
-                    pos_copy["width"] = pos["width"] / 1000.0
-                    pos_copy["height"] = pos["height"] / 1000.0
+                    
+                    # ✅ ИСПРАВЛЕНО: engine_windows ожидает данные В "data"!
+                    pos_copy["data"] = {
+                        "width": pos["width"],  # В ММ, engine_windows конвертирует
+                        "height": pos["height"],
+                        "count": pos.get("count", 1),
+                        "fill_category": pos.get("fill_category", "Стеклопакет"),
+                        "glass_type": pos.get("glass_type", "Двойной"),
+                        "product_type": pos["product_type"],
+                        "imposts": {
+                            "auto_calculate": True,
+                            "has_left": False,
+                            "has_center": False,
+                            "has_right": False,
+                            "has_tor": False
+                        },
+                        "sashes": []
+                    }
+                    
                     order_data["positions"].append(pos_copy)
                 
                 # РАСЧЁТ ИЗДЕЛИЙ (как в окнах)
