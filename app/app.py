@@ -1099,16 +1099,13 @@ def render_facade_page():
                 if not st.session_state.facade_positions:
                     st.error("❌ Добавьте хотя бы одну позицию фасада!")
                 else:
-                    # Расчет площади и периметра
-                    total_area = 0
-                    total_perimeter = 0
+                    # ✅ ИСПРАВЛЕНО: Площадь и периметр будут взяты из facade_calc
+                    # (не пересчитываем вручную)
                     results = []
                 
                     for idx, pos in enumerate(st.session_state.facade_positions):
+                        # Локальная площадь для отображения
                         area = pos["width"] * pos["height"]
-                        perimeter = 2 * (pos["width"] + pos["height"])
-                        total_area += area
-                        total_perimeter += perimeter
                     
                         n_cells = pos["columns"] * pos["rows"]
                         
@@ -1227,6 +1224,10 @@ def render_facade_page():
                     
                     # ИСПРАВЛЕНО: Сохраняем facade_calc для отображения детализации
                     facade_calc_saved = facade_calc
+                    
+                    # ✅ ИСПРАВЛЕНО: Берём метрики ИЗ facade_calc (они уже посчитаны правильно)
+                    total_area = facade_calc.get("metrics", {}).get("total_area", 0)
+                    total_perimeter = facade_calc.get("metrics", {}).get("total_perimeter", 0)
                 
                 # Стеклопакеты/ламбри - собираем данные ПО ТИПАМ
                 glass_areas = {"Двойной": 0, "Тройной": 0, "Энергодвойной": 0}
@@ -1668,14 +1669,30 @@ def render_tambour_page():
                     "positions": []
                 }
                 
-                # Добавляем CODE к позициям И КОНВЕРТИРУЕМ ММ В МЕТРЫ
+                # Добавляем CODE к позициям И ОБОРАЧИВАЕМ В "data"
                 for pos in st.session_state.tambour_positions:
                     # ВАЖНО: Создаём КОПИЮ чтобы не менять session_state!
                     pos_copy = pos.copy()
                     pos_copy["code"] = get_code_for_windows_doors(pos["product_type"], pos["system_id"])
-                    # engine_windows ожидает метры, в session_state хранятся мм
-                    pos_copy["width"] = pos["width"] / 1000.0
-                    pos_copy["height"] = pos["height"] / 1000.0
+                    
+                    # ✅ ИСПРАВЛЕНО: engine_windows ожидает данные В "data"!
+                    pos_copy["data"] = {
+                        "width": pos["width"],  # В ММ, engine_windows конвертирует
+                        "height": pos["height"],
+                        "count": pos.get("count", 1),
+                        "fill_category": pos.get("fill_category", "Стеклопакет"),
+                        "glass_type": pos.get("glass_type", "Двойной"),
+                        "product_type": pos["product_type"],
+                        "imposts": {
+                            "auto_calculate": True,
+                            "has_left": False,
+                            "has_center": False,
+                            "has_right": False,
+                            "has_tor": False
+                        },
+                        "sashes": []
+                    }
+                    
                     order_data["positions"].append(pos_copy)
                 
                 # РАСЧЁТ ИЗДЕЛИЙ (как в окнах)
