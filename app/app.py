@@ -1123,75 +1123,40 @@ def render_facade_page():
                             "Тип заполнения": fill_name
                         })
                 
-                # УПРОЩЕННЫЙ РАСЧЕТ (т.к. нет справочника Ruit 50F)
-                # На основе реального проекта из PDF:
-                # 45.3 м² = 2,076,961 ₸ материалов (только профили + фурнитура)
-                # Это ~46,000 ₸/м²
+                # ===== РАСЧЁТ МАТЕРИАЛОВ ФАСАДА =====
+                # ИСПРАВЛЕНО: Используем calculate_facade_materials из справочников
                 
-                # Определяем тип системы
-                # Базовая стоимость профилей и материалов
-                if "ALG" in facade_type_value or facade_type_value == "Оконный тамбур (ALG)":
-                    # ОКОННАЯ СИСТЕМА (ALG 2030-45C и т.д.)
-                    # ИСПРАВЛЕНО: Используем точный расчёт из engine_facade
+                # Собираем данные о вставках (окна/двери)
+                facade_inserts = []
+                facade_calc_saved = None  # ИСПРАВЛЕНО: Инициализируем заранее
+                for pos in st.session_state.facade_positions:
+                    filling_type = pos.get("filling_type", "blind")
                     
-                    first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
-                    W = first_pos.get("width", 6.0)
-                    H = first_pos.get("height", 3.5)
-                    cols = first_pos.get("columns", 3)
-                    rows = first_pos.get("rows", 2)
-                    count = len(st.session_state.facade_positions)
-                    
-                    print(f"\n🏗️ Вызов calculate_tambour_materials:")
-                    print(f"   W={W}, H={H}, cols={cols}, rows={rows}, count={count}")
-                    
-                    tambour_calc = calculate_tambour_materials(
-                        W=W,
-                        H=H,
-                        cols=cols,
-                        rows=rows,
-                        count=count,
-                        ref1=ref1,
-                        ref2=ref2,
-                        ref3=ref3
-                    )
-                    
-                    materials_cost = tambour_calc.get("total_cost", 0)
-                    print(f"   ✅ Материалы рассчитаны: {materials_cost:,.0f}₸")
-                else:
-                    # ФАСАДНАЯ СИСТЕМА (Ruit 50F)
-                    # ИСПРАВЛЕНО: Используем точный расчёт из engine_facade
-                    
-                    # Собираем данные о вставках (окна/двери)
-                    facade_inserts = []
-                    facade_calc_saved = None  # ИСПРАВЛЕНО: Инициализируем заранее
-                    for pos in st.session_state.facade_positions:
-                        filling_type = pos.get("filling_type", "blind")
+                    # Если это окно или дверь
+                    if filling_type in ["window", "door"]:
+                        insert_data = pos.get("insert_data", {})
                         
-                        # Если это окно или дверь
-                        if filling_type in ["window", "door"]:
-                            insert_data = pos.get("insert_data", {})
-                            
-                            # ИСПРАВЛЕНО: Создаём ОДНУ вставку в указанной ячейке (не цикл!)
-                            facade_inserts.append({
-                                "type": filling_type,
-                                "cell_col": pos.get("insert_col", 1),
-                                "cell_row": pos.get("insert_row", 1),
-                                "width": insert_data.get("width", 1800) / 1000,  # в метры
-                                "height": insert_data.get("height", 2200) / 1000,
-                                "system": insert_data.get("system", "ALG 2030-63C"),
-                                "product_type": insert_data.get("product_type", "Дверь 2-х створч."),
-                                "data": {
-                                    "glass_type": insert_data.get("glass_type", "двойной"),
-                                    "fill_category": insert_data.get("fill_category", "Стеклопакет"),
-                                    "lambri_type": insert_data.get("lambri_type", "Ламбри без термо"),
-                                    "toning": "Нет",
-                                    "assembly": "Нет",
-                                    "installation": "Нет",
-                                    "sash_count": insert_data.get("sash_count", 2)
-                                }
-                            })
-                            
-                            print(f"📍 Вставка создана: тип={filling_type}, ячейка=({pos.get('insert_col', 1)}, {pos.get('insert_row', 1)})")
+                        # ИСПРАВЛЕНО: Создаём ОДНУ вставку в указанной ячейке (не цикл!)
+                        facade_inserts.append({
+                            "type": filling_type,
+                            "cell_col": pos.get("insert_col", 1),
+                            "cell_row": pos.get("insert_row", 1),
+                            "width": insert_data.get("width", 1800) / 1000,  # в метры
+                            "height": insert_data.get("height", 2200) / 1000,
+                            "system": insert_data.get("system", "ALG 2030-63C"),
+                            "product_type": insert_data.get("product_type", "Дверь 2-х створч."),
+                            "data": {
+                                "glass_type": insert_data.get("glass_type", "двойной"),
+                                "fill_category": insert_data.get("fill_category", "Стеклопакет"),
+                                "lambri_type": insert_data.get("lambri_type", "Ламбри без термо"),
+                                "toning": "Нет",
+                                "assembly": "Нет",
+                                "installation": "Нет",
+                                "sash_count": insert_data.get("sash_count", 2)
+                            }
+                        })
+                        
+                        print(f"📍 Вставка создана: тип={filling_type}, ячейка=({pos.get('insert_col', 1)}, {pos.get('insert_row', 1)})")
                     
                     # Для первой позиции берём габариты
                     first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
