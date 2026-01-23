@@ -187,6 +187,41 @@ def calculate_window_smeta_unified(
         installation_price = ref2.get("монтаж", 15000)
         result["part3_final"]["Монтаж"] = result["metrics"]["total_area"] * installation_price
     
+    # ✅ ФОРМИРОВАНИЕ ИТОГОВЫХ ПОЛЕЙ (для совместимости с UI)
+    # Подсчёт общей стоимости материалов
+    materials_total = sum(
+        mat.get("Стоимость", 0) 
+        for mat in result["part2_materials"]
+    )
+    
+    # Подсчёт услуг
+    services_total = sum(result["part3_final"].values())
+    
+    # Общая стоимость без наценки
+    total_without_margin = materials_total + services_total
+    
+    # Наценка (берём из common или 25% по умолчанию)
+    margin_percent = common.get("margin", 25)
+    margin_amount = total_without_margin * margin_percent / 100
+    
+    # Итого к оплате
+    total_with_margin = total_without_margin + margin_amount
+    
+    # Добавляем итоговые поля в результат
+    result["materials_total"] = materials_total
+    result["services_total"] = services_total
+    result["total_without_margin"] = total_without_margin
+    result["margin_percent"] = margin_percent
+    result["margin_amount"] = margin_amount
+    result["total_with_margin"] = total_with_margin
+    
+    # Диагностика
+    print(f"\n💰 ИТОГО:")
+    print(f"   Материалы: {materials_total:,.0f}₸")
+    print(f"   Услуги: {services_total:,.0f}₸")
+    print(f"   Наценка ({margin_percent}%): {margin_amount:,.0f}₸")
+    print(f"   К ОПЛАТЕ: {total_with_margin:,.0f}₸")
+    
     return result
 
 
