@@ -1143,7 +1143,7 @@ def render_facade_page():
                             "cell_row": pos.get("insert_row", 1),
                             "width": insert_data.get("width", 1800) / 1000,  # в метры
                             "height": insert_data.get("height", 2200) / 1000,
-                            "system": insert_data.get("system", "ALG 2030-63C"),
+                            "system": pos.get("insert_system", "ALG 2030-63C"),  # ✅ ИСПРАВЛЕНО: берём из pos
                             "product_type": insert_data.get("product_type", "Дверь 2-х створч."),
                             "data": {
                                 "glass_type": insert_data.get("glass_type", "двойной"),
