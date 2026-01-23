@@ -419,6 +419,17 @@ def calculate_facade_materials(
             try:
                 insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
                 
+                # 🔧 DEBUG: Выводим ВСЕ материалы вставки
+                print(f"\n🔧 DEBUG МАТЕРИАЛЫ ВСТАВКИ:")
+                print(f"   part2_materials count: {len(insert_result.get('part2_materials', []))}")
+                
+                for mat in insert_result.get('part2_materials', []):
+                    print(f"   - {mat.get('Товар', 'N/A')}: {mat.get('К отгрузке', 0)} {mat.get('Ед.', 'шт')} × {mat.get('Цена', 0)}₸ = {mat.get('Сумма', 0)}₸")
+                
+                print(f"\n   part3_final:")
+                for key, value in insert_result.get('part3_final', {}).items():
+                    print(f"   - {key}: {value:,.0f}₸")
+                
                 # ИСПРАВЛЕНО: Берём ТОЛЬКО материалы (профили + фурнитура), БЕЗ стекла
                 insert_materials = insert_result.get("part3_final", {}).get("Материалы", 0)
                 inserts_cost += insert_materials
