@@ -122,8 +122,14 @@ class MaterialCalculator:
             error_msg += f"Available systems in reference: {sorted(available_systems)}"
             raise ValueError(error_msg)
         
-        frame_price = self._parse_price(frame_profile.get("Цена за единицу", 3000))
-        frame_name = frame_profile.get("Элемент", "Рама")
+        # Поддержка разных названий колонок
+        frame_price = self._parse_price(
+            frame_profile.get("Цена за единицу", 
+            frame_profile.get("цена за ед.", 
+            frame_profile.get("Цена", 3000)))
+        )
+        frame_name = frame_profile.get("Элемент", 
+                     frame_profile.get("Тип элемента", "Рама"))
         frame_article = frame_profile.get("Артикул", "")
         
         # Поиск профиля порога для дверей
@@ -140,8 +146,9 @@ class MaterialCalculator:
             )
             
             if threshold_profile:
-                threshold_price = self._parse_price(threshold_profile.get("Цена за единицу", frame_price))
-                threshold_name = threshold_profile.get("Элемент", "Порог")
+                threshold_price = self._get_price(threshold_profile, frame_price)
+                threshold_name = threshold_profile.get("Элемент",
+                                threshold_profile.get("Тип элемента", "Порог"))
                 threshold_article = threshold_profile.get("Артикул", "")
         
         # КРИТИЧЕСКИ ВАЖНО: Создаём ВСЕ 4 стороны
@@ -196,7 +203,7 @@ class MaterialCalculator:
         if seal_profiles:
             # Используем первый найденный для рамы
             main_seal = seal_profiles[0]
-            seal_price = self._parse_price(main_seal.get("Цена за единицу", 184))
+            seal_price = self._get_price(main_seal, 184)
             seal_name = main_seal.get("Элемент", "Уплотнитель")
             
             # 1. Уплотнитель рамы (ОБЯЗАТЕЛЬНО)
@@ -273,7 +280,7 @@ class MaterialCalculator:
                         name=elem,
                         quantity=qty,
                         unit="шт",
-                        price=self._parse_price(item.get("Цена за единицу", 0)),
+                        price=self._get_price(item, 0),
                         article=item.get("Артикул", "")
                     ))
             
@@ -285,7 +292,7 @@ class MaterialCalculator:
                         name=elem,
                         quantity=qty,
                         unit="комплект" if "комплек" in elem_lower else "шт",
-                        price=self._parse_price(item.get("Цена за единицу", 0)),
+                        price=self._get_price(item, 0),
                         article=item.get("Артикул", "")
                     ))
             
@@ -295,7 +302,7 @@ class MaterialCalculator:
                     name=elem,
                     quantity=1,
                     unit="шт",
-                    price=self._parse_price(item.get("Цена за единицу", 0)),
+                    price=self._get_price(item, 0),
                     article=item.get("Артикул", "")
                 ))
             
@@ -306,7 +313,7 @@ class MaterialCalculator:
                         name=elem,
                         quantity=1,
                         unit="шт",
-                        price=self._parse_price(item.get("Цена за единицу", 0)),
+                        price=self._get_price(item, 0),
                         article=item.get("Артикул", "")
                     ))
         
@@ -359,6 +366,10 @@ class MaterialCalculator:
         
         Универсальный поиск без хардкодов
         Использует гибкий поиск по частичному совпадению
+        
+        Поддерживаемые названия колонок:
+        - "Элемент" или "Тип элемента"
+        - "Система" или "Система профиля"
         """
         element_type_lower = element_type.lower()
         system_normalized = system.strip().upper()
@@ -375,8 +386,9 @@ class MaterialCalculator:
             element_variants.extend(["impost", "перемычка"])
         
         for item in self.ref1:
-            elem = item.get("Элемент", "")
-            sys = item.get("Система", "")
+            # Поддержка разных названий колонок
+            elem = item.get("Элемент", item.get("Тип элемента", ""))
+            sys = item.get("Система", item.get("Система профиля", ""))
             
             # Нормализуем систему из справочника
             sys_normalized = sys.strip().upper()
@@ -431,6 +443,21 @@ class MaterialCalculator:
             return float(value)
         except:
             return 0.0
+    
+    @staticmethod
+    def _get_price(item: Dict, default: float = 0.0) -> float:
+        """
+        Получение цены из элемента с поддержкой разных названий колонок
+        
+        Поддерживаемые колонки:
+        - "Цена за единицу"
+        - "цена за ед."
+        - "Цена"
+        """
+        price = item.get("Цена за единицу",
+                item.get("цена за ед.",
+                item.get("Цена", default)))
+        return MaterialCalculator._parse_price(price)
 
 
 def calculate_product_materials(
