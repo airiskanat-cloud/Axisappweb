@@ -2,6 +2,9 @@ import math
 import logging
 from typing import Dict, List
 
+# ✅ УНИФИКАЦИЯ V8: Импорт нового расчётного модуля
+from calculations.adapter import calculate_window_smeta_unified
+
 logger = logging.getLogger(__name__)
 
 # === МАППИНГ СИСТЕМ ПРОФИЛЯ ===
@@ -190,6 +193,24 @@ def calculate_window_geometry(position_data: Dict, system: str = "ALG 2030-73C")
     }
 
 def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List) -> Dict:
+    """
+    Унифицированный расчёт через новую модель
+    Обеспечивает обратную совместимость
+    
+    ИСПРАВЛЕНИЯ V8 (Унификация):
+    - Использует новую архитектуру без хардкодов
+    - Геометрия изделия не зависит от контекста
+    - Рама всегда имеет 4 стороны
+    - Уплотнители по полному периметру
+    - Standalone = Embedded (идентичный расчёт)
+    
+    Для fallback на старую логику (если новая не работает):
+    используйте calculate_window_smeta_legacy() ниже
+    """
+    return calculate_window_smeta_unified(order_data, ref1, ref2, ref3)
+
+
+def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3: List) -> Dict:
     """
     Полный расчет сметы для окон и дверей
     

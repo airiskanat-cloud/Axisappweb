@@ -396,6 +396,9 @@ def calculate_facade_materials(
                         "height": insert_h * 1000,  # в мм
                         "count": 1,
                         
+                        # ✅ УНИФИКАЦИЯ V8: Флаг для embedded режима
+                        "embedded": True,  # Вставка в фасад (унифицированный расчёт)
+                        
                         # Заполнение
                         "fill_category": insert.get('data', {}).get('fill_category', 'Стеклопакет'),
                         "glass_type": insert.get('data', {}).get('glass_type', 'двойной'),
