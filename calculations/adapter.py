@@ -190,7 +190,7 @@ def calculate_window_smeta_unified(
     # ✅ ФОРМИРОВАНИЕ ИТОГОВЫХ ПОЛЕЙ (для совместимости с UI)
     # Подсчёт общей стоимости материалов
     materials_total = sum(
-        mat.get("Стоимость", 0) 
+        mat.get("Стоимость", mat.get("Сумма", 0))  # ✅ Поддержка обоих форматов
         for mat in result["part2_materials"]
     )
     

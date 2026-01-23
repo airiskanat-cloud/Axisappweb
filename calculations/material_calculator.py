@@ -98,13 +98,16 @@ class MaterialCalculator:
                         break
         
         if not frame_profile:
-            # Fallback 2: ищем ЛЮБОЙ профиль для данной системы
+            # Fallback 2: ищем ЛЮБОЙ профиль для данной системы (с непустым названием)
             system_upper = product.system.strip().upper()
             for item in self.ref1:
                 sys = item.get("Система", "").strip().upper()
-                if system_upper in sys or sys in system_upper:
+                elem = item.get("Элемент", "").strip()
+                
+                # Проверяем систему И что элемент не пустой
+                if (system_upper in sys or sys in system_upper) and elem:
                     frame_profile = item
-                    print(f"⚠️ Frame profile found (fallback 2): Using {item.get('Элемент', '')} for {product.system}")
+                    print(f"⚠️ Frame profile found (fallback 2): Using {elem} for {product.system}")
                     break
         
         if not frame_profile:
