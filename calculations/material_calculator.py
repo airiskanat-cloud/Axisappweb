@@ -86,8 +86,9 @@ class MaterialCalculator:
             # Fallback 1: ищем любой профиль для данной системы с "рама" или "коробка"
             system_upper = product.system.strip().upper()
             for item in self.ref1:
-                sys = item.get("Система", "").strip().upper()
-                elem = item.get("Элемент", "").lower()
+                # Поддержка разных названий колонок
+                sys = item.get("Система", item.get("Система профиля", "")).strip().upper()
+                elem = item.get("Элемент", item.get("Тип элемента", "")).lower()
                 
                 # Проверяем систему
                 if system_upper in sys or sys in system_upper:
@@ -101,8 +102,8 @@ class MaterialCalculator:
             # Fallback 2: ищем ЛЮБОЙ профиль для данной системы (с непустым названием)
             system_upper = product.system.strip().upper()
             for item in self.ref1:
-                sys = item.get("Система", "").strip().upper()
-                elem = item.get("Элемент", "").strip()
+                sys = item.get("Система", item.get("Система профиля", "")).strip().upper()
+                elem = item.get("Элемент", item.get("Тип элемента", "")).strip()
                 
                 # Проверяем систему И что элемент не пустой
                 if (system_upper in sys or sys in system_upper) and elem:
@@ -114,7 +115,7 @@ class MaterialCalculator:
             # Последний fallback: выводим список доступных систем
             available_systems = set()
             for item in self.ref1:
-                sys = item.get("Система", "")
+                sys = item.get("Система", item.get("Система профиля", ""))
                 if sys:
                     available_systems.add(sys)
             
@@ -189,8 +190,8 @@ class MaterialCalculator:
         # Поиск ВСЕХ уплотнителей для данной системы
         seal_profiles = []
         for item in self.ref1:
-            elem = item.get("Элемент", "")
-            sys = item.get("Система", "")
+            elem = item.get("Элемент", item.get("Тип элемента", ""))
+            sys = item.get("Система", item.get("Система профиля", ""))
             
             if product.system in sys and "уплотн" in elem.lower():
                 seal_profiles.append(item)
@@ -258,8 +259,8 @@ class MaterialCalculator:
         
         # Поиск всех элементов фурнитуры для данной системы и типа
         for item in self.ref1:
-            elem = item.get("Элемент", "")
-            system = item.get("Система", "")
+            elem = item.get("Элемент", item.get("Тип элемента", ""))
+            system = item.get("Система", item.get("Система профиля", ""))
             
             # Проверяем, что это фурнитура для нашей системы
             if product.system not in system:
