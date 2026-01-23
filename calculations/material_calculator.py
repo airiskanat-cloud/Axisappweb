@@ -123,11 +123,7 @@ class MaterialCalculator:
             raise ValueError(error_msg)
         
         # Поддержка разных названий колонок
-        frame_price = self._parse_price(
-            frame_profile.get("Цена за единицу", 
-            frame_profile.get("цена за ед.", 
-            frame_profile.get("Цена", 3000)))
-        )
+        frame_price = self._get_price(frame_profile, 3000)
         frame_name = frame_profile.get("Элемент", 
                      frame_profile.get("Тип элемента", "Рама"))
         frame_article = frame_profile.get("Артикул", "")
@@ -451,12 +447,14 @@ class MaterialCalculator:
         
         Поддерживаемые колонки:
         - "Цена за единицу"
-        - "цена за ед."
+        - "цена за ед." 
+        - "цена за ед " (с пробелом!)
         - "Цена"
         """
         price = item.get("Цена за единицу",
                 item.get("цена за ед.",
-                item.get("Цена", default)))
+                item.get("цена за ед ",  # С ПРОБЕЛОМ!
+                item.get("Цена", default))))
         return MaterialCalculator._parse_price(price)
 
 

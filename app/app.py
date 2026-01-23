@@ -102,68 +102,6 @@ def get_data():
 
 ref1, ref2, ref3, ref_facade = get_data()  # ДОБАВЛЕН ref_facade
 
-# === 🔍 ДИАГНОСТИКА СПРАВОЧНИКОВ (НАЧАЛО) ===
-print(f"\n{'='*70}")
-print(f"🔍 ДИАГНОСТИКА СПРАВОЧНИКОВ")
-print(f"{'='*70}")
-
-# Проверка ref1
-print(f"\n📋 СПРАВОЧНИК-1 (Профили):")
-print(f"   Тип: {type(ref1)}")
-print(f"   Длина: {len(ref1) if ref1 else 0} строк")
-
-if ref1 and len(ref1) > 0:
-    print(f"   ✅ ref1 ЗАГРУЖЕН!")
-    print(f"   Колонки: {list(ref1[0].keys())}")
-    
-    # Ищем ALG 2030-45C
-    alg_rows = []
-    for r in ref1:
-        sistema = r.get('Система профиля', r.get('Система', ''))
-        if 'ALG 2030-45C' in str(sistema):
-            alg_rows.append(r)
-    
-    print(f"   Строк с 'ALG 2030-45C': {len(alg_rows)}")
-    
-    if alg_rows:
-        print(f"   Первая строка с ALG 2030-45C:")
-        first_alg = alg_rows[0]
-        print(f"      Тип изделия: {first_alg.get('Тип изделия', 'N/A')}")
-        print(f"      Система профиля: {first_alg.get('Система профиля', 'N/A')}")
-        print(f"      Тип элемента: {first_alg.get('Тип элемента', 'N/A')}")
-        print(f"      цена за ед.: {first_alg.get('цена за ед.', 'N/A')}")
-    else:
-        print(f"   ⚠️ НЕ НАЙДЕНО строк с 'ALG 2030-45C'!")
-        # Показываем какие системы есть
-        systems = set()
-        for r in ref1[:10]:  # Первые 10 строк
-            sistema = r.get('Система профиля', r.get('Система', ''))
-            if sistema:
-                systems.add(sistema)
-        print(f"   Примеры систем в справочнике: {list(systems)[:5]}")
-else:
-    print(f"   ❌ ref1 ПУСТОЙ ИЛИ None!")
-
-# Проверка ref2
-print(f"\n📋 СПРАВОЧНИК-2 (Стеклопакеты):")
-print(f"   Тип: {type(ref2)}")
-print(f"   Ключей: {len(ref2) if ref2 else 0}")
-if ref2:
-    print(f"   Примеры: {list(ref2.keys())[:5]}")
-
-# Проверка ref3
-print(f"\n📋 СПРАВОЧНИК-3 (Фурнитура):")
-print(f"   Тип: {type(ref3)}")
-print(f"   Длина: {len(ref3) if ref3 else 0} строк")
-
-# Проверка ref_facade
-print(f"\n📋 СПРАВОЧНИК ФАСАДОВ:")
-print(f"   Тип: {type(ref_facade)}")
-print(f"   Длина: {len(ref_facade) if ref_facade else 0} строк")
-
-print(f"{'='*70}\n")
-# === 🔍 ДИАГНОСТИКА СПРАВОЧНИКОВ (КОНЕЦ) ===
-
 # ДИНАМИЧЕСКАЯ загрузка типов стеклопакетов из ref2
 def get_glass_types():
     """Получает список типов стеклопакетов из ref2"""
