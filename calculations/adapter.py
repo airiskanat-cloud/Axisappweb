@@ -104,6 +104,7 @@ def calculate_window_smeta_unified(
         Dict в legacy формате для совместимости
     """
     result = {
+        "part1_summary": {},  # ✅ Для совместимости с UI
         "part2_materials": [],
         "part3_final": {},
         "metrics": {
