@@ -343,6 +343,7 @@ class MaterialCalculator:
                 product.materials.hardware.append(HardwareItem(
                     name=mat["Товар"],
                     quantity=mat["К отгрузке"],
+                    unit=mat["Ед."],  # ✅ ДОБАВЛЕН unit!
                     price=mat["Цена"] * mat["Норма"],  # Цена за упаковку
                     article=mat["Артикул"]
                 ))
