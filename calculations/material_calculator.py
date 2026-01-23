@@ -83,14 +83,41 @@ class MaterialCalculator:
         )
         
         if not frame_profile:
-            # Fallback: ищем любой профиль для данной системы
+            # Fallback 1: ищем любой профиль для данной системы с "рама" или "коробка"
+            system_upper = product.system.strip().upper()
             for item in self.ref1:
-                if product.system in item.get("Система", ""):
+                sys = item.get("Система", "").strip().upper()
+                elem = item.get("Элемент", "").lower()
+                
+                # Проверяем систему
+                if system_upper in sys or sys in system_upper:
+                    # Проверяем что это рама
+                    if "рам" in elem or "короб" in elem or "frame" in elem:
+                        frame_profile = item
+                        print(f"✅ Frame profile found (fallback 1): {item.get('Элемент', '')} for {product.system}")
+                        break
+        
+        if not frame_profile:
+            # Fallback 2: ищем ЛЮБОЙ профиль для данной системы
+            system_upper = product.system.strip().upper()
+            for item in self.ref1:
+                sys = item.get("Система", "").strip().upper()
+                if system_upper in sys or sys in system_upper:
                     frame_profile = item
+                    print(f"⚠️ Frame profile found (fallback 2): Using {item.get('Элемент', '')} for {product.system}")
                     break
         
         if not frame_profile:
-            raise ValueError(f"Frame profile not found for system {product.system}")
+            # Последний fallback: выводим список доступных систем
+            available_systems = set()
+            for item in self.ref1:
+                sys = item.get("Система", "")
+                if sys:
+                    available_systems.add(sys)
+            
+            error_msg = f"Frame profile not found for system '{product.system}'.\n"
+            error_msg += f"Available systems in reference: {sorted(available_systems)}"
+            raise ValueError(error_msg)
         
         frame_price = self._parse_price(frame_profile.get("Цена за единицу", 3000))
         frame_name = frame_profile.get("Элемент", "Рама")
@@ -328,20 +355,44 @@ class MaterialCalculator:
         Поиск профиля в справочнике
         
         Универсальный поиск без хардкодов
+        Использует гибкий поиск по частичному совпадению
         """
         element_type_lower = element_type.lower()
+        system_normalized = system.strip().upper()
+        
+        # Список возможных вариантов поиска элемента
+        element_variants = [element_type_lower]
+        if element_type_lower == "рама":
+            element_variants.extend(["frame", "коробка"])
+        elif element_type_lower == "порог":
+            element_variants.extend(["threshold", "низ"])
+        elif element_type_lower == "створка":
+            element_variants.extend(["sash", "створ"])
+        elif element_type_lower == "импост":
+            element_variants.extend(["impost", "перемычка"])
         
         for item in self.ref1:
             elem = item.get("Элемент", "")
             sys = item.get("Система", "")
             
-            # Проверка системы
-            if system not in sys:
+            # Нормализуем систему из справочника
+            sys_normalized = sys.strip().upper()
+            
+            # Проверка системы (гибкий поиск)
+            # Проверяем как прямое вхождение, так и обратное
+            system_match = (
+                system_normalized in sys_normalized or 
+                sys_normalized in system_normalized or
+                system.strip() in sys or
+                sys.strip() in system
+            )
+            
+            if not system_match:
                 continue
             
-            # Проверка типа элемента
+            # Проверка типа элемента (любой из вариантов)
             elem_lower = elem.lower()
-            if element_type_lower in elem_lower:
+            if any(variant in elem_lower for variant in element_variants):
                 return item
         
         return {}
