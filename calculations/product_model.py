@@ -204,6 +204,9 @@ class Product:
     geometry: ProductGeometry
     materials: ProductMaterials
     
+    # CODE для поиска в справочнике (из mapping.py)
+    code: str = ""
+    
     # Контекст использования (НЕ влияет на расчёт)
     usage_mode: UsageMode = UsageMode.STANDALONE
     
@@ -267,7 +270,8 @@ def create_product_from_form_data(
     product_type: str,
     system: str,
     data: Dict,
-    usage_mode: UsageMode = UsageMode.STANDALONE
+    usage_mode: UsageMode = UsageMode.STANDALONE,
+    code: str = ""  # ✅ ДОБАВЛЕН CODE!
 ) -> Product:
     """
     Создание модели изделия из данных формы
@@ -277,6 +281,7 @@ def create_product_from_form_data(
         system: "ALG 2030-45C", etc.
         data: Данные из формы (width, height, sashes, etc.)
         usage_mode: Контекст использования
+        code: CODE из mapping.py (DOOR_DOUBLE_2030_45C)
     """
     # Маппинг типов
     type_mapping = {
@@ -310,6 +315,7 @@ def create_product_from_form_data(
     product = Product(
         product_type=type_mapping.get(product_type, ProductType.WINDOW),
         system=system,
+        code=code,  # ✅ ДОБАВЛЕН CODE!
         geometry=geometry,
         materials=ProductMaterials(),
         usage_mode=usage_mode,

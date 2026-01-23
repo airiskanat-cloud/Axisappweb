@@ -125,6 +125,7 @@ def calculate_window_smeta_unified(
             product_data={
                 "product_type": position.get("product_type", "Окно"),
                 "system": position.get("system", "ALG 2030-45C"),
+                "code": position.get("code", ""),  # ✅ ДОБАВЛЕН CODE!
                 "data": data
             },
             ref1=ref1,

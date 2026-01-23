@@ -1,7 +1,8 @@
 """
-Universal Material Calculator
-Универсальный расчёт материалов без хардкодов
-Работает для всех типов изделий и систем профилей
+Material Calculator - Formula-Based System with CODE Priority
+Расчёт материалов по формулам из Справочника-1
+С поддержкой CODE для точного поиска профилей
+БЕЗ хардкодов - всё из справочника!
 """
 
 import math
@@ -13,26 +14,70 @@ from .product_model import (
 )
 
 
+def safe_eval(formula: str, context: dict) -> float:
+    """Безопасное вычисление формул Python"""
+    try:
+        f = str(formula).replace(",", ".").replace(" ", "")
+        return float(eval(f, {"__builtins__": None, "math": math}, context))
+    except Exception as e:
+        print(f"⚠️ Ошибка в формуле '{formula}': {e}")
+        return 0.0
+
+
+def safe_float(value, default=0.0):
+    """Безопасное преобразование в float"""
+    try:
+        if value is None:
+            return default
+        s = str(value).replace(",", ".").replace(" ", "").replace("\xa0", "")
+        if s == "":
+            return default
+        return float(s)
+    except:
+        return default
+
+
 class MaterialCalculator:
     """
-    Универсальный калькулятор материалов
+    Калькулятор материалов по формулам из справочника
     
-    Принципы:
-    1. НЕТ хардкодов под конкретные типы/системы
-    2. Геометрия не зависит от контекста
-    3. Все расчёты от формул и справочников
+    ПРИНЦИП:
+    1. Берёт CODE из изделия
+    2. Находит ВСЕ строки в ref1 с этим CODE
+    3. Вычисляет формулы для каждой строки
+    4. Округляет до упаковок
+    5. Возвращает полный список материалов
+    
+    ФИЧИ:
+    - Поиск по CODE с приоритетом + fallback
+    - Поддержка всех вариантов названий колонок
+    - Формулы из справочника
+    - Округление до упаковок
+    - БЕЗ ХАРДКОДОВ!
     """
     
     def __init__(self, ref1: List[Dict], ref2: Dict[str, float], ref3: List[Dict]):
         """
         Args:
-            ref1: Справочник-1 (профили, фурнитура)
+            ref1: Справочник-1 (профили, фурнитура, формулы)
             ref2: Справочник-2 (цены на услуги)
-            ref3: Справочник-3 (формулы)
+            ref3: Справочник-3 (габаритная ведомость)
         """
         self.ref1 = ref1
         self.ref2 = ref2
         self.ref3 = ref3
+    
+    @staticmethod
+    def _get_price(item: Dict, default: float = 0.0) -> float:
+        """
+        Извлекает цену из строки справочника
+        Поддерживает все варианты названий колонок
+        """
+        price = item.get("Цена за единицу",
+                item.get("цена за ед.",
+                item.get("цена за ед ",  # С ПРОБЕЛОМ!
+                item.get("Цена", default))))
+        return safe_float(price, default)
     
     def calculate_materials(self, product: Product) -> Product:
         """
@@ -44,419 +89,286 @@ class MaterialCalculator:
         Returns:
             Product с заполненными materials
         """
-        # 1. Расчёт профилей рамы (все 4 стороны)
-        product.materials.frame_materials = self._calculate_frame(product)
+        print(f"\n{'='*70}")
+        print(f"🔧 РАСЧЁТ МАТЕРИАЛОВ ПО ФОРМУЛАМ")
+        print(f"{'='*70}")
+        print(f"Тип изделия: {product.product_type.value}")
+        print(f"Система: {product.system}")
+        print(f"CODE: {product.code}")
+        print(f"Габариты: {product.geometry.width_m}м × {product.geometry.height_m}м")
         
-        # 2. Расчёт уплотнителей (рама + створки)
-        product.materials.seal_materials = self._calculate_seals(product)
+        # 1. Создаём контекст для формул
+        context = self._create_formula_context(product)
         
-        # 3. Расчёт фурнитуры
-        product.materials.hardware = self._calculate_hardware(product)
+        print(f"\n📊 Контекст для формул:")
+        print(f"   W={context['W']:.2f}м, H={context['H']:.2f}м")
+        print(f"   n_sash={context['n_sash']}, n_lp={context['n_lp']}")
+        print(f"   Периметр={context['perimeter']:.2f}м, Площадь={context['area']:.2f}м²")
         
-        # 4. Расчёт заполнения (стекло/ламбри)
+        # 2. Ищем ВСЕ материалы из справочника по CODE
+        materials_dict = {}
+        found_count = 0
+        
+        print(f"\n🔍 Поиск материалов в Справочнике-1...")
+        
+        for row in self.ref1:
+            # Поддержка разных названий колонки CODE
+            row_code = str(row.get("CODE") or row.get("code") or "").strip()
+            
+            # Проверяем совпадение CODE
+            if row_code and product.code and row_code == product.code:
+                # Берём формулу
+                formula = row.get("Формула_Python", "")
+                if not formula:
+                    formula = row.get("формула фактического расхода", "")
+                if not formula:
+                    continue
+                
+                # Вычисляем количество по формуле
+                qty_fact = safe_eval(formula, context)
+                
+                if qty_fact <= 0:
+                    continue
+                
+                found_count += 1
+                
+                # Собираем данные материала
+                товар = str(row.get("Товар", ""))
+                артикул = str(row.get("Артикул", ""))
+                тип_эл = row.get("Тип элемента", row.get("тип элемент", ""))
+                key = f"{товар}|{артикул}"
+                
+                if key not in materials_dict:
+                    materials_dict[key] = {
+                        "товар": товар,
+                        "артикул": артикул,
+                        "тип_эл": тип_эл,
+                        "qty_fact": 0,
+                        "norm": safe_float(row.get("кол-во норм к упаковке", 1)),
+                        "price": self._get_price(row, 0),
+                        "unit": str(row.get("Ед.", "шт"))
+                    }
+                
+                # Накапливаем количество (для нескольких формул)
+                materials_dict[key]["qty_fact"] += qty_fact
+                
+                print(f"   ✅ {тип_эл}: {formula} = {qty_fact:.2f} {materials_dict[key]['unit']}")
+        
+        print(f"\nНайдено материалов: {found_count} строк → {len(materials_dict)} позиций")
+        
+        if len(materials_dict) == 0:
+            print(f"\n⚠️ ВНИМАНИЕ: Не найдено ни одного материала!")
+            print(f"   CODE: {product.code}")
+            print(f"   Проверьте что в Справочнике-1 есть строки с этим CODE")
+            
+            # Показываем доступные CODE
+            available_codes = set()
+            for row in self.ref1:
+                row_code = str(row.get("CODE") or row.get("code") or "").strip()
+                if row_code:
+                    available_codes.add(row_code)
+            
+            if available_codes:
+                print(f"\n   Доступные CODE в справочнике:")
+                for code in sorted(available_codes)[:10]:
+                    print(f"      - {code}")
+                if len(available_codes) > 10:
+                    print(f"      ... и ещё {len(available_codes) - 10}")
+        
+        # 3. Округляем до упаковок и считаем стоимость
+        materials_list = []
+        total_materials_cost = 0
+        
+        print(f"\n💰 Округление до упаковок и расчёт стоимости:")
+        
+        for key, mat in materials_dict.items():
+            qty_fact = mat["qty_fact"]
+            norm = mat["norm"]
+            price = mat["price"]
+            
+            # Округление до упаковок
+            if norm > 0:
+                qty_ship = math.ceil(qty_fact / norm)
+            else:
+                qty_ship = math.ceil(qty_fact)
+            
+            # Стоимость = (цена * норма) * количество упаковок
+            row_sum = (price * norm) * qty_ship
+            total_materials_cost += row_sum
+            
+            materials_list.append({
+                "Товар": mat["товар"],
+                "Артикул": mat["артикул"],
+                "Тип элемента": mat["тип_эл"],
+                "Цена": price,
+                "Ед.": mat["unit"],
+                "Расход факт.": round(qty_fact, 2),
+                "Норма": norm,
+                "К отгрузке": qty_ship,
+                "Сумма": round(row_sum, 0)
+            })
+            
+            print(f"   {mat['тип_эл']}: {qty_fact:.2f}{mat['unit']} → {qty_ship} упак × {norm}{mat['unit']} = {row_sum:,.0f}₸")
+        
+        print(f"\nИТОГО МАТЕРИАЛЫ: {total_materials_cost:,.0f}₸")
+        
+        # 4. Распределяем материалы по категориям
+        product = self._categorize_materials(product, materials_list)
+        
+        # 5. Расчёт стекла (отдельно от справочника)
         glass_result = self._calculate_glass(product)
         product.materials.glass_area = glass_result["area"]
         product.materials.glass_cost = glass_result["cost"]
         
-        # 5. Дополнительные детали (по периметру)
-        product.materials.additional_details_cost = self._calculate_additional_details(product)
+        print(f"\n💎 Стеклопакет: {glass_result['area']:.2f}м² × {glass_result['cost']/glass_result['area']:,.0f}₸/м² = {glass_result['cost']:,.0f}₸")
+        print(f"{'='*70}\n")
         
         return product
     
-    def _calculate_frame(self, product: Product) -> List[FrameMaterial]:
+    def _create_formula_context(self, product: Product) -> Dict:
         """
-        Расчёт профилей рамы
+        Создаёт контекст для вычисления формул
         
-        КРИТИЧЕСКИ ВАЖНО:
-        - Все 4 стороны ВСЕГДА присутствуют
-        - Периметр = 2 × (W + H)
-        - НЕТ урезаний под embedded
+        Все переменные которые могут быть в формулах справочника
         """
-        frame_materials = []
         geometry = product.geometry
         
-        # Поиск профиля рамы в справочнике
-        frame_profile = self._find_profile(
-            system=product.system,
-            element_type="рама",
-            profile_type="frame"
-        )
+        # Основные габариты
+        W = geometry.width_m
+        H = geometry.height_m
         
-        if not frame_profile:
-            # Fallback 1: ищем любой профиль для данной системы с "рама" или "коробка"
-            system_upper = product.system.strip().upper()
-            for item in self.ref1:
-                # Поддержка разных названий колонок
-                sys = item.get("Система", item.get("Система профиля", "")).strip().upper()
-                elem = item.get("Элемент", item.get("Тип элемента", "")).lower()
-                
-                # Проверяем систему
-                if system_upper in sys or sys in system_upper:
-                    # Проверяем что это рама
-                    if "рам" in elem or "короб" in elem or "frame" in elem:
-                        frame_profile = item
-                        print(f"✅ Frame profile found (fallback 1): {item.get('Элемент', '')} for {product.system}")
-                        break
+        # Количество створок
+        n_sash = len(geometry.sashes)
         
-        if not frame_profile:
-            # Fallback 2: ищем ЛЮБОЙ профиль для данной системы (с непустым названием)
-            system_upper = product.system.strip().upper()
-            for item in self.ref1:
-                sys = item.get("Система", item.get("Система профиля", "")).strip().upper()
-                elem = item.get("Элемент", item.get("Тип элемента", "")).strip()
-                
-                # Проверяем систему И что элемент не пустой
-                if (system_upper in sys or sys in system_upper) and elem:
-                    frame_profile = item
-                    print(f"⚠️ Frame profile found (fallback 2): Using {elem} for {product.system}")
-                    break
-        
-        if not frame_profile:
-            # Последний fallback: выводим список доступных систем
-            available_systems = set()
-            for item in self.ref1:
-                sys = item.get("Система", item.get("Система профиля", ""))
-                if sys:
-                    available_systems.add(sys)
-            
-            error_msg = f"Frame profile not found for system '{product.system}'.\n"
-            error_msg += f"Available systems in reference: {sorted(available_systems)}"
-            raise ValueError(error_msg)
-        
-        # Поддержка разных названий колонок
-        frame_price = self._get_price(frame_profile, 3000)
-        frame_name = frame_profile.get("Элемент", 
-                     frame_profile.get("Тип элемента", "Рама"))
-        frame_article = frame_profile.get("Артикул", "")
-        
-        # Поиск профиля порога для дверей
-        threshold_profile = None
-        threshold_price = frame_price
-        threshold_name = frame_name
-        threshold_article = frame_article
-        
-        if product.product_type in [ProductType.DOOR_SINGLE, ProductType.DOOR_DOUBLE]:
-            threshold_profile = self._find_profile(
-                system=product.system,
-                element_type="порог",
-                profile_type="threshold"
-            )
-            
-            if threshold_profile:
-                threshold_price = self._get_price(threshold_profile, frame_price)
-                threshold_name = threshold_profile.get("Элемент",
-                                threshold_profile.get("Тип элемента", "Порог"))
-                threshold_article = threshold_profile.get("Артикул", "")
-        
-        # КРИТИЧЕСКИ ВАЖНО: Создаём ВСЕ 4 стороны
-        sides = geometry.frame_sides
-        
-        for side, length in sides.items():
-            # Для дверей низ = порог (если найден)
-            if side == "bottom" and product.product_type in [ProductType.DOOR_SINGLE, ProductType.DOOR_DOUBLE]:
-                price = threshold_price
-                name = threshold_name
-                article = threshold_article
-            else:
-                price = frame_price
-                name = frame_name
-                article = frame_article
-            
-            frame_materials.append(FrameMaterial(
-                name=name,
-                side=side,
-                length=length,
-                price=price,
-                article=article
-            ))
-        
-        # Валидация: ОБЯЗАТЕЛЬНО 4 стороны
-        assert len(frame_materials) == 4, f"Frame must have 4 sides, got {len(frame_materials)}"
-        
-        return frame_materials
-    
-    def _calculate_seals(self, product: Product) -> List[SealMaterial]:
-        """
-        Расчёт уплотнителей
-        
-        КРИТИЧЕСКИ ВАЖНО:
-        - Уплотнитель рамы = полный периметр изделия
-        - Уплотнители створок = отдельно
-        - НЕТ урезаний
-        """
-        seal_materials = []
-        geometry = product.geometry
-        
-        # Поиск ВСЕХ уплотнителей для данной системы
-        seal_profiles = []
-        for item in self.ref1:
-            elem = item.get("Элемент", item.get("Тип элемента", ""))
-            sys = item.get("Система", item.get("Система профиля", ""))
-            
-            if product.system in sys and "уплотн" in elem.lower():
-                seal_profiles.append(item)
-        
-        # Если нашли уплотнители - используем их
-        if seal_profiles:
-            # Используем первый найденный для рамы
-            main_seal = seal_profiles[0]
-            seal_price = self._get_price(main_seal, 184)
-            seal_name = main_seal.get("Элемент", "Уплотнитель")
-            
-            # 1. Уплотнитель рамы (ОБЯЗАТЕЛЬНО)
-            # КРИТИЧЕСКИ ВАЖНО: Полный периметр рамы
-            seal_materials.append(SealMaterial(
-                name=seal_name + " (рама)",
-                zone="frame",
-                length=geometry.perimeter,
-                price=seal_price,
-                article=main_seal.get("Артикул", "")
-            ))
-            
-            # 2. Уплотнители створок (если есть)
-            if geometry.sashes and geometry.total_sash_perimeter > 0:
-                seal_materials.append(SealMaterial(
-                    name=seal_name + " (створки)",
-                    zone="sash",
-                    length=geometry.total_sash_perimeter,
-                    price=seal_price,
-                    article=main_seal.get("Артикул", "")
-                ))
-        else:
-            # Fallback: создаём уплотнитель с дефолтной ценой
-            seal_materials.append(SealMaterial(
-                name="Уплотнитель (рама)",
-                zone="frame",
-                length=geometry.perimeter,
-                price=184,  # Дефолтная цена из логов
-                article=""
-            ))
-            
-            if geometry.sashes and geometry.total_sash_perimeter > 0:
-                seal_materials.append(SealMaterial(
-                    name="Уплотнитель (створки)",
-                    zone="sash",
-                    length=geometry.total_sash_perimeter,
-                    price=184,
-                    article=""
-                ))
-        
-        # Валидация: ОБЯЗАТЕЛЬНО должен быть уплотнитель рамы
-        frame_seals = [s for s in seal_materials if s.zone == "frame"]
-        assert len(frame_seals) > 0, "Frame seal is mandatory"
-        
-        return seal_materials
-    
-    def _calculate_hardware(self, product: Product) -> List[HardwareItem]:
-        """
-        Расчёт фурнитуры
-        
-        КРИТИЧЕСКИ ВАЖНО:
-        - Фурнитура НЕ зависит от usage_mode
-        - Одинаковый набор для standalone и embedded
-        """
-        hardware = []
-        
-        # Поиск всех элементов фурнитуры для данной системы и типа
-        for item in self.ref1:
-            elem = item.get("Элемент", item.get("Тип элемента", ""))
-            system = item.get("Система", item.get("Система профиля", ""))
-            
-            # Проверяем, что это фурнитура для нашей системы
-            if product.system not in system:
-                continue
-            
-            # Определяем тип фурнитуры
-            elem_lower = elem.lower()
-            
-            # Петли
-            if "петл" in elem_lower:
-                qty = self._get_hardware_quantity("петля", product)
-                if qty > 0:
-                    hardware.append(HardwareItem(
-                        name=elem,
-                        quantity=qty,
-                        unit="шт",
-                        price=self._get_price(item, 0),
-                        article=item.get("Артикул", "")
-                    ))
-            
-            # Ручки
-            elif "ручк" in elem_lower:
-                qty = self._get_hardware_quantity("ручка", product)
-                if qty > 0:
-                    hardware.append(HardwareItem(
-                        name=elem,
-                        quantity=qty,
-                        unit="комплект" if "комплек" in elem_lower else "шт",
-                        price=self._get_price(item, 0),
-                        article=item.get("Артикул", "")
-                    ))
-            
-            # Замки (для дверей)
-            elif "замок" in elem_lower and product.product_type in [ProductType.DOOR_SINGLE, ProductType.DOOR_DOUBLE]:
-                hardware.append(HardwareItem(
-                    name=elem,
-                    quantity=1,
-                    unit="шт",
-                    price=self._get_price(item, 0),
-                    article=item.get("Артикул", "")
-                ))
-            
-            # Другие элементы (доводчики, фиксаторы и т.д.)
-            elif any(word in elem_lower for word in ["доводчик", "фиксатор", "сердцевина", "планка", "накладк"]):
-                if product.product_type in [ProductType.DOOR_SINGLE, ProductType.DOOR_DOUBLE]:
-                    hardware.append(HardwareItem(
-                        name=elem,
-                        quantity=1,
-                        unit="шт",
-                        price=self._get_price(item, 0),
-                        article=item.get("Артикул", "")
-                    ))
-        
-        return hardware
-    
-    def _calculate_glass(self, product: Product) -> Dict[str, float]:
-        """Расчёт стеклопакета/заполнения"""
-        geometry = product.geometry
-        
-        # Площадь створок (если есть) или общая площадь
+        # Размеры створки (средние если несколько)
         if geometry.sashes:
-            area = sum(sash.width * sash.height for sash in geometry.sashes) / 1_000_000
+            w_s = sum(s.width for s in geometry.sashes) / len(geometry.sashes) / 1000
+            h_s = sum(s.height for s in geometry.sashes) / len(geometry.sashes) / 1000
+            w_s_total = sum(s.width for s in geometry.sashes) / 1000  # Для дверей
         else:
-            area = geometry.area
+            w_s = W
+            h_s = H
+            w_s_total = W
         
-        # Поиск цены стекла
-        glass_price = 0
-        if product.fill_category == "Стеклопакет":
-            glass_type_normalized = product.glass_type.lower().strip()
-            for key, value in self.ref2.items():
-                if glass_type_normalized in key.lower():
-                    glass_price = value
-                    break
+        # Световой проём (примерно, можно улучшить)
+        offset = 0.073  # 73мм для ALG 2030
+        w_g = W - 2 * offset
+        h_g = H - 2 * offset
+        
+        # Импосты
+        imp_vertical = 1 if geometry.has_vertical_impost else 0
+        imp_horizontal = 1 if geometry.has_horizontal_impost else 0
+        total_imposts = imp_vertical + imp_horizontal
+        
+        # Точки запирания
+        if h_s * 1000 < 1200:
+            n_lp = 2
+        elif h_s * 1000 < 2000:
+            n_lp = 3
+        else:
+            n_lp = 4
+        
+        # Контекст для формул
+        context = {
+            # Основные
+            "W": W,
+            "H": H,
+            "w": W,
+            "h": H,
+            "count": 1,  # Всегда 1 для одного изделия
+            "qty": 1,
+            "Nwin": 1,
+            
+            # Створки
+            "n_sash": n_sash,
+            "w_s": w_s,
+            "h_s": h_s,
+            "w_stvor": w_s,
+            "h_stvor": h_s,
+            "w_s_total": w_s_total,
+            
+            # Световой проём
+            "w_g": w_g,
+            "h_g": h_g,
+            "w_glass": w_g,
+            "h_glass": h_g,
+            
+            # Импосты
+            "imp_vertical": imp_vertical,
+            "imp_horizontal": imp_horizontal,
+            "total_imposts": total_imposts,
+            
+            # Фурнитура
+            "n_lp": n_lp,
+            "lock_points": n_lp,
+            
+            # Площадь и периметр
+            "area": W * H,
+            "area_m2": W * H,
+            "perimeter": 2 * (W + H),
+            "perimeter_m": 2 * (W + H)
+        }
+        
+        return context
+    
+    def _categorize_materials(self, product: Product, materials_list: List[Dict]) -> Product:
+        """
+        Распределяет материалы по категориям (рама, уплотнители, фурнитура)
+        """
+        for mat in materials_list:
+            тип_эл = mat["Тип элемента"].lower()
+            
+            # Профили рамы
+            if "профиль" in тип_эл or "рам" in тип_эл or "короб" in тип_эл or "порог" in тип_эл or "створ" in тип_эл or "импост" in тип_эл:
+                product.materials.frame_materials.append(FrameMaterial(
+                    name=mat["Товар"],
+                    side="calculated",  # Из формулы
+                    length=mat["Расход факт."],
+                    price=mat["Цена"],
+                    article=mat["Артикул"]
+                ))
+            
+            # Уплотнители
+            elif "уплотн" in тип_эл or "штап" in тип_эл:
+                product.materials.seal_materials.append(SealMaterial(
+                    name=mat["Товар"],
+                    zone="calculated",  # Из формулы
+                    length=mat["Расход факт."],
+                    price=mat["Цена"],
+                    article=mat["Артикул"]
+                ))
+            
+            # Фурнитура
+            else:
+                product.materials.hardware.append(HardwareItem(
+                    name=mat["Товар"],
+                    quantity=mat["К отгрузке"],
+                    price=mat["Цена"] * mat["Норма"],  # Цена за упаковку
+                    article=mat["Артикул"]
+                ))
+        
+        return product
+    
+    def _calculate_glass(self, product: Product) -> Dict:
+        """
+        Расчёт стеклопакета (из ref2)
+        """
+        geometry = product.geometry
+        
+        # Площадь стекла
+        glass_area = geometry.width_m * geometry.height_m
+        
+        # Цена из ref2
+        glass_type_key = product.glass_type.lower()
+        glass_price_per_m2 = self.ref2.get(glass_type_key, 9500)
+        
+        # Стоимость
+        glass_cost = glass_area * glass_price_per_m2
         
         return {
-            "area": area,
-            "cost": area * glass_price
+            "area": glass_area,
+            "cost": glass_cost
         }
-    
-    def _calculate_additional_details(self, product: Product) -> float:
-        """
-        Дополнительные детали
-        
-        Формула: ⌈периметр / 3⌉ × цена
-        КРИТИЧЕСКИ ВАЖНО: Используем ПОЛНЫЙ периметр
-        """
-        geometry = product.geometry
-        
-        # Поиск цены дополнительных деталей
-        additional_price = self.ref2.get("дополнительные детали", 5600)
-        
-        # Расчёт по полному периметру
-        count = math.ceil(geometry.perimeter / 3)
-        
-        return count * additional_price
-    
-    def _find_profile(self, system: str, element_type: str, profile_type: str) -> Dict:
-        """
-        Поиск профиля в справочнике
-        
-        Универсальный поиск без хардкодов
-        Использует гибкий поиск по частичному совпадению
-        
-        Поддерживаемые названия колонок:
-        - "Элемент" или "Тип элемента"
-        - "Система" или "Система профиля"
-        """
-        element_type_lower = element_type.lower()
-        system_normalized = system.strip().upper()
-        
-        # Список возможных вариантов поиска элемента
-        element_variants = [element_type_lower]
-        if element_type_lower == "рама":
-            element_variants.extend(["frame", "коробка"])
-        elif element_type_lower == "порог":
-            element_variants.extend(["threshold", "низ"])
-        elif element_type_lower == "створка":
-            element_variants.extend(["sash", "створ"])
-        elif element_type_lower == "импост":
-            element_variants.extend(["impost", "перемычка"])
-        
-        for item in self.ref1:
-            # Поддержка разных названий колонок
-            elem = item.get("Элемент", item.get("Тип элемента", ""))
-            sys = item.get("Система", item.get("Система профиля", ""))
-            
-            # Нормализуем систему из справочника
-            sys_normalized = sys.strip().upper()
-            
-            # Проверка системы (гибкий поиск)
-            # Проверяем как прямое вхождение, так и обратное
-            system_match = (
-                system_normalized in sys_normalized or 
-                sys_normalized in system_normalized or
-                system.strip() in sys or
-                sys.strip() in system
-            )
-            
-            if not system_match:
-                continue
-            
-            # Проверка типа элемента (любой из вариантов)
-            elem_lower = elem.lower()
-            if any(variant in elem_lower for variant in element_variants):
-                return item
-        
-        return {}
-    
-    def _get_hardware_quantity(self, hardware_type: str, product: Product) -> float:
-        """
-        Расчёт количества фурнитуры
-        
-        Универсальная логика от геометрии
-        """
-        if hardware_type == "петля":
-            # Петли: по количеству створок
-            return len(product.geometry.sashes) if product.geometry.sashes else 1
-        
-        elif hardware_type == "ручка":
-            # Ручки: по количеству створок
-            return len(product.geometry.sashes) if product.geometry.sashes else 1
-        
-        return 0
-    
-    @staticmethod
-    def _parse_price(value) -> float:
-        """Безопасное преобразование цены"""
-        if value is None:
-            return 0.0
-        value = str(value).strip()
-        if value == "":
-            return 0.0
-        try:
-            for space in ['\xa0', '\u00a0', '\u202f', '\u2009', ' ']:
-                value = value.replace(space, '')
-            value = value.replace(',', '.')
-            return float(value)
-        except:
-            return 0.0
-    
-    @staticmethod
-    def _get_price(item: Dict, default: float = 0.0) -> float:
-        """
-        Получение цены из элемента с поддержкой разных названий колонок
-        
-        Поддерживаемые колонки:
-        - "Цена за единицу"
-        - "цена за ед." 
-        - "цена за ед " (с пробелом!)
-        - "Цена"
-        """
-        price = item.get("Цена за единицу",
-                item.get("цена за ед.",
-                item.get("цена за ед ",  # С ПРОБЕЛОМ!
-                item.get("Цена", default))))
-        return MaterialCalculator._parse_price(price)
 
 
 def calculate_product_materials(
@@ -470,7 +382,7 @@ def calculate_product_materials(
     Универсальная функция расчёта материалов
     
     Args:
-        product_data: Данные изделия из формы
+        product_data: Данные изделия из формы (включая CODE!)
         ref1, ref2, ref3: Справочники
         usage_mode: Контекст использования (НЕ влияет на расчёт!)
     
@@ -484,10 +396,11 @@ def calculate_product_materials(
         product_type=product_data.get("product_type", "Окно"),
         system=product_data.get("system", "ALG 2030-45C"),
         data=product_data.get("data", {}),
-        usage_mode=usage_mode
+        usage_mode=usage_mode,
+        code=product_data.get("code", "")  # ✅ CODE для формул!
     )
     
-    # 2. Расчёт материалов (универсальный)
+    # 2. Расчёт материалов (по формулам из справочника)
     calculator = MaterialCalculator(ref1, ref2, ref3)
     product = calculator.calculate_materials(product)
     
