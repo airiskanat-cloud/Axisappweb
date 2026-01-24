@@ -463,12 +463,13 @@ def render_windows_doors_page():
             st.error("❌ Добавьте хотя бы одну позицию!")
         else:
             # Формирование данных заказа
+            # ИСПРАВЛЕНО: Конвертируем _id в правильные ключи
             order_data = {
                 "common": {
-                    "order_number": order_num, 
-                    "toning_id": toning_id, 
-                    "assembly_id": assembly_id, 
-                    "installation_id": install_id
+                    "order_number": order_num,
+                    "toning": toning_id,         # "Есть" или "Нет"
+                    "assembly": assembly_id,     # "Есть" или "Нет"
+                    "installation": install_id   # "Монтаж простой" или "Нет"
                 },
                 "positions": st.session_state.get("positions", [])
             }
@@ -547,7 +548,12 @@ def render_windows_doors_page():
                 
                 # Отладочная информация (скрытая)
                 with st.expander("🔍 Отладочная информация", expanded=False):
-                    st.json(res["debug_info"])
+                    # Показываем метрики
+                    st.write("**Метрики:**")
+                    st.json(res.get("metrics", {}))
+                    st.write("**Количество материалов:**")
+                    st.write(f"- part2_materials: {len(res.get('part2_materials', []))}")
+                    st.write(f"- part3_final keys: {list(res.get('part3_final', {}).keys())}")
             
             except Exception as e:
                 st.error(f"❌ Ошибка при расчете: {e}")
