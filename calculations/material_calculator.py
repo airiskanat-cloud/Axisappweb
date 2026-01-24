@@ -209,21 +209,27 @@ class MaterialCalculator:
         cost_assembly = 0.0
         cost_installation = 0.0
         
-        toning = data.get("toning", "Нет")
+        # ИСПРАВЛЕНО: Берём из common (для окон/дверей) или data (для вставок)
+        common = product_data.get("common", {})
+        
+        toning = common.get("toning") or data.get("toning", "Нет")
         if toning == "Есть":
             price_toning = self._get_price_from_ref2("Тонировка")
             cost_toning = total_area * price_toning
+            print(f"   ✅ Тонировка: {total_area:.3f}м² × {price_toning:,.0f}₸/м² = {cost_toning:,.0f}₸")
         
-        assembly = data.get("assembly", "Нет")
+        assembly = common.get("assembly") or data.get("assembly", "Нет")
         if assembly == "Есть":
             price_assembly = self._get_price_from_ref2("Сборка")
             cost_assembly = total_area * price_assembly
+            print(f"   ✅ Сборка: {total_area:.3f}м² × {price_assembly:,.0f}₸/м² = {cost_assembly:,.0f}₸")
         
-        installation = data.get("installation", "Нет")
+        installation = common.get("installation") or data.get("installation", "Нет")
         if installation != "Нет":
             installation_clean = " ".join(installation.split())
             price_installation = self._get_price_from_ref2(installation_clean)
             cost_installation = total_area * price_installation
+            print(f"   ✅ Монтаж: {total_area:.3f}м² × {price_installation:,.0f}₸/м² = {cost_installation:,.0f}₸")
         
         # 7. Дополнительные детали (нащельник)
         cost_additional = 0.0

@@ -347,6 +347,47 @@ def calculate_facade_materials(
     print(f"ИТОГО КАРКАС: {skeleton_cost:,.0f}₸")
     
     # ============================================================================
+    # ЧАСТЬ 1.5: ЗАПОЛНЕНИЕ ЯЧЕЕК (стекло/ламбри для blind ячеек)
+    # ============================================================================
+    
+    # ИСПРАВЛЕНО: Добавлен расчёт заполнения для ячеек без вставок
+    blind_cost = 0
+    blind_cells = count_cells - len(inserts)  # Количество ячеек без вставок
+    
+    if blind_cells > 0:
+        print("\n" + "="*70)
+        print(f"ЧАСТЬ 1.5: ЗАПОЛНЕНИЕ ЯЧЕЕК ({blind_cells} шт)")
+        print("="*70)
+        
+        # Площадь одной ячейки
+        cell_area = w_cell * h_cell
+        total_blind_area = cell_area * blind_cells
+        
+        # По умолчанию стеклопакет двойной (можно улучшить передачей blind_data)
+        # Берём из первой позиции если есть
+        glass_type = "двойной"  # По умолчанию
+        
+        price_glass = ref2.get(glass_type, 9500)
+        blind_cost = total_blind_area * price_glass
+        
+        print(f"\n💎 Стеклопакет:")
+        print(f"   Ячеек: {blind_cells}")
+        print(f"   Площадь ячейки: {cell_area:.3f}м²")
+        print(f"   Общая площадь: {total_blind_area:.3f}м²")
+        print(f"   Цена: {price_glass:,.0f}₸/м²")
+        print(f"   Стоимость: {blind_cost:,.0f}₸")
+        
+        result["skeleton"]["Заполнение ячеек"] = {
+            "quantity": total_blind_area,
+            "unit": "м²",
+            "price": price_glass,
+            "cost": blind_cost
+        }
+        
+        skeleton_cost += blind_cost
+        print(f"\nОБНОВЛЁННАЯ СТОИМОСТЬ КАРКАСА (с заполнением): {skeleton_cost:,.0f}₸")
+    
+    # ============================================================================
     # ЧАСТЬ 2: ВСТАВКИ (Двери/Окна ALG)
     # ============================================================================
     
