@@ -638,9 +638,13 @@ def render_facade_page():
             "code": facade_code,  # Добавляем CODE
             "facade_type": facade_type_value,  # Сохраняем тип для отображения
             "width": 6.0,
-            "height": 3.0,
+            "height_left": 3.0,        # ИЗМЕНЕНО: вместо "height"
+            "height_right": 0.0,       # НОВОЕ: 0 = прямоугольник
             "columns": 3,
             "rows": 2,
+            "mullion_size": 130,       # НОВОЕ: по умолчанию 130мм
+            "transom_size": 85,        # НОВОЕ: по умолчанию 85мм
+            "brackets_per_mullion": 2, # НОВОЕ: по умолчанию 2 кронштейна
             "filling_type": "blind",
             "cells_data": []  # Данные для каждой ячейки
         })
@@ -671,7 +675,8 @@ def render_facade_page():
             
             # === ГАБАРИТЫ ФАСАДА ===
             st.markdown("### Габариты фасада")
-            col1, col2 = st.columns(2)
+            col1, col2, col3 = st.columns(3)  # ИЗМЕНЕНО: 3 колонки вместо 2
+            
             pos["width"] = col1.number_input(
                 "Ширина (м)", 
                 min_value=0.5, 
@@ -680,14 +685,35 @@ def render_facade_page():
                 step=0.1, 
                 key=f"fac_w_{idx}"
             )
-            pos["height"] = col2.number_input(
-                "Высота (м)", 
+            
+            pos["height_left"] = col2.number_input(  # ИЗМЕНЕНО: height → height_left
+                "Высота слева (м)", 
                 min_value=0.5, 
                 max_value=20.0,
-                value=pos.get("height", 3.0), 
+                value=pos.get("height_left", pos.get("height", 3.0)),  # fallback для старых данных
                 step=0.1, 
-                key=f"fac_h_{idx}"
+                key=f"fac_h1_{idx}",  # ИЗМЕНЕНО: fac_h → fac_h1
+                help="Высота фасада с левой стороны"
             )
+            
+            pos["height_right"] = col3.number_input(  # НОВОЕ ПОЛЕ
+                "Высота справа (м)", 
+                min_value=0.0,  # можно 0!
+                max_value=20.0,
+                value=pos.get("height_right", 0.0),
+                step=0.1, 
+                key=f"fac_h2_{idx}",
+                help="Оставьте 0 для прямоугольного фасада"
+            )
+            
+            # НОВОЕ: Предупреждение для высоких фасадов
+            max_h = max(pos["height_left"], pos["height_right"] if pos["height_right"] > 0 else pos["height_left"])
+            if max_h > 4.5:
+                st.warning(
+                    "⚠️ Внимание: Данный калькулятор предназначен для предварительного расчета "
+                    "конструкций высотой до 4.5 метров. При высоте свыше 4.5 м требуется "
+                    "подтверждение заводской программой Logikal."
+                )
             
             # === СЕТКА ===
             st.markdown("### Разбивка на ячейки")
@@ -709,13 +735,84 @@ def render_facade_page():
                 key=f"fac_row_{idx}"
             )
             
-            # Расчет размера ячейки
+            # === РАСЧЁТ РАЗМЕРА ЯЧЕЙКИ ===
+            # ИЗМЕНЕНО: используем среднюю высоту для трапеции
+            h_left = pos.get("height_left", pos.get("height", 3.0))  # fallback для старых данных
+            h_right = pos.get("height_right", 0.0)
+            h_avg = (h_left + h_right) / 2 if h_right > 0 else h_left
+            
             cell_w_m = pos["width"] / pos["columns"]
-            cell_h_m = pos["height"] / pos["rows"]
+            cell_h_m = h_avg / pos["rows"]  # ИЗМЕНЕНО: используем h_avg
             cell_w_mm = cell_w_m * 1000
             cell_h_mm = cell_h_m * 1000
             
-            st.info(f"📐 Размер одной ячейки: {cell_w_m:.2f} × {cell_h_m:.2f} м ({cell_w_mm:.0f} × {cell_h_mm:.0f} мм)")
+            # НОВОЕ: Показываем форму фасада
+            if h_right > 0 and abs(h_left - h_right) > 0.01:
+                st.info(f"📐 Форма: Трапеция ({h_left:.2f}м → {h_right:.2f}м) | Размер ячейки: {cell_w_m:.2f} × {cell_h_m:.2f} м ({cell_w_mm:.0f} × {cell_h_mm:.0f} мм)")
+            else:
+                st.info(f"📐 Форма: Прямоугольник | Размер ячейки: {cell_w_m:.2f} × {cell_h_m:.2f} м ({cell_w_mm:.0f} × {cell_h_mm:.0f} мм)")
+            
+            # === НОВОЕ: ВЫБОР ПРОФИЛЕЙ КАРКАСА ===
+            st.markdown("---")
+            st.markdown("### 🔧 Выбор профилей каркаса")
+            
+            col_mullion, col_transom, col_bracket = st.columns(3)
+            
+            # Стойка
+            mullion_options = [90, 110, 130, 150, 180, 210]
+            default_mullion = pos.get("mullion_size", 130)
+            if default_mullion not in mullion_options:
+                default_mullion = 130
+            mullion_index = mullion_options.index(default_mullion)
+            
+            pos["mullion_size"] = col_mullion.selectbox(
+                "Сечение стойки (мм)",
+                options=mullion_options,
+                index=mullion_index,
+                key=f"fac_mullion_{idx}",
+                help=(
+                    "Рекомендации по высоте:\n"
+                    "• 90–110 мм: до 3.0 м\n"
+                    "• 130 мм: 3.0 – 4.5 м\n"
+                    "• 150 мм: 4.5 – 6.0 м\n"
+                    "• 180–210 мм: более 6.0 м (требуется расчет статики)"
+                )
+            )
+            
+            # Ригель
+            transom_options = [50, 70, 85, 105, 135, 155]
+            default_transom = pos.get("transom_size", 85)
+            if default_transom not in transom_options:
+                default_transom = 85
+            transom_index = transom_options.index(default_transom)
+            
+            pos["transom_size"] = col_transom.selectbox(
+                "Сечение ригеля (мм)",
+                options=transom_options,
+                index=transom_index,
+                key=f"fac_transom_{idx}",
+                help=(
+                    "Рекомендации по ширине ячейки:\n"
+                    "• 50–70 мм: ширина ячейки до 1.2 м\n"
+                    "• 85–105 мм: 1.2 – 1.8 м\n"
+                    "• 135–155 мм: панорамные ячейки / тяжелые СП"
+                )
+            )
+            
+            # Кронштейны
+            pos["brackets_per_mullion"] = col_bracket.number_input(
+                "Кронштейнов на 1 стойку",
+                min_value=1,
+                max_value=10,
+                value=pos.get("brackets_per_mullion", 2),
+                step=1,
+                key=f"fac_brackets_{idx}",
+                help="Количество кронштейнов на каждую вертикальную стойку"
+            )
+            
+            # Динамическая проверка
+            if max_h > 4.5 and pos["mullion_size"] < 150:
+                st.info("💡 Рекомендуется сечение стойки не менее 150 мм для высоты более 4.5 м")
             
             # === ДОБАВЛЕНО: ВЫБОР ОСНОВНОГО ЗАПОЛНЕНИЯ ФАСАДА ===
             st.markdown("---")
@@ -1110,8 +1207,11 @@ def render_facade_page():
                     results = []
                 
                     for idx, pos in enumerate(st.session_state.facade_positions):
-                        # Локальная площадь для отображения
-                        area = pos["width"] * pos["height"]
+                        # ИЗМЕНЕНО: используем среднюю высоту для трапеции
+                        h_left = pos.get("height_left", pos.get("height", 3.0))  # fallback для старых данных
+                        h_right = pos.get("height_right", 0.0)
+                        h_avg = (h_left + h_right) / 2 if h_right > 0 else h_left
+                        area = pos["width"] * h_avg  # ИЗМЕНЕНО: используем h_avg
                     
                         n_cells = pos["columns"] * pos["rows"]
                         
@@ -1121,9 +1221,15 @@ def render_facade_page():
                             "door": "Дверь"
                         }.get(pos.get("filling_type", "blind"), "Неизвестно")
                         
+                        # ИЗМЕНЕНО: Показываем форму в габаритах
+                        if h_right > 0 and abs(h_left - h_right) > 0.01:
+                            gabarity = f"{pos['width']:.2f} × ({h_left:.2f}→{h_right:.2f})"
+                        else:
+                            gabarity = f"{pos['width']:.2f} × {h_left:.2f}"
+                        
                         results.append({
                             "Позиция": idx + 1,
-                            "Габариты (м)": f"{pos['width']:.2f} × {pos['height']:.2f}",
+                            "Габариты (м)": gabarity,  # ИЗМЕНЕНО
                             "Площадь (м²)": f"{area:.2f}",
                             "Ячейки": f"{pos['columns']} × {pos['rows']} = {n_cells} шт",
                             "Тип заполнения": fill_name
@@ -1167,13 +1273,14 @@ def render_facade_page():
                     # Для первой позиции берём габариты
                     first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
                     W = first_pos.get("width", 6.0)
-                    H = first_pos.get("height", 3.5)
+                    H1 = first_pos.get("height_left", first_pos.get("height", 3.5))  # ИЗМЕНЕНО: с fallback
+                    H2 = first_pos.get("height_right", 0.0)  # НОВОЕ
                     cols = first_pos.get("columns", 3)
                     rows = first_pos.get("rows", 2)
                     count = len(st.session_state.facade_positions)
                     
                     print(f"\n🏗️ Вызов calculate_facade_materials:")
-                    print(f"   W={W}, H={H}, cols={cols}, rows={rows}, count={count}")
+                    print(f"   W={W}, H1={H1}, H2={H2}, cols={cols}, rows={rows}, count={count}")  # ИЗМЕНЕНО
                     print(f"   Вставок: {len(facade_inserts)}")
                     
                     # Берём blind_data из первой позиции
@@ -1182,12 +1289,15 @@ def render_facade_page():
                     # Вызываем расчёт
                     facade_calc = calculate_facade_materials(
                         W=W,
-                        H=H,
+                        H1=H1,  # ИЗМЕНЕНО: было H
+                        H2=H2,  # НОВОЕ
                         cols=cols,
                         rows=rows,
                         count=count,
+                        mullion_size=first_pos.get("mullion_size", 130),      # НОВОЕ
+                        transom_size=first_pos.get("transom_size", 85),       # НОВОЕ
+                        brackets_per_mullion=first_pos.get("brackets_per_mullion", 2),  # НОВОЕ
                         inserts=facade_inserts,
-                        blind_data=blind_data,  # ✅ ДОБАВЛЕНО
                         facade_profiles_ref=ref_facade,
                         ref1=ref1,
                         ref2=ref2,
@@ -1209,7 +1319,12 @@ def render_facade_page():
                 lambri_areas = {}  # ИСПРАВЛЕНО: по типам
                 
                 for pos in st.session_state.facade_positions:
-                    area = pos["width"] * pos["height"]
+                    # ИЗМЕНЕНО: используем среднюю высоту
+                    h_left = pos.get("height_left", pos.get("height", 3.0))  # fallback для старых данных
+                    h_right = pos.get("height_right", 0.0)
+                    h_avg = (h_left + h_right) / 2 if h_right > 0 else h_left
+                    area = pos["width"] * h_avg  # ИЗМЕНЕНО
+                    
                     filling_type = pos.get("filling_type", "blind")
                     
                     # ГЛУХОЕ ОСТЕКЛЕНИЕ
@@ -1232,8 +1347,8 @@ def render_facade_page():
                         blind_data = pos.get("blind_data", {})
                         panel_type = blind_data.get("panel_type", "glass")
                         
-                        # Площадь ВСЕГО ФАСАДА
-                        total_facade_area = pos["width"] * pos["height"]
+                        # Площадь ВСЕГО ФАСАДА (используем h_avg)
+                        total_facade_area = area  # ИЗМЕНЕНО: уже посчитано выше
                         
                         # Площадь ВСТАВКИ
                         insert_data = pos.get("insert_data", {})
@@ -1406,10 +1521,13 @@ def render_facade_page():
                 st.success("✅ Расчет выполнен!")
                 
                 # Метрики
+                # НОВОЕ: Добавлена метрика "Стоимость за 1 м²"
+                cost_per_sqm = facade_calc.get("metrics", {}).get("cost_per_sqm", 0)
+                
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Общая площадь", f"{total_area:.2f} м²")
                 col2.metric("Суммарный периметр", f"{total_perimeter:.2f} м.п.")
-                col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸")
+                col3.metric("Стоимость за 1 м²", f"{cost_per_sqm:,.0f} ₸/м²")  # ИЗМЕНЕНО: вместо ИТОГО
                 
                 st.markdown("---")
                 
