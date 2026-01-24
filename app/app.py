@@ -1236,26 +1236,46 @@ def render_facade_page():
                         })
                 
                 # ===== РАСЧЁТ МАТЕРИАЛОВ ФАСАДА =====
-                # ИСПРАВЛЕНО: Используем calculate_facade_materials из справочников
+                # НОВОЕ: Считаем каждую позицию отдельно!
                 
-                # Собираем данные о вставках (окна/двери)
-                facade_inserts = []
-                facade_calc_saved = None  # ИСПРАВЛЕНО: Инициализируем заранее
-                for pos in st.session_state.facade_positions:
+                total_materials_cost = 0
+                total_area = 0
+                total_perimeter = 0
+                total_cost_per_sqm = 0
+                all_positions_calcs = []  # Сохраняем результаты каждой позиции
+                
+                print(f"\n{'='*70}")
+                print(f"РАСЧЁТ {len(st.session_state.facade_positions)} ПОЗИЦИЙ ФАСАДА")
+                print(f"{'='*70}")
+                
+                for idx, pos in enumerate(st.session_state.facade_positions, 1):
+                    print(f"\n--- ПОЗИЦИЯ {idx} ---")
+                    
+                    # Габариты ЭТОЙ позиции
+                    W = pos.get("width", 6.0)
+                    H1 = pos.get("height_left", pos.get("height", 3.5))
+                    H2 = pos.get("height_right", 0.0)
+                    cols = pos.get("columns", 3)
+                    rows = pos.get("rows", 2)
+                    
+                    # Профили ЭТОЙ позиции
+                    mullion_size = pos.get("mullion_size", 130)
+                    transom_size = pos.get("transom_size", 85)
+                    brackets_per_mullion = pos.get("brackets_per_mullion", 2)
+                    
+                    # Вставка ЭТОЙ позиции (если есть)
+                    inserts_for_this_pos = []
                     filling_type = pos.get("filling_type", "blind")
                     
-                    # Если это окно или дверь
                     if filling_type in ["window", "door"]:
                         insert_data = pos.get("insert_data", {})
-                        
-                        # ИСПРАВЛЕНО: Создаём ОДНУ вставку в указанной ячейке (не цикл!)
-                        facade_inserts.append({
+                        inserts_for_this_pos.append({
                             "type": filling_type,
                             "cell_col": pos.get("insert_col", 1),
                             "cell_row": pos.get("insert_row", 1),
-                            "width": insert_data.get("width", 1800) / 1000,  # в метры
+                            "width": insert_data.get("width", 1800) / 1000,
                             "height": insert_data.get("height", 2200) / 1000,
-                            "system": pos.get("insert_system", "ALG 2030-63C"),  # ✅ ИСПРАВЛЕНО: берём из pos
+                            "system": pos.get("insert_system", "ALG 2030-63C"),
                             "product_type": insert_data.get("product_type", "Дверь 2-х створч."),
                             "data": {
                                 "glass_type": insert_data.get("glass_type", "двойной"),
@@ -1267,52 +1287,53 @@ def render_facade_page():
                                 "sash_count": insert_data.get("sash_count", 2)
                             }
                         })
-                        
-                        print(f"📍 Вставка создана: тип={filling_type}, ячейка=({pos.get('insert_col', 1)}, {pos.get('insert_row', 1)})")
+                        print(f"   Вставка: {filling_type} в ячейке ({pos.get('insert_col', 1)}, {pos.get('insert_row', 1)})")
                     
-                    # Для первой позиции берём габариты
-                    first_pos = st.session_state.facade_positions[0] if st.session_state.facade_positions else {}
-                    W = first_pos.get("width", 6.0)
-                    H1 = first_pos.get("height_left", first_pos.get("height", 3.5))  # ИЗМЕНЕНО: с fallback
-                    H2 = first_pos.get("height_right", 0.0)  # НОВОЕ
-                    cols = first_pos.get("columns", 3)
-                    rows = first_pos.get("rows", 2)
-                    count = len(st.session_state.facade_positions)
-                    
-                    print(f"\n🏗️ Вызов calculate_facade_materials:")
-                    print(f"   W={W}, H1={H1}, H2={H2}, cols={cols}, rows={rows}, count={count}")  # ИЗМЕНЕНО
-                    print(f"   Вставок: {len(facade_inserts)}")
-                    
-                    # Берём blind_data из первой позиции
-                    blind_data = first_pos.get("blind_data", {"panel_type": "glass", "glass_type": "двойной"})
-                    
-                    # Вызываем расчёт
-                    facade_calc = calculate_facade_materials(
+                    # Расчёт ЭТОЙ позиции (count=1!)
+                    pos_calc = calculate_facade_materials(
                         W=W,
-                        H1=H1,  # ИЗМЕНЕНО: было H
-                        H2=H2,  # НОВОЕ
+                        H1=H1,
+                        H2=H2,
                         cols=cols,
                         rows=rows,
-                        count=count,
-                        mullion_size=first_pos.get("mullion_size", 130),      # НОВОЕ
-                        transom_size=first_pos.get("transom_size", 85),       # НОВОЕ
-                        brackets_per_mullion=first_pos.get("brackets_per_mullion", 2),  # НОВОЕ
-                        inserts=facade_inserts,
+                        count=1,  # ИСПРАВЛЕНО: каждая позиция считается отдельно!
+                        mullion_size=mullion_size,
+                        transom_size=transom_size,
+                        brackets_per_mullion=brackets_per_mullion,
+                        inserts=inserts_for_this_pos,
                         facade_profiles_ref=ref_facade,
                         ref1=ref1,
                         ref2=ref2,
                         ref3=ref3
                     )
                     
-                    materials_cost = facade_calc.get("total_cost", 0)
-                    print(f"   ✅ Материалы рассчитаны: {materials_cost:,.0f}₸")
+                    # Суммируем результаты
+                    pos_cost = pos_calc.get("total_cost", 0)
+                    pos_area = pos_calc.get("metrics", {}).get("total_area", 0)
+                    pos_perimeter = pos_calc.get("metrics", {}).get("total_perimeter", 0)
                     
-                    # ИСПРАВЛЕНО: Сохраняем facade_calc для отображения детализации
-                    facade_calc_saved = facade_calc
+                    total_materials_cost += pos_cost
+                    total_area += pos_area
+                    total_perimeter += pos_perimeter
                     
-                    # ✅ ИСПРАВЛЕНО: Берём метрики ИЗ facade_calc (они уже посчитаны правильно)
-                    total_area = facade_calc.get("metrics", {}).get("total_area", 0)
-                    total_perimeter = facade_calc.get("metrics", {}).get("total_perimeter", 0)
+                    all_positions_calcs.append(pos_calc)
+                    
+                    print(f"   ✅ Позиция {idx}: {pos_area:.2f}м², {pos_perimeter:.2f}м, {pos_cost:,.0f}₸")
+                
+                # Средняя стоимость за м²
+                if total_area > 0:
+                    total_cost_per_sqm = total_materials_cost / total_area
+                
+                print(f"\n{'='*70}")
+                print(f"ИТОГО ПО ВСЕМ ПОЗИЦИЯМ:")
+                print(f"   Площадь: {total_area:.2f} м²")
+                print(f"   Периметр: {total_perimeter:.2f} м")
+                print(f"   Стоимость: {total_materials_cost:,.0f}₸")
+                print(f"   Средняя ₸/м²: {total_cost_per_sqm:,.0f}₸/м²")
+                print(f"{'='*70}")
+                
+                materials_cost = total_materials_cost
+                facade_calc_saved = all_positions_calcs[0] if all_positions_calcs else None
                 
                 # Стеклопакеты/ламбри - собираем данные ПО ТИПАМ
                 glass_areas = {"Двойной": 0, "Тройной": 0, "Энергодвойной": 0}
