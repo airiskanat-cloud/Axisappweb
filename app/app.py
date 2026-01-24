@@ -358,7 +358,7 @@ def render_windows_doors_page():
         📞 Тел.: +7 707 504 4040 | 📧 E-mail: Axisokna.kz@mail.ru | 🌐 Сайт: www.axis.kz
         """)
     with header_col2:
-        if st.button("🔄 Очистить и Новый расчет", use_container_width=True):
+        if st.button("🔄 Очистить и Новый расчет", width="stretch"):
             for key in list(st.session_state.keys()):
                 if key not in ['authenticated', 'current_user', 'menu_selection']:
                     del st.session_state[key]
@@ -389,7 +389,7 @@ def render_windows_doors_page():
         if "positions" not in st.session_state: 
             st.session_state.positions = []
         
-        if st.button("➕ Добавить позицию", use_container_width=True):
+        if st.button("➕ Добавить позицию", width="stretch"):
             st.session_state.positions.append({
                 "count": 1,
                 "product_type": "Окно с откр.",
@@ -458,7 +458,7 @@ def render_windows_doors_page():
     # --- 6. РАСЧЕТ И ВЫВОД ---
     st.divider()
 
-    if st.button("🚀 РАССЧИТАТЬ", type="primary", use_container_width=True):
+    if st.button("🚀 РАССЧИТАТЬ", type="primary", width="stretch"):
         if not st.session_state.positions:
             st.error("❌ Добавьте хотя бы одну позицию!")
         else:
@@ -522,7 +522,7 @@ def render_windows_doors_page():
                             st.markdown(f"**{prod_type}:**")
                             df = pd.DataFrame(items)
                             df = df[["Категория", "Элемент", "Значение"]]
-                            st.dataframe(df, use_container_width=True, hide_index=True)
+                            st.dataframe(df, width="stretch", hide_index=True)
                             st.markdown("---")
                     else:
                         st.info("Данные для габаритной ведомости отсутствуют")
@@ -531,7 +531,7 @@ def render_windows_doors_page():
                 with st.expander("🔹 ЧАСТЬ 2: Ведомость материалов (Артикулы)", expanded=True):
                     if res["part2_materials"]:
                         df2 = pd.DataFrame(res["part2_materials"])
-                        st.dataframe(df2, use_container_width=True, hide_index=True)
+                        st.dataframe(df2, width="stretch", hide_index=True)
                         
                         # Итого по материалам
                         total_mat = sum(m["Сумма"] for m in res["part2_materials"])
@@ -543,7 +543,7 @@ def render_windows_doors_page():
                 # ЧАСТЬ 3: Итоговый расчет
                 with st.expander("🔹 ЧАСТЬ 3: Итоговый расчет", expanded=True):
                     df3 = pd.DataFrame(res["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
-                    st.dataframe(df3, use_container_width=True, hide_index=True)
+                    st.dataframe(df3, width="stretch", hide_index=True)
                 
                 # Отладочная информация (скрытая)
                 with st.expander("🔍 Отладочная информация", expanded=False):
@@ -556,7 +556,7 @@ def render_windows_doors_page():
     # Кнопка экспорта в Excel
     if 'last_result' in st.session_state and 'last_order_data' in st.session_state:
         st.divider()
-        if st.button("📥 Скачать КП в Excel", type="secondary", use_container_width=True):
+        if st.button("📥 Скачать КП в Excel", type="secondary", width="stretch"):
             try:
                 # Используем временную директорию
                 temp_dir = tempfile.gettempdir()
@@ -624,7 +624,7 @@ def render_facade_page():
     
     col_add, col_clear, col_new = st.columns(3)
     
-    if col_add.button("➕ Добавить позицию", use_container_width=True):
+    if col_add.button("➕ Добавить позицию", width="stretch"):
         # Генерация CODE для фасада
         facade_code = get_code_for_facade(facade_type_value)
         
@@ -640,13 +640,13 @@ def render_facade_page():
         })
         st.rerun()
     
-    if col_clear.button("🗑️ Очистить всё", use_container_width=True):
+    if col_clear.button("🗑️ Очистить всё", width="stretch"):
         st.session_state.facade_positions = []
         if "last_facade_result" in st.session_state:
             del st.session_state.last_facade_result
         st.rerun()
     
-    if col_new.button("🔄 Новый расчёт", use_container_width=True):
+    if col_new.button("🔄 Новый расчёт", width="stretch"):
         if "last_facade_result" in st.session_state:
             del st.session_state.last_facade_result
         st.rerun()
@@ -926,11 +926,11 @@ def render_facade_page():
         calc_button = st.button(
             "🚀 РАССЧИТАТЬ ФАСАД","🚀 РАССЧИТАТЬ ФАСАД",
             type="primary",
-            use_container_width=True
+            width="stretch"
         )
     
     with col_clear:
-        if st.button("🗑️ Очистить", type="secondary", use_container_width=True):
+        if st.button("🗑️ Очистить", type="secondary", width="stretch"):
             st.session_state.facade_positions = []
             if 'last_facade_result' in st.session_state:
                 del st.session_state.last_facade_result
@@ -1056,7 +1056,7 @@ def render_facade_page():
                         "Размер": prod["size"],
                         "Стоимость": f"{prod['cost']:,.0f} ₸"
                     })
-                st.dataframe(pd.DataFrame(products_data), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(products_data), width="stretch", hide_index=True)
                 st.write(f"**Итого изделия:** {tambour_calc['total_products_cost']:,.0f} ₸")
                 
                 st.markdown("---")
@@ -1071,7 +1071,7 @@ def render_facade_page():
                         "Цена": f"{data['price']:,.0f} ₸",
                         "Стоимость": f"{data['cost']:,.0f} ₸"
                     })
-                st.dataframe(pd.DataFrame(conn_data), use_container_width=True, hide_index=True)
+                st.dataframe(pd.DataFrame(conn_data), width="stretch", hide_index=True)
                 st.write(f"**Итого соединения:** {tambour_calc['total_connecting_cost']:,.0f} ₸")
                 
                 st.markdown("---")
@@ -1083,7 +1083,7 @@ def render_facade_page():
                     part3_data.append({"Наименование": key, "Сумма (₸)": f"{value:,.0f}"})
                 
                 df_part3 = pd.DataFrame(part3_data)
-                st.dataframe(df_part3, use_container_width=True, hide_index=True)
+                st.dataframe(df_part3, width="stretch", hide_index=True)
                 
                 st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 81%")
                 
@@ -1170,6 +1170,9 @@ def render_facade_page():
                     print(f"   W={W}, H={H}, cols={cols}, rows={rows}, count={count}")
                     print(f"   Вставок: {len(facade_inserts)}")
                     
+                    # Берём blind_data из первой позиции
+                    blind_data = first_pos.get("blind_data", {"panel_type": "glass", "glass_type": "двойной"})
+                    
                     # Вызываем расчёт
                     facade_calc = calculate_facade_materials(
                         W=W,
@@ -1178,6 +1181,7 @@ def render_facade_page():
                         rows=rows,
                         count=count,
                         inserts=facade_inserts,
+                        blind_data=blind_data,  # ✅ ДОБАВЛЕНО
                         facade_profiles_ref=ref_facade,
                         ref1=ref1,
                         ref2=ref2,
@@ -1406,7 +1410,7 @@ def render_facade_page():
                 # Таблица позиций
                 st.subheader("Детализация по позициям")
                 df = pd.DataFrame(results)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width="stretch", hide_index=True)
                 
                 # Итоговый расчет
                 st.markdown("---")
@@ -1425,7 +1429,7 @@ def render_facade_page():
                                 "Цена": f"{data['price']:,.0f} ₸",
                                 "Стоимость": f"{data['cost']:,.0f} ₸"
                             })
-                        st.dataframe(pd.DataFrame(tambour_data), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(tambour_data), width="stretch", hide_index=True)
                         st.write(f"**Итого материалы:** {tambour_calc.get('total_cost', 0):,.0f} ₸")
                     st.markdown("---")
                 else:
@@ -1442,7 +1446,7 @@ def render_facade_page():
                                 "Цена": f"{data['price']:,.0f} ₸",
                                 "Стоимость": f"{data['cost']:,.0f} ₸"
                             })
-                        st.dataframe(pd.DataFrame(skeleton_data), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(skeleton_data), width="stretch", hide_index=True)
                         st.write(f"**Итого каркас:** {facade_calc.get('skeleton_cost', 0):,.0f} ₸")
                     
                     # ИСПРАВЛЕНО: Проверяем через session_state
@@ -1455,7 +1459,7 @@ def render_facade_page():
                                 "Размер": insert["size"],
                                 "Стоимость": f"{insert['cost']:,.0f} ₸"
                             })
-                        st.dataframe(pd.DataFrame(inserts_data), use_container_width=True, hide_index=True)
+                        st.dataframe(pd.DataFrame(inserts_data), width="stretch", hide_index=True)
                         st.write(f"**Итого вставки:** {facade_calc.get('inserts_cost', 0):,.0f} ₸")
                     
                     st.markdown("---")
@@ -1465,7 +1469,7 @@ def render_facade_page():
                     part3_data.append({"Наименование": key, "Сумма (₸)": f"{value:,.0f}"})
                 
                 df_part3 = pd.DataFrame(part3_data)
-                st.dataframe(df_part3, use_container_width=True, hide_index=True)
+                st.dataframe(df_part3, width="stretch", hide_index=True)
                 
                 st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 81%")
                 
@@ -1478,7 +1482,7 @@ def render_facade_page():
                 # Таблица результатов
                 st.subheader("Детализация по позициям")
                 df = pd.DataFrame(results)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.dataframe(df, width="stretch", hide_index=True)
                 
                 # Предупреждение
                 st.warning("⚠️ Это упрощенный расчет. Для точной стоимости необходимо добавить расчет профилей, стеклопакетов и фурнитуры из справочников.")
@@ -1490,7 +1494,7 @@ def render_facade_page():
     # === КНОПКА ЭКСПОРТА ===
     if 'last_facade_result' in st.session_state:
         st.divider()
-        if st.button("📥 Скачать КП фасада в Excel", type="secondary", use_container_width=True):
+        if st.button("📥 Скачать КП фасада в Excel", type="secondary", width="stretch"):
             try:
                 # Импорт уже в начале файла
                 
@@ -1550,7 +1554,7 @@ def render_tambour_page():
     
     col_add, col_clear, col_new = st.columns(3)
     
-    if col_add.button("➕ Добавить позицию", use_container_width=True, key="tambour_add_btn"):
+    if col_add.button("➕ Добавить позицию", width="stretch", key="tambour_add_btn"):
         st.session_state.tambour_positions.append({
             "product_type": "Дверь 2-х створч.",
             "system_id": "ALG 2030-63C",
@@ -1565,7 +1569,7 @@ def render_tambour_page():
         })
         st.rerun()
     
-    if col_clear.button("🗑️ Очистить всё", use_container_width=True, key="tambour_clear_btn"):
+    if col_clear.button("🗑️ Очистить всё", width="stretch", key="tambour_clear_btn"):
         st.session_state.tambour_positions = []
         st.rerun()
     
@@ -1616,7 +1620,7 @@ def render_tambour_page():
     # === КНОПКА РАСЧЁТА ===
     st.markdown("---")
     
-    if st.button("🚀 РАССЧИТАТЬ ТАМБУР", type="primary", use_container_width=True, key="tambour_calc_btn"):
+    if st.button("🚀 РАССЧИТАТЬ ТАМБУР", type="primary", width="stretch", key="tambour_calc_btn"):
         if not st.session_state.tambour_positions:
             st.error("❌ Добавьте хотя бы одну позицию!")
         else:
@@ -1749,23 +1753,23 @@ def render_tambour_page():
                             "Размер": f"{p['width']}×{p['height']} мм",
                             "Стекло": p["glass_type"]
                         })
-                    st.dataframe(pd.DataFrame(positions_df), use_container_width=True, hide_index=True)
+                    st.dataframe(pd.DataFrame(positions_df), width="stretch", hide_index=True)
                 
                 # Материалы
                 with st.expander("📦 Материалы (Артикулы)", expanded=True):
                     if result["part2_materials"]:
                         df2 = pd.DataFrame(result["part2_materials"])
-                        st.dataframe(df2, use_container_width=True, hide_index=True)
+                        st.dataframe(df2, width="stretch", hide_index=True)
                 
                 # Итоговый расчёт
                 with st.expander("💰 Итоговый расчет", expanded=True):
                     df3 = pd.DataFrame(result["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
-                    st.dataframe(df3, use_container_width=True, hide_index=True)
+                    st.dataframe(df3, width="stretch", hide_index=True)
                     st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{result['total_with_margin']:,.0f} ₸")
                 
                 # ДОБАВЛЕНО: Кнопка скачать КП
                 st.markdown("---")
-                if st.button("📥 Скачать КП в Excel", type="secondary", use_container_width=True, key="tambour_export_btn"):
+                if st.button("📥 Скачать КП в Excel", type="secondary", width="stretch", key="tambour_export_btn"):
                     try:
                         # ✅ ИСПРАВЛЕНО: Используем session_state (как в окнах/дверях)
                         temp_dir = tempfile.gettempdir()
@@ -1784,7 +1788,7 @@ def render_tambour_page():
                                 data=f,
                                 file_name=f"KP_TAMBOUR_{order_num}.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True
+                                width="stretch"
                             )
                         st.success(f"✅ Файл KP_TAMBOUR_{order_num}.xlsx готов к скачиванию")
                     except Exception as e:
@@ -1830,9 +1834,21 @@ def render_history_page():
         headers = data[0]
         rows = data[1:]
         
-        # Создаём DataFrame
+        # ИСПРАВЛЕНО: Обработка дублирующихся колонок
+        # Добавляем счётчик к дублям
+        seen = {}
+        unique_headers = []
+        for h in headers:
+            if h in seen:
+                seen[h] += 1
+                unique_headers.append(f"{h}_{seen[h]}")
+            else:
+                seen[h] = 0
+                unique_headers.append(h)
+        
+        # Создаём DataFrame с уникальными заголовками
         import pandas as pd
-        df = pd.DataFrame(rows, columns=headers)
+        df = pd.DataFrame(rows, columns=unique_headers)
         
         # Сортируем по дате (новые сверху)
         if len(df) > 0:
@@ -1849,7 +1865,7 @@ def render_history_page():
                     df = df[df["Пользователь"] == selected_user]
             
             # Показываем таблицу
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.dataframe(df, width="stretch", hide_index=True)
     
     except Exception as e:
         st.error(f"❌ Ошибка загрузки истории: {e}")

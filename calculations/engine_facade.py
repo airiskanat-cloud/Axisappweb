@@ -35,6 +35,7 @@ def calculate_facade_materials(
     rows: int,  # Количество рядов
     count: int,  # Количество сторон фасада
     inserts: List[Dict],  # Вставки (двери/окна)
+    blind_data: Dict,  # ✅ ДОБАВЛЕНО: данные заполнения для blind ячеек
     facade_profiles_ref: List[Dict],  # Справочник "Фасады - Профили"
     ref1: List[Dict],  # Справочник-1 (для вставок)
     ref2: Dict[str, float],  # Справочник-2 (цены)
@@ -363,26 +364,53 @@ def calculate_facade_materials(
         cell_area = w_cell * h_cell
         total_blind_area = cell_area * blind_cells
         
-        # По умолчанию стеклопакет двойной (можно улучшить передачей blind_data)
-        # Берём из первой позиции если есть
-        glass_type = "двойной"  # По умолчанию
+        # ИСПРАВЛЕНО: Используем blind_data для определения типа заполнения
+        panel_type = blind_data.get("panel_type", "glass")
         
-        price_glass = ref2.get(glass_type, 9500)
-        blind_cost = total_blind_area * price_glass
-        
-        print(f"\n💎 Стеклопакет:")
-        print(f"   Ячеек: {blind_cells}")
-        print(f"   Площадь ячейки: {cell_area:.3f}м²")
-        print(f"   Общая площадь: {total_blind_area:.3f}м²")
-        print(f"   Цена: {price_glass:,.0f}₸/м²")
-        print(f"   Стоимость: {blind_cost:,.0f}₸")
-        
-        result["skeleton"]["Заполнение ячеек"] = {
-            "quantity": total_blind_area,
-            "unit": "м²",
-            "price": price_glass,
-            "cost": blind_cost
-        }
+        if panel_type == "glass":
+            # Стеклопакет
+            glass_type = blind_data.get("glass_type", "двойной")
+            price_glass = ref2.get(glass_type, 9500)
+            blind_cost = total_blind_area * price_glass
+            
+            print(f"\n💎 Стеклопакет:")
+            print(f"   Тип: {glass_type}")
+            print(f"   Ячеек: {blind_cells}")
+            print(f"   Площадь ячейки: {cell_area:.3f}м²")
+            print(f"   Общая площадь: {total_blind_area:.3f}м²")
+            print(f"   Цена: {price_glass:,.0f}₸/м²")
+            print(f"   Стоимость: {blind_cost:,.0f}₸")
+            
+            result["skeleton"]["Заполнение ячеек (стекло)"] = {
+                "quantity": total_blind_area,
+                "unit": "м²",
+                "price": price_glass,
+                "cost": blind_cost
+            }
+        else:
+            # Ламбри
+            lambri_type = panel_type  # "Ламбри без термо" или "Ламбри с термо"
+            price_lambri = ref2.get(lambri_type.lower(), 2248)
+            
+            # Округляем до хлыстов по 6м
+            qty_hlysti = math.ceil(total_blind_area / 6) if total_blind_area > 0 else 0
+            total_meters = qty_hlysti * 6
+            blind_cost = total_meters * price_lambri
+            
+            print(f"\n🪵 Ламбри:")
+            print(f"   Тип: {lambri_type}")
+            print(f"   Ячеек: {blind_cells}")
+            print(f"   Площадь: {total_blind_area:.3f}м²")
+            print(f"   Хлыстов: {qty_hlysti} × 6м = {total_meters}м")
+            print(f"   Цена: {price_lambri:,.0f}₸/м")
+            print(f"   Стоимость: {blind_cost:,.0f}₸")
+            
+            result["skeleton"]["Заполнение ячеек (ламбри)"] = {
+                "quantity": total_meters,
+                "unit": "м",
+                "price": price_lambri,
+                "cost": blind_cost
+            }
         
         skeleton_cost += blind_cost
         print(f"\nОБНОВЛЁННАЯ СТОИМОСТЬ КАРКАСА (с заполнением): {skeleton_cost:,.0f}₸")
