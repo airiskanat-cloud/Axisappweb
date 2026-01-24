@@ -1341,11 +1341,28 @@ def render_facade_page():
                             print(f"   🔧 Расчёт материалов вставки через calculate_window_smeta...")
                             insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
                             
-                            # Извлекаем стоимость
-                            insert_materials_cost = insert_result.get("materials_cost", 0)
+                            # КРИТИЧНО: Для вставки в фасад берём ТОЛЬКО профили и фурнитуру
+                            # Стеклопакет НЕ включаем - он считается в общем итоге фасада!
+                            
+                            part1_cost = sum(insert_result.get("part1_final", {}).values())  # Профили
+                            part2_cost = sum(insert_result.get("part2_final", {}).values())  # Фурнитура
+                            
+                            # part3_final = Стеклопакет + Доп.детали + Обеспечение
+                            # Берём ТОЛЬКО "Дополнительные детали" (нащельник и т.д.)
+                            # Стеклопакет НЕ берём - он считается отдельно в общем итоге!
+                            part3_dict = insert_result.get("part3_final", {})
+                            part3_cost = part3_dict.get("Дополнительные детали", 0)
+                            
+                            # ИТОГО: Профили + Фурнитура + Доп.детали (БЕЗ стеклопакета и обеспечения)
+                            insert_materials_cost = part1_cost + part2_cost + part3_cost
                             insert_calc_details = insert_result  # Сохраняем для детализации
                             
-                            print(f"   ✅ Материалы вставки рассчитаны: {insert_materials_cost:,.0f}₸")
+                            print(f"   💎 Детализация вставки:")
+                            print(f"      Профили: {part1_cost:,.0f}₸")
+                            print(f"      Фурнитура: {part2_cost:,.0f}₸")
+                            print(f"      Доп.детали: {part3_cost:,.0f}₸")
+                            print(f"      (Стеклопакет считается в общем итоге)")
+                            print(f"   ✅ ИТОГО материалы вставки: {insert_materials_cost:,.0f}₸")
                             
                         except Exception as e:
                             print(f"   ⚠️ Ошибка расчёта вставки: {e}")
