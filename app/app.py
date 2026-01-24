@@ -1549,13 +1549,11 @@ def render_facade_page():
                 st.success("✅ Расчет выполнен!")
                 
                 # Метрики
-                # НОВОЕ: Добавлена метрика "Стоимость за 1 м²"
-                cost_per_sqm = facade_calc.get("metrics", {}).get("cost_per_sqm", 0)
-                
+                # ИСПРАВЛЕНО: Используем переменную total_cost_per_sqm напрямую
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Общая площадь", f"{total_area:.2f} м²")
                 col2.metric("Суммарный периметр", f"{total_perimeter:.2f} м.п.")
-                col3.metric("Стоимость за 1 м²", f"{cost_per_sqm:,.0f} ₸/м²")  # ИЗМЕНЕНО: вместо ИТОГО
+                col3.metric("Стоимость за 1 м²", f"{total_cost_per_sqm:,.0f} ₸/м²")
                 
                 st.markdown("---")
                 
