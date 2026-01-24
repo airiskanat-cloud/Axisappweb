@@ -525,8 +525,8 @@ def calculate_facade_materials(
         "inserts": inserts_result,
         "total_cost": frame["total_cost"] + inserts_result["total_cost"],
         "metrics": {
-            "area": geometry["area"],
-            "perimeter": geometry["perimeter"],
+            "total_area": geometry["area"],         # ИЗМЕНЕНО: area → total_area
+            "total_perimeter": geometry["perimeter"], # ИЗМЕНЕНО: perimeter → total_perimeter
             "cost_per_sqm": 0  # Рассчитается позже
         }
     }

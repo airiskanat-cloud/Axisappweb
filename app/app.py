@@ -1369,17 +1369,9 @@ def render_facade_page():
                             lambri_type = panel_type
                             lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + main_facade_area
                         
-                        # ✅ ТЕПЕРЬ СЧИТАЕМ ВСТАВКУ:
-                        fill_category = insert_data.get("fill_category", "Стеклопакет")
-                        
-                        if fill_category == "Стеклопакет":
-                            glass_type_raw = insert_data.get("glass_type", "двойной")
-                            glass_type = glass_type_raw.capitalize()  # двойной → Двойной
-                            glass_areas[glass_type] = glass_areas.get(glass_type, 0) + insert_area
-                        
-                        elif "Ламбри" in fill_category:
-                            lambri_type = fill_category  # "Ламбри без термо" или "Ламбри с термо"
-                            lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + insert_area
+                        # ПРИМЕЧАНИЕ: Стеклопакеты/ламбри ВСТАВОК (окон/дверей) 
+                        # уже посчитаны отдельно через calculate_window_smeta()
+                        # Здесь НЕ добавляем их в glass_areas/lambri_areas!
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
                 glass_cost = 0
