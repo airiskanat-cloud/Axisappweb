@@ -1265,10 +1265,14 @@ def render_facade_page():
                     
                     # Вставка ЭТОЙ позиции (если есть)
                     inserts_for_this_pos = []
+                    insert_materials_cost = 0  # Стоимость материалов вставки
+                    insert_calc_details = None  # Детализация вставки для UI
                     filling_type = pos.get("filling_type", "blind")
                     
                     if filling_type in ["window", "door"]:
                         insert_data = pos.get("insert_data", {})
+                        
+                        # Данные для передачи в calculate_facade_materials (для адаптера рамы)
                         inserts_for_this_pos.append({
                             "type": filling_type,
                             "cell_col": pos.get("insert_col", 1),
@@ -1287,7 +1291,66 @@ def render_facade_page():
                                 "sash_count": insert_data.get("sash_count", 2)
                             }
                         })
+                        
                         print(f"   Вставка: {filling_type} в ячейке ({pos.get('insert_col', 1)}, {pos.get('insert_row', 1)})")
+                        
+                        # ============================================================================
+                        # НОВОЕ: РАСЧЁТ МАТЕРИАЛОВ ВСТАВКИ через calculate_window_smeta()
+                        # ============================================================================
+                        
+                        try:
+                            # Формируем order_data для calculate_window_smeta
+                            insert_system = pos.get("insert_system", "ALG 2030-63C")
+                            product_type = insert_data.get("product_type", "Дверь 2-х створч.")
+                            
+                            # Определяем код системы
+                            system_code = SYSTEM_MAPPING.get(insert_system, "ALG_2030_63C")
+                            
+                            insert_order_data = {
+                                "common": {
+                                    "order_number": f"INS-{idx}",
+                                    "system": insert_system,
+                                    "color": "RAL 7024",
+                                    "toning": "Нет",
+                                    "assembly": "Нет",
+                                    "installation": "Нет"
+                                },
+                                "positions": [{
+                                    "product_type": product_type,
+                                    "system": insert_system,
+                                    "code": system_code,
+                                    "count": 1,
+                                    "data": {
+                                        "width": insert_data.get("width", 1800),  # в мм!
+                                        "height": insert_data.get("height", 2200),  # в мм!
+                                        "sashes": insert_data.get("sashes", [{"w": 900, "h": 2200}, {"w": 900, "h": 2200}]),
+                                        "glass_type": insert_data.get("glass_type", "двойной"),
+                                        "fill_category": insert_data.get("fill_category", "Стеклопакет"),
+                                        "imposts": insert_data.get("imposts", {
+                                            "auto_calculate": True,
+                                            "has_left": False,
+                                            "has_center": False,
+                                            "has_right": False,
+                                            "has_tor": False
+                                        })
+                                    }
+                                }]
+                            }
+                            
+                            # Вызываем расчёт
+                            print(f"   🔧 Расчёт материалов вставки через calculate_window_smeta...")
+                            insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
+                            
+                            # Извлекаем стоимость
+                            insert_materials_cost = insert_result.get("materials_cost", 0)
+                            insert_calc_details = insert_result  # Сохраняем для детализации
+                            
+                            print(f"   ✅ Материалы вставки рассчитаны: {insert_materials_cost:,.0f}₸")
+                            
+                        except Exception as e:
+                            print(f"   ⚠️ Ошибка расчёта вставки: {e}")
+                            insert_materials_cost = 0
+                            insert_calc_details = None
                     
                     # Расчёт ЭТОЙ позиции (count=1!)
                     pos_calc = calculate_facade_materials(
@@ -1309,6 +1372,7 @@ def render_facade_page():
                     
                     # Суммируем результаты
                     pos_cost = pos_calc.get("total_cost", 0)
+                    pos_cost += insert_materials_cost  # НОВОЕ: Добавляем стоимость вставки!
                     pos_area = pos_calc.get("metrics", {}).get("total_area", 0)
                     pos_perimeter = pos_calc.get("metrics", {}).get("total_perimeter", 0)
                     
@@ -1316,9 +1380,14 @@ def render_facade_page():
                     total_area += pos_area
                     total_perimeter += pos_perimeter
                     
+                    # Сохраняем результаты с деталями вставки
+                    pos_calc["insert_materials_cost"] = insert_materials_cost
+                    pos_calc["insert_calc_details"] = insert_calc_details
                     all_positions_calcs.append(pos_calc)
                     
                     print(f"   ✅ Позиция {idx}: {pos_area:.2f}м², {pos_perimeter:.2f}м, {pos_cost:,.0f}₸")
+                    if insert_materials_cost > 0:
+                        print(f"      (в т.ч. вставка: {insert_materials_cost:,.0f}₸)")
                 
                 # Средняя стоимость за м²
                 if total_area > 0:
