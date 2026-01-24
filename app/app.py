@@ -88,7 +88,7 @@ if not st.session_state.authenticated:
 
 # --- 2. ЗАГРУЗКА ДАННЫХ ---
 
-@st.cache_data(ttl=60)  # Кеш на 60 секунд (обновляется каждую минуту)
+@st.cache_data
 def get_data():
     r1 = load_reference_1(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
     r2_raw = load_reference_2(SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH)
