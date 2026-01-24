@@ -557,3 +557,443 @@ def calculate_facade_materials(
     print("="*70)
     
     return result
+
+
+# ============================================================================
+# ФУНКЦИИ ДЛЯ ТАМБУРА (из старой версии)
+# ============================================================================
+
+def calculate_tambour_materials_v2(
+    positions: List[Dict],
+    ref1: List[Dict],
+    ref2: Dict[str, float],
+    ref3: List[Dict]
+) -> Dict[str, Any]:
+    """
+    Расчёт материалов для оконного тамбура V2
+    
+    Тамбур = готовые двери/окна + соединительные элементы (направляющий, трубы)
+    """
+    
+    # Импорты уже в начале файла
+    
+    print("\n" + "="*70)
+    print("РАСЧЁТ ОКОННОГО ТАМБУРА V2 (ИЗДЕЛИЯ + НАПРАВЛЯЮЩИЙ)")
+    print("="*70)
+    
+    result = {
+        "products": [],  # Изделия (двери/окна)
+        "connecting": {},  # Соединительные элементы
+        "total_products_cost": 0,
+        "total_connecting_cost": 0,
+        "total_cost": 0,
+        
+        # ДОБАВЛЕНО: Метрики (как в engine_windows)
+        "metrics": {
+            "total_area": 0.0,
+            "total_perimeter": 0.0
+        }
+    }
+    
+    # ===== ЧАСТЬ 1: ИЗДЕЛИЯ (ДВЕРИ/ОКНА) =====
+    print("\nЧАСТЬ 1: ИЗДЕЛИЯ")
+    print("="*70)
+    
+    products_cost = 0
+    total_perimeter = 0
+    
+    # Импорт необходимых функций
+    try:
+        from calculations.engine_windows import calculate_window_smeta
+        from calculations.mapping import get_code_for_windows_doors
+    except ImportError:
+        print("⚠️ Предупреждение: Не удалось импортировать calculate_window_smeta")
+        calculate_window_smeta = None
+        get_code_for_windows_doors = None
+    
+    for i, pos in enumerate(positions, 1):
+        product_type = pos.get("product_type", "Дверь 2-х створч.")
+        system = pos.get("system", "ALG 2030-63C")
+        width = pos.get("width", 1800)
+        height = pos.get("height", 2200)
+        glass_type = pos.get("glass_type", "двойной")
+        opening_type = pos.get("opening_type", "Откр.")
+        h_imposts = pos.get("horizontal_imposts", 0)
+        v_imposts = pos.get("vertical_imposts", 0)
+        
+        print(f"\nИзделие {i}: {product_type} {system}")
+        print(f"  Размер: {width}мм × {height}мм")
+        print(f"  Стекло: {glass_type}")
+        print(f"  Открывание: {opening_type}")
+        print(f"  Импосты: {h_imposts}H × {v_imposts}V")
+        
+        # Считаем метрики
+        width_m = width / 1000
+        height_m = height / 1000
+        area = width_m * height_m
+        perimeter = 2 * (width_m + height_m)
+        
+        result["metrics"]["total_area"] += area
+        result["metrics"]["total_perimeter"] += perimeter
+        
+        if get_code_for_windows_doors:
+            code = get_code_for_windows_doors(product_type, system)
+        else:
+            code = "UNKNOWN"
+        
+        # Формируем данные для расчёта
+        order_data = {
+            "common": {
+                "order_number": f"TAMBOUR_ITEM_{i}",
+                "toning": "Нет",
+                "assembly": "Нет",
+                "installation": "Нет"
+            },
+            "positions": [{
+                "product_type": product_type,
+                "system": system,
+                "code": code,
+                "count": 1,
+                
+                "data": {
+                    "width": width,
+                    "height": height,
+                    "count": 1,
+                    
+                    # Заполнение
+                    "fill_category": pos.get("fill_category", "Стеклопакет"),
+                    "glass_type": pos.get("glass_type", glass_type),
+                    
+                    # Импосты
+                    "imposts": pos.get("imposts", {
+                        "auto_calculate": True,
+                        "has_left": False,
+                        "has_center": False,
+                        "has_right": False,
+                        "has_tor": False
+                    }),
+                    
+                    # Створки
+                    "sashes": pos.get("sashes", [])
+                }
+            }]
+        }
+        
+        # Вызываем расчёт
+        try:
+            if calculate_window_smeta:
+                item_result = calculate_window_smeta(order_data, ref1, ref2, ref3)
+                item_cost = item_result.get("materials_cost", 0)
+                products_cost += item_cost
+                
+                item_metrics = item_result.get("metrics", {})
+                item_area = item_metrics.get("total_area", 0)
+                item_perimeter = item_metrics.get("total_perimeter", 0)
+                
+                result["metrics"]["total_area"] += item_area
+                result["metrics"]["total_perimeter"] += item_perimeter
+                
+                result["products"].append({
+                    "name": f"{product_type} {system}",
+                    "size": f"{width}×{height}мм",
+                    "cost": item_cost
+                })
+                
+                # Считаем периметр для направляющего
+                total_perimeter += 2 * ((width + height) / 1000)  # в метры
+                
+                print(f"  ✅ Стоимость: {item_cost:,.0f}₸")
+        except Exception as e:
+            print(f"  ⚠️ Ошибка расчёта: {e}")
+    
+    result["total_products_cost"] = products_cost
+    
+    # ===== ЧАСТЬ 2: СОЕДИНИТЕЛЬНЫЕ ЭЛЕМЕНТЫ =====
+    print("\n" + "="*70)
+    print("ЧАСТЬ 2: СОЕДИНИТЕЛЬНЫЕ ЭЛЕМЕНТЫ")
+    print("="*70)
+    
+    connecting_cost = 0
+    
+    # --- НАПРАВЛЯЮЩИЙ (2-00-5581) ---
+    L_guide = total_perimeter * 1.05  # +5% запас
+    
+    price_guide = 1200  # Запасное
+    for item in ref1:
+        if '2-00-5581' in item.get('Артикул', ''):
+            price_guide = parse_price(item.get('Цена за единицу', 1200))
+            break
+    
+    cost_guide = L_guide * price_guide
+    connecting_cost += cost_guide
+    
+    print(f"\n1. НАПРАВЛЯЮЩИЙ (2-00-5581):")
+    print(f"   Формула: Σ(периметры изделий) × 1.05")
+    print(f"   Расчёт: {total_perimeter:.2f}м × 1.05 = {L_guide:.2f}м")
+    print(f"   Цена: {price_guide:,}₸/м")
+    print(f"   Стоимость: {cost_guide:,.0f}₸")
+    
+    result["connecting"]["Направляющий"] = {
+        "quantity": L_guide,
+        "unit": "м",
+        "price": price_guide,
+        "cost": cost_guide
+    }
+    
+    # --- СОЕДИНИТЕЛЬНАЯ ТРУБА (опционально) ---
+    if len(positions) > 2:
+        max_height = max(pos.get("height", 2200) for pos in positions) / 1000
+        L_pipe = max_height * 2  # Две вертикальные стойки
+        
+        price_pipe = 2500  # Запасное
+        for item in ref1:
+            if '2-00-2010' in item.get('Артикул', ''):
+                price_pipe = parse_price(item.get('Цена за единицу', 2500))
+                break
+        
+        cost_pipe = L_pipe * price_pipe
+        connecting_cost += cost_pipe
+        
+        print(f"\n2. СОЕДИНИТЕЛЬНАЯ ТРУБА 90° (2-00-2010):")
+        print(f"   Длина: {L_pipe:.2f}м")
+        print(f"   Стоимость: {cost_pipe:,.0f}₸")
+        
+        result["connecting"]["Труба соединительная"] = {
+            "quantity": L_pipe,
+            "unit": "м",
+            "price": price_pipe,
+            "cost": cost_pipe
+        }
+    
+    result["total_connecting_cost"] = connecting_cost
+    result["total_cost"] = products_cost + connecting_cost
+    
+    print(f"\n{'='*70}")
+    print(f"ИТОГО ИЗДЕЛИЯ: {products_cost:,.0f}₸")
+    print(f"ИТОГО СОЕДИНЕНИЯ: {connecting_cost:,.0f}₸")
+    print(f"ВСЕГО: {result['total_cost']:,.0f}₸")
+    print("="*70)
+    
+    return result
+
+
+def calculate_tambour_materials(
+    W: float,
+    H: float,
+    cols: int,
+    rows: int,
+    count: int,
+    ref1: List[Dict],
+    ref2: Dict[str, float],
+    ref3: List[Dict]
+) -> Dict[str, Any]:
+    """
+    Расчёт материалов для оконного тамбура (сцепка рам ALG)
+    
+    Применяется для тамбуров, собираемых из готовых дверных/оконных блоков.
+    """
+    
+    print("\n" + "="*70)
+    print("РАСЧЁТ ОКОННОГО ТАМБУРА (ALG)")
+    print("="*70)
+    
+    w_cell = W / cols
+    h_cell = H / rows
+    
+    print(f"\nИсходные данные:")
+    print(f"  Габариты: {W}м × {H}м")
+    print(f"  Сетка: {cols} столбцов × {rows} рядов")
+    print(f"  Ячейка: {w_cell:.2f}м × {h_cell:.2f}м")
+    print(f"  Количество сторон: {count}")
+    
+    result = {
+        "skeleton": {},
+        "total_cost": 0,
+        "details": []
+    }
+    
+    skeleton_cost = 0
+    
+    # --- РАМА (Frame) ---
+    L_f = (W + H) * 2 * count
+    
+    price_frame = 3500  # Запасное значение
+    for item in ref1:
+        elem = item.get('Элемент', '')
+        system = item.get('Система', '')
+        if ('рама' in elem.lower() or 'Рама' in elem) and 'ALG' in system:
+            price_frame = parse_price(item.get('Цена за единицу', 3500))
+            break
+    
+    cost_frame = L_f * price_frame
+    skeleton_cost += cost_frame
+    
+    print(f"\n1. РАМА (Frame):")
+    print(f"   Формула: (W + H) × 2 × count")
+    print(f"   Расчёт: ({W:.2f} + {H:.2f}) × 2 × {count} = {L_f:.2f}м")
+    print(f"   Цена: {price_frame:,}₸/м")
+    print(f"   Стоимость: {cost_frame:,.0f}₸")
+    
+    result["skeleton"]["Рама"] = {
+        "quantity": L_f,
+        "unit": "м",
+        "price": price_frame,
+        "cost": cost_frame
+    }
+    
+    # --- СОЕДИНИТЕЛЬНАЯ ТРУБА 90° ---
+    L_pipe = H * 2 * count
+    
+    price_pipe = 2500  # Запасное
+    for item in ref1:
+        if '2-00-2010' in item.get('Артикул', ''):
+            price_pipe = parse_price(item.get('Цена за единицу', 2500))
+            break
+    
+    cost_pipe = L_pipe * price_pipe
+    skeleton_cost += cost_pipe
+    
+    print(f"\n2. СОЕДИНИТЕЛЬНАЯ ТРУБА 90° (2-00-2010):")
+    print(f"   Формула: H × 2 × count")
+    print(f"   Расчёт: {H:.2f} × 2 × {count} = {L_pipe:.2f}м")
+    print(f"   Стоимость: {cost_pipe:,.0f}₸")
+    
+    result["skeleton"]["Труба соединительная"] = {
+        "quantity": L_pipe,
+        "unit": "м",
+        "price": price_pipe,
+        "cost": cost_pipe
+    }
+    
+    # --- АДАПТЕР ТРУБЫ ---
+    L_ada = H * 4 * count
+    
+    price_adapter = 800  # Запасное
+    for item in ref1:
+        if 'адаптер' in item.get('Элемент', '').lower():
+            price_adapter = parse_price(item.get('Цена за единицу', 800))
+            break
+    
+    cost_adapter = L_ada * price_adapter
+    skeleton_cost += cost_adapter
+    
+    print(f"\n3. АДАПТЕР ТРУБЫ:")
+    print(f"   Формула: H × 4 × count")
+    print(f"   Расчёт: {H:.2f} × 4 × {count} = {L_ada:.2f}м")
+    print(f"   Стоимость: {cost_adapter:,.0f}₸")
+    
+    result["skeleton"]["Адаптер трубы"] = {
+        "quantity": L_ada,
+        "unit": "м",
+        "price": price_adapter,
+        "cost": cost_adapter
+    }
+    
+    # --- НАПРАВЛЯЮЩИЙ ---
+    L_guide = (W + H) * count * 1.05  # +5% запас
+    
+    price_guide = 1200  # Запасное
+    for item in ref1:
+        if '2-00-5581' in item.get('Артикул', ''):
+            price_guide = parse_price(item.get('Цена за единицу', 1200))
+            break
+    
+    cost_guide = L_guide * price_guide
+    skeleton_cost += cost_guide
+    
+    print(f"\n4. НАПРАВЛЯЮЩИЙ (2-00-5581):")
+    print(f"   Формула: (W + H) × count × 1.05")
+    print(f"   Расчёт: ({W:.2f} + {H:.2f}) × {count} × 1.05 = {L_guide:.2f}м")
+    print(f"   Стоимость: {cost_guide:,.0f}₸")
+    
+    result["skeleton"]["Направляющий"] = {
+        "quantity": L_guide,
+        "unit": "м",
+        "price": price_guide,
+        "cost": cost_guide
+    }
+    
+    # --- ШТАПИК ---
+    n_cells = cols * rows * count
+    w_g = w_cell - 0.1  # светопроём
+    h_g = h_cell - 0.1
+    L_b = (w_g + h_g) * 2 * n_cells
+    
+    price_bead = 600  # Запасное
+    for item in ref1:
+        elem = item.get('Элемент', '')
+        system = item.get('Система', '')
+        if 'штапик' in elem.lower() and 'ALG' in system:
+            price_bead = parse_price(item.get('Цена за единицу', 600))
+            break
+    
+    cost_bead = L_b * price_bead
+    skeleton_cost += cost_bead
+    
+    print(f"\n5. ШТАПИК (Bead):")
+    print(f"   Формула: (w_g + h_g) × 2 × count_cells")
+    print(f"   Расчёт: ({w_g:.2f} + {h_g:.2f}) × 2 × {n_cells} = {L_b:.2f}м")
+    print(f"   Стоимость: {cost_bead:,.0f}₸")
+    
+    result["skeleton"]["Штапик"] = {
+        "quantity": L_b,
+        "unit": "м",
+        "price": price_bead,
+        "cost": cost_bead
+    }
+    
+    # --- УПЛОТНИТЕЛЬ ---
+    L_s = L_b * 2 * 1.05  # +5% запас
+    
+    price_seal = 300  # Запасное
+    for item in ref1:
+        elem = item.get('Элемент', '')
+        system = item.get('Система', '')
+        if 'уплотн' in elem.lower() and 'ALG' in system:
+            price_seal = parse_price(item.get('Цена за единицу', 300))
+            break
+    
+    cost_seal = L_s * price_seal
+    skeleton_cost += cost_seal
+    
+    print(f"\n6. УПЛОТНИТЕЛЬ:")
+    print(f"   Формула: L_b × 2 × 1.05")
+    print(f"   Расчёт: {L_b:.2f} × 2 × 1.05 = {L_s:.2f}м")
+    print(f"   Стоимость: {cost_seal:,.0f}₸")
+    
+    result["skeleton"]["Уплотнитель"] = {
+        "quantity": L_s,
+        "unit": "м",
+        "price": price_seal,
+        "cost": cost_seal
+    }
+    
+    # --- ЛАМБЕРИ ---
+    S_cell = w_cell * h_cell
+    S_total = S_cell * n_cells
+    L_lam = (S_total / 0.1) * 1.05
+    
+    price_lambri = ref2.get("ламбри без термо", 2248)
+    cost_lambri = L_lam * price_lambri
+    skeleton_cost += cost_lambri
+    
+    print(f"\n7. ЛАМБЕРИ:")
+    print(f"   Формула: (S_total / 0.1) × 1.05")
+    print(f"   Расчёт: ({S_total:.2f} / 0.1) × 1.05 = {L_lam:.2f}м")
+    print(f"   Цена: {price_lambri:,}₸/м")
+    print(f"   Стоимость: {cost_lambri:,.0f}₸")
+    
+    result["skeleton"]["Ламбери"] = {
+        "quantity": L_lam,
+        "unit": "м",
+        "price": price_lambri,
+        "cost": cost_lambri
+    }
+    
+    print(f"\n{'─'*70}")
+    print(f"ИТОГО МАТЕРИАЛЫ ТАМБУРА: {skeleton_cost:,.0f}₸")
+    print("="*70)
+    
+    result["total_cost"] = skeleton_cost
+    
+    return result
