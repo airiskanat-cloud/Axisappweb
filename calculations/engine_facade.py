@@ -410,27 +410,11 @@ def calculate_facade_inserts(
         perimeter = 2 * (w + h)
         total_adapter_perimeter += perimeter
         
-        # Расчёт материалов вставки через существующую функцию
-        # НО БЕЗ стекла (стекло считается отдельно)
-        if calculate_window_smeta:
-            insert_result = calculate_window_smeta(
-                W=w,
-                H=h,
-                system_code=insert.get('system_code', ''),
-                glass_type=insert.get('glass_type', ''),
-                # ... другие параметры
-            )
-            
-            # Добавляем материалы вставки (без стекла)
-            for material, data in insert_result.get('materials', {}).items():
-                if 'стекло' not in material.lower():
-                    if material not in result["materials"]:
-                        result["materials"][material] = {
-                            "quantity": 0,
-                            "cost": 0
-                        }
-                    result["materials"][material]["quantity"] += data.get("quantity", 0)
-                    result["materials"][material]["cost"] += data.get("cost", 0)
+        # ПРИМЕЧАНИЕ: Расчёт материалов вставок выполняется отдельно в app.py
+        # через функцию calculate_window_smeta с правильными параметрами
+        # Здесь только считаем адаптер рамы
+        
+        print(f"  Вставка будет рассчитана отдельно (окна/двери)")
     
     # ============================================================================
     # АДАПТЕР РАМЫ (автоматически для всех вставок)
