@@ -1333,6 +1333,21 @@ def render_facade_page():
                 print(f"{'='*70}")
                 
                 materials_cost = total_materials_cost
+                
+                # Создаём объединённый facade_calc для совместимости со старым кодом
+                # (содержит агрегированные данные по ВСЕМ позициям)
+                facade_calc_combined = {
+                    "total_cost": total_materials_cost,
+                    "metrics": {
+                        "total_area": total_area,
+                        "total_perimeter": total_perimeter,
+                        "cost_per_sqm": total_cost_per_sqm
+                    },
+                    "all_positions": all_positions_calcs,  # Массив результатов каждой позиции
+                    "positions_count": len(all_positions_calcs)
+                }
+                
+                # Для детализации берём первую позицию (если есть)
                 facade_calc_saved = all_positions_calcs[0] if all_positions_calcs else None
                 
                 # Стеклопакеты/ламбри - собираем данные ПО ТИПАМ
@@ -1504,7 +1519,7 @@ def render_facade_page():
                     "total_cost": round(total_cost, 0),
                     "materials_cost": round(materials_cost, 0),
                     "positions": results,
-                    "facade_calc": facade_calc_saved  # ИСПРАВЛЕНО: Сохраняем для детализации
+                    "facade_calc": facade_calc_combined  # ИСПРАВЛЕНО: Сохраняем объединённый результат
                 })
                 
                 # ИСПРАВЛЕНО: Сохранение в историю
@@ -1571,33 +1586,41 @@ def render_facade_page():
                     st.markdown("---")
                 else:
                     # Для Ruit 50F показываем детализацию
-                    st.write("**Материалы каркаса (Ruit 50F):**")
-                    # ИСПРАВЛЕНО: Берём из session_state вместо locals()
                     facade_calc = st.session_state.get("last_facade_result", {}).get("facade_calc")
-                    if facade_calc and facade_calc.get("skeleton"):
-                        skeleton_data = []
-                        for elem, data in facade_calc["skeleton"].items():
-                            skeleton_data.append({
-                                "Элемент": elem,
-                                "Количество": f"{data['quantity']} {data['unit']}",
-                                "Цена": f"{data['price']:,.0f} ₸",
-                                "Стоимость": f"{data['cost']:,.0f} ₸"
-                            })
-                        st.dataframe(pd.DataFrame(skeleton_data), width="stretch", hide_index=True)
-                        st.write(f"**Итого каркас:** {facade_calc.get('skeleton_cost', 0):,.0f} ₸")
                     
-                    # ИСПРАВЛЕНО: Проверяем через session_state
-                    if facade_calc and facade_calc.get("inserts_details"):
-                        st.write("**Материалы вставок (двери/окна):**")
-                        inserts_data = []
-                        for insert in facade_calc["inserts_details"]:
-                            inserts_data.append({
-                                "Изделие": insert["name"],
-                                "Размер": insert["size"],
-                                "Стоимость": f"{insert['cost']:,.0f} ₸"
-                            })
-                        st.dataframe(pd.DataFrame(inserts_data), width="stretch", hide_index=True)
-                        st.write(f"**Итого вставки:** {facade_calc.get('inserts_cost', 0):,.0f} ₸")
+                    if facade_calc and facade_calc.get("all_positions"):
+                        # НОВОЕ: Показываем детализацию ПО КАЖДОЙ ПОЗИЦИИ
+                        positions_count = facade_calc.get("positions_count", 0)
+                        st.write(f"**Детализация по {positions_count} позициям:**")
+                        
+                        for idx, pos_calc in enumerate(facade_calc["all_positions"], 1):
+                            with st.expander(f"📋 Позиция {idx} - детали"):
+                                # Каркас этой позиции
+                                if pos_calc.get("frame"):
+                                    st.write("**Каркас:**")
+                                    frame_data = []
+                                    for elem, data in pos_calc["frame"].items():
+                                        if isinstance(data, dict) and "quantity" in data:
+                                            frame_data.append({
+                                                "Элемент": elem,
+                                                "Количество": f"{data.get('quantity', 0):.2f} {data.get('unit', '')}",
+                                                "Цена": f"{data.get('price', 0):,.0f} ₸",
+                                                "Стоимость": f"{data.get('cost', 0):,.0f} ₸"
+                                            })
+                                    if frame_data:
+                                        st.dataframe(pd.DataFrame(frame_data), width="stretch", hide_index=True)
+                                        st.write(f"**Итого каркас:** {pos_calc['frame'].get('total_cost', 0):,.0f} ₸")
+                                
+                                # Вставки этой позиции
+                                if pos_calc.get("inserts") and pos_calc["inserts"].get("adapter_frames"):
+                                    st.write("**Адаптер рамы:**")
+                                    adapter = pos_calc["inserts"]["adapter_frames"]
+                                    st.write(f"- Количество: {adapter.get('quantity', 0):.2f} {adapter.get('unit', 'м')}")
+                                    st.write(f"- Стоимость: {adapter.get('cost', 0):,.0f} ₸")
+                        
+                        st.markdown("---")
+                    else:
+                        st.info("ℹ️ Детализация по позициям недоступна")
                     
                     st.markdown("---")
                 
