@@ -1580,12 +1580,19 @@ def render_facade_page():
                         # Материалы вставки (профили+фурнитура) посчитаны отдельно через calculate_window_smeta()
                         # Но СТЕКЛОПАКЕТ вставки нужно добавить в общий расчёт!
                         insert_glass_type = insert_data.get("glass_type", "Двойной")  # "двойной" → "Двойной"
-                        insert_glass_type_normalized = insert_glass_type.capitalize()  # Нормализуем
-                        glass_areas[insert_glass_type_normalized] = glass_areas.get(insert_glass_type_normalized, 0) + insert_area
                         
-                        print(f"   📊 Площади стеклопакетов:")
-                        print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
-                        print(f"      Вставка ({insert_glass_type_normalized}): {insert_area:.2f}м²")
+                        # КРИТИЧНО: Проверяем что выбран стеклопакет, а не "Нет"
+                        if insert_glass_type and insert_glass_type.lower() != "нет":
+                            insert_glass_type_normalized = insert_glass_type.capitalize()  # Нормализуем
+                            glass_areas[insert_glass_type_normalized] = glass_areas.get(insert_glass_type_normalized, 0) + insert_area
+                            
+                            print(f"   📊 Площади стеклопакетов:")
+                            print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
+                            print(f"      Вставка ({insert_glass_type_normalized}): {insert_area:.2f}м²")
+                        else:
+                            print(f"   📊 Площади стеклопакетов:")
+                            print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
+                            print(f"      Вставка: БЕЗ стеклопакета (выбрано: {insert_glass_type})")
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
                 glass_cost = 0

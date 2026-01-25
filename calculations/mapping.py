@@ -1,97 +1,53 @@
 """
-Маппинг типов изделий и систем на CODE для поиска в Справочнике1
+Модуль для маппинга типов изделий и систем в CODE
 """
 
-def get_code_for_windows_doors(product_type: str, system: str) -> str:
+def get_code_for_windows_doors(product_type: str, system_id: str) -> str:
     """
-    Генерирует CODE для окон/дверей по типу изделия и системе
+    Преобразует тип изделия и систему в CODE для поиска в справочнике
     
     Args:
-        product_type: "Окно с откр.", "Окно глухое", "Дверь 1 створч.", "Дверь 2-х створч."
-        system: "ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C", "ALG 2030-Slim"
+        product_type: Тип изделия ("Окно с откр.", "Дверь 2-х створч." и т.д.)
+        system_id: ID системы ("ALG 2030-45C", "ALG 2030-63C" и т.д.)
     
     Returns:
-        CODE для поиска в Справочнике1
-    
-    Raises:
-        ValueError: Если комбинация не найдена
+        CODE для поиска в справочнике (например: "window_opening_ALG_2030_45C")
     """
     
-    # Нормализация системы
-    system_normalized = system.upper().strip()
-    
-    # Извлекаем толщину системы
-    system_map = {
-        "ALG 2030-73C": "73C",
-        "ALG 2030-63C": "63C",
-        "ALG 2030-55C": "55C",
-        "ALG 2030-45C": "45C",
-        "ALG 2030-SLIM": "SLIM",
-        # RUIT системы
-        "ALG RUIT 73I 22MM": "73C",
-        "ALG RUIT 63I": "63C",
-        "ALG RUIT 55I": "55C",
-        "ALG RUIT 45I": "45C"
+    # Маппинг типов изделий
+    product_mapping = {
+        "Окно с откр.": "window_opening",
+        "Окно глух.": "window_blind",
+        "Дверь 2-х створч.": "door_double",
+        "Дверь 1 створч.": "door_single"
     }
     
-    system_key = None
-    for key, value in system_map.items():
-        if key in system_normalized:
-            system_key = value
-            break
+    # Нормализация системы: пробелы → подчёркивания
+    system_normalized = system_id.replace(" ", "_").replace("-", "_")
     
-    if not system_key:
-        raise ValueError(f"[MAPPING ERROR] Неизвестная система: {system}")
+    # Получаем префикс типа
+    product_prefix = product_mapping.get(product_type, "unknown")
     
-    # Маппинг по типу изделия
-    product_type_lower = product_type.lower()
-    
-    # ОКНА
-    if "окно" in product_type_lower:
-        if "глух" in product_type_lower:
-            # Окно глухое = FIXED
-            code = f"WINDOW_FIXED_2030_{system_key}"
-        else:
-            # Окно с откр.
-            code = f"WINDOW_OPEN_2030_{system_key}"
-    
-    # ДВЕРИ
-    elif "дверь" in product_type_lower:
-        if "1" in product_type or "одн" in product_type_lower:
-            # Дверь 1 створч.
-            code = f"DOOR_SINGLE_2030_{system_key}"
-        elif "2" in product_type or "двух" in product_type_lower:
-            # Дверь 2-х створч.
-            code = f"DOOR_DOUBLE_2030_{system_key}"
-        else:
-            raise ValueError(f"[MAPPING ERROR] Неизвестный тип двери: {product_type}")
-    
-    else:
-        raise ValueError(f"[MAPPING ERROR] Неизвестный тип изделия: {product_type}")
+    # Формируем CODE
+    code = f"{product_prefix}_{system_normalized}"
     
     return code
 
 
 def get_code_for_facade(facade_type: str) -> str:
     """
-    Генерирует CODE для фасадных систем
+    Преобразует тип фасада в CODE
     
     Args:
-        facade_type: "Фасадная система (Ruit 50F)" или "Оконный тамбур (ALG)"
+        facade_type: Тип фасада ("Фасадная система (Ruit 50F)" и т.д.)
     
     Returns:
         CODE для фасада
     """
     
-    if "Ruit 50F" in facade_type or "ruit" in facade_type.lower():
-        return "FACADE_RUIT_50F"
-    elif "ALG" in facade_type or "тамбур" in facade_type.lower():
-        return "FACADE_TAMBOUR_ALG"
-    else:
-        return "FACADE_RUIT_50F"  # По умолчанию
-
-
-# Для обратной совместимости
-def get_code_for_position(product_type: str, system: str) -> str:
-    """Алиас для get_code_for_windows_doors"""
-    return get_code_for_windows_doors(product_type, system)
+    facade_mapping = {
+        "Фасадная система (Ruit 50F)": "FACADE_RUIT_50F",
+        "Оконный тамбур": "TAMBOUR"
+    }
+    
+    return facade_mapping.get(facade_type, "FACADE_UNKNOWN")
