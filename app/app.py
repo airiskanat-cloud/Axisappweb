@@ -1596,14 +1596,20 @@ def render_facade_page():
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
                 glass_cost = 0
+                print(f"\n📊 РАСЧЁТ СТЕКЛОПАКЕТОВ:")
                 for glass_type, total_glass_area in glass_areas.items():
                     if total_glass_area > 0:
                         # ИСПРАВЛЕНО: берём из ref2 с нормализацией регистра
                         price_per_m2 = ref2.get(glass_type.lower(), 9000)
-                        glass_cost += total_glass_area * price_per_m2
+                        cost = total_glass_area * price_per_m2
+                        glass_cost += cost
+                        print(f"   {glass_type}: {total_glass_area:.2f}м² × {price_per_m2:,.0f}₸/м² = {cost:,.0f}₸")
+                print(f"   ИТОГО стеклопакет: {glass_cost:,.0f}₸")
                 
                 # РАСЧЕТ ЛАМБРИ (по общей площади КАЖДОГО ТИПА)
                 lambri_cost = 0
+                if any(lambri_areas.values()):
+                    print(f"\n📊 РАСЧЁТ ЛАМБРИ:")
                 for lambri_type, lambri_area in lambri_areas.items():
                     if lambri_area > 0:
                         # Кол-во к отгрузке = ceil(площадь / 6)
@@ -1613,7 +1619,11 @@ def render_facade_page():
                         price_per_m_lambri = ref2.get(lambri_type.lower(), 2248)
                         
                         # Сумма = цена_за_метр * (кол-во_хлыстов * 6м)
-                        lambri_cost += price_per_m_lambri * (q_otgr * 6)
+                        cost = price_per_m_lambri * (q_otgr * 6)
+                        lambri_cost += cost
+                        print(f"   {lambri_type}: {lambri_area:.2f}м² → {q_otgr} хлыстов × {price_per_m_lambri:,.0f}₸/м = {cost:,.0f}₸")
+                if lambri_cost > 0:
+                    print(f"   ИТОГО ламбри: {lambri_cost:,.0f}₸")
                 
                 # Тонировка
                 toning_cost = 0
@@ -1681,9 +1691,26 @@ def render_facade_page():
                 # Сумма без обеспечения
                 subtotal = materials_cost + glass_cost + lambri_cost + toning_cost + assembly_cost + installation_cost + additional_cost
                 
+                print(f"\n{'='*70}")
+                print(f"📊 ИТОГОВЫЙ РАСЧЁТ ФАСАДА:")
+                print(f"   Материалы каркаса: {materials_cost:,.0f}₸")
+                print(f"   Стеклопакет: {glass_cost:,.0f}₸")
+                print(f"   Ламбри: {lambri_cost:,.0f}₸")
+                print(f"   Тонировка: {toning_cost:,.0f}₸")
+                print(f"   Сборка: {assembly_cost:,.0f}₸")
+                print(f"   Монтаж: {installation_cost:,.0f}₸")
+                print(f"   Дополнительные детали: {additional_cost:,.0f}₸")
+                print(f"   {'─'*68}")
+                print(f"   СУММА БЕЗ ОБЕСПЕЧЕНИЯ: {subtotal:,.0f}₸")
+                
                 # Обеспечение 81% (было 65%)
                 margin = subtotal * 0.81
                 total_cost = subtotal + margin
+                
+                print(f"   Обеспечение (81%): {margin:,.0f}₸")
+                print(f"{'='*70}")
+                print(f"К ОПЛАТЕ: {total_cost:,.0f}₸")
+                print(f"{'='*70}")
                 
                 # ИСПРАВЛЕНО: Сохраняем результат - стеклопакет ПО ТИПАМ
                 st.session_state.last_facade_result = {
