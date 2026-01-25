@@ -81,60 +81,138 @@ def save_history(
         if positions:
             print(f"Первая позиция: {positions[0]}")
         
-        # Габариты позиций + вставки для фасада
+        # РАСШИРЕННАЯ детализация позиций с ПОЛНЫМИ данными
         gabarits = []
+        full_details = []  # Полная информация для отдельной колонки
+        
         for idx, pos in enumerate(positions):
-            w = pos.get("width", 0)
-            h = pos.get("height", 0)
+            # Базовые размеры
+            pos_data = pos.get("data", {})
+            w = pos_data.get("width", 0) if pos_data else pos.get("width", 0)
+            h = pos_data.get("height", 0) if pos_data else pos.get("height", 0)
             
             print(f"Позиция {idx+1}: w={w}, h={h}, тип={type(w)}")
             
             # Конвертируем мм в метры для окон/дверей
             if w > 100 or h > 100:  # Если больше 100, значит в мм
-                w = w / 1000
-                h = h / 1000
+                w_m = w / 1000
+                h_m = h / 1000
+            else:
+                w_m = w
+                h_m = h
             
-            if w > 0 and h > 0:
-                # Тип изделия
+            if w_m > 0 and h_m > 0:
+                # === БАЗОВАЯ ИНФОРМАЦИЯ ===
                 product_type = pos.get("product_type", "")
-                if product_type:
-                    pos_str = f"П{idx+1} ({product_type}): {w:.2f}м×{h:.2f}м"
-                else:
-                    pos_str = f"П{idx+1}: {w:.2f}м×{h:.2f}м"
+                system_id = pos.get("system_id", "")
                 
-                # Если фасад - добавляем сетку
+                # Краткая версия (для габаритов)
+                if product_type:
+                    pos_str = f"П{idx+1} ({product_type}): {w_m:.2f}м×{h_m:.2f}м"
+                else:
+                    pos_str = f"П{idx+1}: {w_m:.2f}м×{h_m:.2f}м"
+                
+                # ПОЛНАЯ версия (для детальной колонки)
+                detail_parts = []
+                detail_parts.append(f"▸ П{idx+1}: {product_type or 'Не указано'}")
+                detail_parts.append(f"  Размер: {w_m:.2f}м × {h_m:.2f}м ({w:.0f}×{h:.0f}мм)")
+                if system_id:
+                    detail_parts.append(f"  Система: {system_id}")
+                
+                # === ЗАПОЛНЕНИЕ ===
+                fill_category = pos_data.get("fill_category", "")
+                if fill_category:
+                    detail_parts.append(f"  Заполнение: {fill_category}")
+                    
+                    # Тип стеклопакета
+                    if fill_category == "Стеклопакет":
+                        glass_type = pos_data.get("glass_type", "")
+                        if glass_type:
+                            detail_parts.append(f"  └─ Тип: {glass_type}")
+                    
+                    # Тип ламбри
+                    elif "Ламбри" in fill_category:
+                        lambri_type = pos_data.get("lambri_type", "")
+                        if lambri_type:
+                            detail_parts.append(f"  └─ Тип: {lambri_type}")
+                
+                # === ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ ===
+                services = []
+                
+                # Тонировка
+                toning = pos_data.get("toning", "")
+                if toning and toning != "Нет":
+                    services.append(f"Тонировка: {toning}")
+                
+                # Сборка
+                assembly = pos_data.get("assembly", "")
+                if assembly and assembly != "Нет":
+                    services.append(f"Сборка: {assembly}")
+                
+                # Монтаж
+                installation = pos_data.get("installation", "")
+                if installation and installation != "Нет":
+                    services.append(f"Монтаж: {installation}")
+                
+                # Доп.детали
+                additional = pos_data.get("additional", "")
+                if additional and additional != "Нет":
+                    services.append(f"Доп.детали: {additional}")
+                
+                if services:
+                    detail_parts.append(f"  Услуги: {', '.join(services)}")
+                
+                # === ФАСАД: Сетка ===
                 cols = pos.get("columns", 0)
                 rows = pos.get("rows", 0)
                 if cols > 0 and rows > 0:
                     pos_str += f" ({cols}×{rows})"
+                    detail_parts.append(f"  Сетка: {cols} колонок × {rows} рядов")
                 
-                # Если есть вставки
+                # === ФАСАД: Вставки ===
                 inserts_data = pos.get("insert_data", {})
                 if inserts_data:
                     insert_w = inserts_data.get("width", 0)
                     insert_h = inserts_data.get("height", 0)
+                    insert_type = inserts_data.get("insert_product_type", "")
+                    insert_system = inserts_data.get("insert_system", "")
+                    
                     # Конвертируем мм в метры
                     if insert_w > 100:
-                        insert_w = insert_w / 1000
+                        insert_w_m = insert_w / 1000
+                    else:
+                        insert_w_m = insert_w
                     if insert_h > 100:
-                        insert_h = insert_h / 1000
-                    if insert_w > 0 and insert_h > 0:
-                        pos_str += f" | Вставка: {insert_w:.2f}×{insert_h:.2f}"
+                        insert_h_m = insert_h / 1000
+                    else:
+                        insert_h_m = insert_h
+                    
+                    if insert_w_m > 0 and insert_h_m > 0:
+                        pos_str += f" | Вставка: {insert_w_m:.2f}×{insert_h_m:.2f}"
+                        detail_parts.append(f"  Вставка: {insert_type or 'Дверь/Окно'}")
+                        detail_parts.append(f"  └─ Размер: {insert_w_m:.2f}м × {insert_h_m:.2f}м")
+                        if insert_system:
+                            detail_parts.append(f"  └─ Система: {insert_system}")
                 
+                # Добавляем в массивы
                 gabarits.append(pos_str)
+                full_details.append("\n".join(detail_parts))
         
+        # Форматируем для записи
         gabarits_str = "; ".join(gabarits) if gabarits else "-"
+        details_str = "\n\n".join(full_details) if full_details else "-"
         
-        # Строка для записи (ОБНОВЛЁННАЯ структура с типом изделия)
+        # Строка для записи (РАСШИРЕННАЯ структура)
         row = [
             timestamp,           # A: Дата и время
             user_login,          # B: Пользователь
-            calc_type,           # C: Тип изделия (ОБЯЗАТЕЛЬНО!)
+            calc_type,           # C: Тип изделия
             order_number,        # D: Номер заказа
-            gabarits_str,        # E: Габариты (полные)
-            n_positions,         # F: Позиций
-            f"{total_area:.2f}", # G: Площадь
-            cost_formatted       # H: Стоимость
+            gabarits_str,        # E: Габариты (краткие)
+            details_str,         # F: ДЕТАЛИ (полные данные)
+            n_positions,         # G: Позиций
+            f"{total_area:.2f}", # H: Площадь
+            cost_formatted       # I: Стоимость
         ]
         
         # Добавляем строку в конец
