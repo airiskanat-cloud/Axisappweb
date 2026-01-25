@@ -760,6 +760,11 @@ def render_facade_page():
             
             # === АВТОМАТИЧЕСКИЕ РЕКОМЕНДАЦИИ (ЭТАП 3) ===
             # Расчёт рекомендуемых размеров на основе габаритов
+            W = pos.get("width", 6.0)
+            H1 = pos.get("height_left", pos.get("height", 3.5))
+            H2 = pos.get("height_right", 0.0)
+            cols = pos.get("columns", 3)
+            
             h_avg = (H1 + H2) / 2 if H2 > 0 else H1
             width_cell = W / cols if cols > 0 else W
             
