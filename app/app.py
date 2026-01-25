@@ -1430,16 +1430,24 @@ def render_facade_page():
                             # Стеклопакет НЕ включаем - он считается в общем итоге фасада!
                             # Нащельник вставки ТОЖЕ НЕ включаем - он часть общего нащельника фасада!
                             
-                            part1_cost = sum(insert_result.get("part1_final", {}).values())  # Профили
-                            part2_cost = sum(insert_result.get("part2_final", {}).values())  # Фурнитура
+                            # ИСПРАВЛЕНО: Извлекаем материалы из part2_materials (новый формат от adapter.py)
+                            part2_materials = insert_result.get("part2_materials", [])
                             
-                            # part3_final = Стеклопакет + Доп.детали (нащельник) + Обеспечение
-                            # НЕ БЕРЁМ "Дополнительные детали" (нащельник) - он считается в общем нащельнике фасада!
-                            part3_dict = insert_result.get("part3_final", {})
-                            part3_cost = 0  # НЕ берём нащельник вставки!
+                            # Разделяем материалы по типам элементов
+                            part1_cost = 0  # Профили
+                            part2_cost = 0  # Фурнитура + Комплектующие + Уплотнители
+                            
+                            for material in part2_materials:
+                                material_type = material.get("Тип элемента", "")
+                                material_sum = material.get("Сумма", 0)
+                                
+                                if material_type == "Профиль":
+                                    part1_cost += material_sum
+                                elif material_type in ["Фурнитура", "Комплектующие", "Уплотнитель"]:
+                                    part2_cost += material_sum
                             
                             # ИТОГО: ТОЛЬКО Профили + Фурнитура (БЕЗ стеклопакета, БЕЗ нащельника, БЕЗ обеспечения)
-                            insert_materials_cost = part1_cost + part2_cost + part3_cost
+                            insert_materials_cost = part1_cost + part2_cost
                             insert_calc_details = insert_result  # Сохраняем для детализации
                             
                             print(f"   💎 Детализация вставки:")
