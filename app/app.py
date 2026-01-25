@@ -813,11 +813,47 @@ def render_facade_page():
             
             # Показываем рекомендации
             st.info(
-                f"💡 **Автоматические рекомендации:**\n\n"
+                f"💡 **Автоматические рекомендации для вашего фасада:**\n\n"
                 f"• **Стойка {recommended_mullion}мм** — {mullion_reason}\n"
                 f"• **Ригель {recommended_transom}мм** — {transom_reason} (ширина ячейки {width_cell:.2f}м)\n"
                 f"• **Кронштейны {recommended_brackets} шт** — для высоты {h_avg:.2f}м"
             )
+            
+            # Добавляем таблицу рекомендаций
+            with st.expander("📊 Полная таблица подбора профилей"):
+                st.markdown("### Стойки (вертикальные профили)")
+                st.markdown("""
+| Высота фасада (H) | Сечение стойки | Точки крепления (кронштейны) |
+|-------------------|----------------|------------------------------|
+| до 3.0 м          | 90 – 110 мм    | 2 шт. (верх / низ)          |
+| 3.0 – 4.5 м       | 130 мм         | 2 - 3 шт.                   |
+| 4.5 – 6.0 м       | 150 мм         | 3 шт. (обязателен расчёт)   |
+| свыше 6.0 м       | 180 – 210 мм   | спец. кронштейны + статика  |
+                """)
+                
+                st.markdown("### Ригели (горизонтальные профили)")
+                st.markdown("""
+| Ширина ячейки | Сечение ригеля |
+|---------------|----------------|
+| до 1.2 м      | 50 – 70 мм     |
+| 1.2 – 1.8 м   | 85 – 105 мм    |
+| свыше 1.8 м   | 135 – 155 мм   |
+                """)
+                
+                st.warning(
+                    "⚠️ **Внимание!**\n\n"
+                    "Данный калькулятор предназначен для предварительного расчета конструкций "
+                    "высотой **до 4.5 метров**. При высоте свыше 4.5 м требуется **обязательная "
+                    "проверка статических нагрузок** и подтверждение спецификации заводской программой."
+                )
+            
+            # Дополнительное предупреждение если высота > 4.5м
+            if h_avg > 4.5:
+                st.error(
+                    f"🚨 **ТРЕБУЕТСЯ РАСЧЁТ СТАТИКИ!**\n\n"
+                    f"Высота фасада {h_avg:.2f}м превышает 4.5м. "
+                    f"Необходима обязательная проверка в заводской программе!"
+                )
             
             # Стойка
             mullion_options = [90, 110, 130, 150, 180, 210]
@@ -1364,37 +1400,25 @@ def render_facade_page():
                             insert_system = pos.get("insert_system", "ALG 2030-63C")
                             product_type = insert_data.get("product_type", "Дверь 2-х створч.")
                             
-                            # Определяем код системы
-                            system_code = SYSTEM_MAPPING.get(insert_system, "ALG_2030_63C")
+                            # КРИТИЧНО: Используем правильную функцию для получения CODE
+                            code = get_code_for_windows_doors(product_type, insert_system)
+                            
+                            print(f"   📋 Система: {insert_system}, Тип: {product_type}")
+                            print(f"   🔑 CODE: {code}")
                             
                             insert_order_data = {
                                 "common": {
                                     "order_number": f"INS-{idx}",
-                                    "system": insert_system,
-                                    "color": "RAL 7024",
                                     "toning": "Нет",
                                     "assembly": "Нет",
                                     "installation": "Нет"
                                 },
                                 "positions": [{
                                     "product_type": product_type,
-                                    "system": insert_system,
-                                    "code": system_code,
+                                    "system_id": insert_system,  # ИСПРАВЛЕНО: system_id вместо system
+                                    "code": code,                 # ИСПРАВЛЕНО: правильный CODE
                                     "count": 1,
-                                    "data": {
-                                        "width": insert_data.get("width", 1800),  # в мм!
-                                        "height": insert_data.get("height", 2200),  # в мм!
-                                        "sashes": insert_data.get("sashes", [{"w": 900, "h": 2200}, {"w": 900, "h": 2200}]),
-                                        "glass_type": insert_data.get("glass_type", "двойной"),
-                                        "fill_category": insert_data.get("fill_category", "Стеклопакет"),
-                                        "imposts": insert_data.get("imposts", {
-                                            "auto_calculate": True,
-                                            "has_left": False,
-                                            "has_center": False,
-                                            "has_right": False,
-                                            "has_tor": False
-                                        })
-                                    }
+                                    "data": insert_data  # КРИТИЧНО: передаём ВСЕ данные напрямую!
                                 }]
                             }
                             
@@ -1604,8 +1628,10 @@ def render_facade_page():
                     price_installation = ref2.get(install_key, 10000)
                     installation_cost = total_area * price_installation
                 
-                # ДОБАВЛЕНО: Дополнительные детали
+                # ДОБАВЛЕНО: Дополнительные детали (НАЩЕЛЬНИК)
                 additional_cost = 0
+                additional_length = 0  # Длина нащельника
+                
                 # Ищем "Нащельник" в ref2
                 additional_name = None
                 for key in ref2.keys():
@@ -1613,10 +1639,37 @@ def render_facade_page():
                         additional_name = key
                         break
                 
-                if additional_name:
+                if additional_name and facade_additional != "Нет":
                     price_additional = ref2.get(additional_name, 0)
-                    # Формула: ОКРУГЛЕНИЕ ВВЕРХ (периметр / 3) * цена
-                    additional_cost = math.ceil(total_perimeter / 3) * price_additional
+                    
+                    # ПРАВИЛЬНАЯ ФОРМУЛА НАЩЕЛЬНИКА:
+                    # Нащельник ставится по внешнему контуру (слева, справа, сверху)
+                    # Формула: ceil((H1 + H2 + W) * count / 3) * цена
+                    
+                    for pos_calc in all_positions_calcs:
+                        # Берём габариты из расчёта позиции
+                        pos_metrics = pos_calc.get("metrics", {})
+                        pos_h1 = pos_metrics.get("H1", 0)
+                        pos_h2 = pos_metrics.get("H2", 0)
+                        pos_w = pos_metrics.get("W", 0)
+                        
+                        # L = (H1 + H2 + W) * count
+                        # count = 1 для каждой позиции (каждая позиция считается отдельно)
+                        pos_count = 1  # У нас каждая позиция = 1 фасад
+                        pos_length = (pos_h1 + pos_h2 + pos_w) * pos_count
+                        additional_length += pos_length
+                    
+                    # Округление вверх: ceil(длина / 3)
+                    # Формула: ceil((H1+H2+W)*count / 3) * цена
+                    additional_qty = math.ceil(additional_length / 3)
+                    additional_cost = additional_qty * price_additional
+                    
+                    print(f"\n💎 Нащельник:")
+                    print(f"   Формула: ceil((H1+H2+W)*count / 3) × цена")
+                    print(f"   Длина по контуру: {additional_length:.2f}м")
+                    print(f"   Упаковок (по 3м): {additional_qty} шт")
+                    print(f"   Цена: {price_additional:,.0f}₸ за упаковку")
+                    print(f"   Стоимость: {additional_cost:,.0f}₸")
                 
                 # Сумма без обеспечения
                 subtotal = materials_cost + glass_cost + lambri_cost + toning_cost + assembly_cost + installation_cost + additional_cost

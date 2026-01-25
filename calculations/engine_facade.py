@@ -527,7 +527,11 @@ def calculate_facade_materials(
         "metrics": {
             "total_area": geometry["area"],         # ИЗМЕНЕНО: area → total_area
             "total_perimeter": geometry["perimeter"], # ИЗМЕНЕНО: perimeter → total_perimeter
-            "cost_per_sqm": 0  # Рассчитается позже
+            "cost_per_sqm": 0,  # Рассчитается позже
+            # НОВОЕ: Габариты для расчёта нащельника
+            "W": W,
+            "H1": H1,
+            "H2": H2 if H2 else 0
         }
     }
     
