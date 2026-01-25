@@ -6,30 +6,36 @@ def get_code_for_windows_doors(product_type: str, system_id: str) -> str:
     """
     Преобразует тип изделия и систему в CODE для поиска в справочнике
     
+    КРИТИЧНО: Формат CODE в Справочнике-1:
+    - DOOR_DOUBLE_2030_45C (БЕЗ "ALG_", заглавные буквы)
+    - WINDOW_OPEN_2030_63C
+    - WINDOW_FIXED_2030_55C
+    
     Args:
         product_type: Тип изделия ("Окно с откр.", "Дверь 2-х створч." и т.д.)
         system_id: ID системы ("ALG 2030-45C", "ALG 2030-63C" и т.д.)
     
     Returns:
-        CODE для поиска в справочнике (например: "window_opening_ALG_2030_45C")
+        CODE для поиска в справочнике (например: "DOOR_DOUBLE_2030_45C")
     """
     
     # Маппинг типов изделий
     product_mapping = {
-        "Окно с откр.": "window_opening",
-        "Окно глух.": "window_blind",
-        "Дверь 2-х створч.": "door_double",
-        "Дверь 1 створч.": "door_single"
+        "Окно с откр.": "WINDOW_OPEN",
+        "Окно глух.": "WINDOW_FIXED",
+        "Дверь 2-х створч.": "DOOR_DOUBLE",
+        "Дверь 1 створч.": "DOOR_SINGLE"
     }
     
-    # Нормализация системы: пробелы → подчёркивания
-    system_normalized = system_id.replace(" ", "_").replace("-", "_")
+    # Извлекаем только цифровую часть системы (без "ALG ")
+    # "ALG 2030-45C" → "2030_45C"
+    system_clean = system_id.replace("ALG ", "").replace(" ", "").replace("-", "_")
     
     # Получаем префикс типа
-    product_prefix = product_mapping.get(product_type, "unknown")
+    product_prefix = product_mapping.get(product_type, "UNKNOWN")
     
-    # Формируем CODE
-    code = f"{product_prefix}_{system_normalized}"
+    # Формируем CODE (ЗАГЛАВНЫМИ БУКВАМИ, БЕЗ ALG)
+    code = f"{product_prefix}_{system_clean}".upper()
     
     return code
 
