@@ -758,6 +758,62 @@ def render_facade_page():
             
             col_mullion, col_transom, col_bracket = st.columns(3)
             
+            # === АВТОМАТИЧЕСКИЕ РЕКОМЕНДАЦИИ (ЭТАП 3) ===
+            # Расчёт рекомендуемых размеров на основе габаритов
+            h_avg = (H1 + H2) / 2 if H2 > 0 else H1
+            width_cell = W / cols if cols > 0 else W
+            
+            # Рекомендуемая стойка по высоте
+            if h_avg <= 2.5:
+                recommended_mullion = 90
+                mullion_reason = "высота до 2.5м"
+            elif h_avg <= 3.5:
+                recommended_mullion = 110
+                mullion_reason = "высота 2.5-3.5м"
+            elif h_avg <= 4.5:
+                recommended_mullion = 130
+                mullion_reason = "высота 3.5-4.5м"
+            elif h_avg <= 6.0:
+                recommended_mullion = 150
+                mullion_reason = "высота 4.5-6.0м"
+            elif h_avg <= 8.0:
+                recommended_mullion = 180
+                mullion_reason = "высота 6.0-8.0м"
+            else:
+                recommended_mullion = 210
+                mullion_reason = "высота более 8.0м"
+            
+            # Рекомендуемый ригель по ширине ячейки
+            if width_cell <= 0.8:
+                recommended_transom = 50
+                transom_reason = "ячейка до 0.8м"
+            elif width_cell <= 1.2:
+                recommended_transom = 70
+                transom_reason = "ячейка 0.8-1.2м"
+            elif width_cell <= 1.5:
+                recommended_transom = 85
+                transom_reason = "ячейка 1.2-1.5м"
+            elif width_cell <= 2.0:
+                recommended_transom = 105
+                transom_reason = "ячейка 1.5-2.0м"
+            elif width_cell <= 2.5:
+                recommended_transom = 135
+                transom_reason = "ячейка 2.0-2.5м"
+            else:
+                recommended_transom = 155
+                transom_reason = "ячейка более 2.5м"
+            
+            # Рекомендуемое количество кронштейнов
+            recommended_brackets = max(2, int(h_avg / 1.5) + 1)
+            
+            # Показываем рекомендации
+            st.info(
+                f"💡 **Автоматические рекомендации:**\n\n"
+                f"• **Стойка {recommended_mullion}мм** — {mullion_reason}\n"
+                f"• **Ригель {recommended_transom}мм** — {transom_reason} (ширина ячейки {width_cell:.2f}м)\n"
+                f"• **Кронштейны {recommended_brackets} шт** — для высоты {h_avg:.2f}м"
+            )
+            
             # Стойка
             mullion_options = [90, 110, 130, 150, 180, 210]
             default_mullion = pos.get("mullion_size", 130)
@@ -1491,9 +1547,16 @@ def render_facade_page():
                             lambri_type = panel_type
                             lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + main_facade_area
                         
-                        # ПРИМЕЧАНИЕ: Стеклопакеты/ламбри ВСТАВОК (окон/дверей) 
-                        # уже посчитаны отдельно через calculate_window_smeta()
-                        # Здесь НЕ добавляем их в glass_areas/lambri_areas!
+                        # ✅ ДОБАВЛЯЕМ СТЕКЛОПАКЕТ ВСТАВКИ (окна/двери):
+                        # Материалы вставки (профили+фурнитура) посчитаны отдельно через calculate_window_smeta()
+                        # Но СТЕКЛОПАКЕТ вставки нужно добавить в общий расчёт!
+                        insert_glass_type = insert_data.get("glass_type", "Двойной")  # "двойной" → "Двойной"
+                        insert_glass_type_normalized = insert_glass_type.capitalize()  # Нормализуем
+                        glass_areas[insert_glass_type_normalized] = glass_areas.get(insert_glass_type_normalized, 0) + insert_area
+                        
+                        print(f"   📊 Площади стеклопакетов:")
+                        print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
+                        print(f"      Вставка ({insert_glass_type_normalized}): {insert_area:.2f}м²")
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
                 glass_cost = 0
@@ -1635,11 +1698,10 @@ def render_facade_page():
                 st.success("✅ Расчет выполнен!")
                 
                 # Метрики
-                # ИСПРАВЛЕНО: Используем переменную total_cost_per_sqm напрямую
                 col1, col2, col3 = st.columns(3)
                 col1.metric("Общая площадь", f"{total_area:.2f} м²")
                 col2.metric("Суммарный периметр", f"{total_perimeter:.2f} м.п.")
-                col3.metric("Стоимость за 1 м²", f"{total_cost_per_sqm:,.0f} ₸/м²")
+                col3.metric("К оплате", f"{total_cost:,.0f} ₸")
                 
                 st.markdown("---")
                 
@@ -1695,7 +1757,52 @@ def render_facade_page():
                                         st.dataframe(pd.DataFrame(frame_data), width="stretch", hide_index=True)
                                         st.write(f"**Итого каркас:** {pos_calc['frame'].get('total_cost', 0):,.0f} ₸")
                                 
-                                # Вставки этой позиции
+                                # Вставки этой позиции (ЭТАП 2: ДЕТАЛИЗАЦИЯ)
+                                if pos_calc.get("insert_calc_details"):
+                                    st.write("**Материалы вставки (окно/дверь):**")
+                                    
+                                    insert_details = pos_calc["insert_calc_details"]
+                                    
+                                    # Профили вставки
+                                    if insert_details.get("part1_final"):
+                                        st.write("*Профили:*")
+                                        profile_data = []
+                                        for name, cost in insert_details["part1_final"].items():
+                                            if cost > 0:
+                                                profile_data.append({
+                                                    "Элемент": name,
+                                                    "Стоимость": f"{cost:,.0f} ₸"
+                                                })
+                                        if profile_data:
+                                            st.dataframe(pd.DataFrame(profile_data), width="stretch", hide_index=True)
+                                    
+                                    # Фурнитура вставки
+                                    if insert_details.get("part2_final"):
+                                        st.write("*Фурнитура:*")
+                                        furn_data = []
+                                        for name, cost in insert_details["part2_final"].items():
+                                            if cost > 0:
+                                                furn_data.append({
+                                                    "Элемент": name,
+                                                    "Стоимость": f"{cost:,.0f} ₸"
+                                                })
+                                        if furn_data:
+                                            st.dataframe(pd.DataFrame(furn_data), width="stretch", hide_index=True)
+                                    
+                                    # Доп.детали вставки
+                                    if insert_details.get("part3_final"):
+                                        part3 = insert_details["part3_final"]
+                                        if "Дополнительные детали" in part3 and part3["Дополнительные детали"] > 0:
+                                            st.write("*Дополнительные детали:*")
+                                            st.write(f"- Нащельник: {part3['Дополнительные детали']:,.0f} ₸")
+                                    
+                                    # Итого вставка
+                                    insert_cost = pos_calc.get("insert_materials_cost", 0)
+                                    if insert_cost > 0:
+                                        st.write(f"**Итого вставка:** {insert_cost:,.0f} ₸")
+                                        st.caption("(Стеклопакет вставки считается в общем итоге)")
+                                
+                                # Адаптер рамы
                                 if pos_calc.get("inserts") and pos_calc["inserts"].get("adapter_frames"):
                                     st.write("**Адаптер рамы:**")
                                     adapter = pos_calc["inserts"]["adapter_frames"]
