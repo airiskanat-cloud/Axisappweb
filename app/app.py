@@ -1576,23 +1576,37 @@ def render_facade_page():
                             lambri_type = panel_type
                             lambri_areas[lambri_type] = lambri_areas.get(lambri_type, 0) + main_facade_area
                         
-                        # ✅ ДОБАВЛЯЕМ СТЕКЛОПАКЕТ ВСТАВКИ (окна/двери):
+                        # ✅ ДОБАВЛЯЕМ СТЕКЛОПАКЕТ/ЛАМБРИ ВСТАВКИ (окна/двери):
                         # Материалы вставки (профили+фурнитура) посчитаны отдельно через calculate_window_smeta()
-                        # Но СТЕКЛОПАКЕТ вставки нужно добавить в общий расчёт!
-                        insert_glass_type = insert_data.get("glass_type", "Двойной")  # "двойной" → "Двойной"
+                        # Но СТЕКЛОПАКЕТ/ЛАМБРИ вставки нужно добавить в общий расчёт!
                         
-                        # КРИТИЧНО: Проверяем что выбран стеклопакет, а не "Нет"
-                        if insert_glass_type and insert_glass_type.lower() != "нет":
-                            insert_glass_type_normalized = insert_glass_type.capitalize()  # Нормализуем
-                            glass_areas[insert_glass_type_normalized] = glass_areas.get(insert_glass_type_normalized, 0) + insert_area
+                        insert_fill_category = insert_data.get("fill_category", "Стеклопакет")
+                        
+                        # ПРОВЕРЯЕМ ТИП ЗАПОЛНЕНИЯ ВСТАВКИ:
+                        if "ламбри" in insert_fill_category.lower():
+                            # ЛАМБРИ ВСТАВКИ
+                            lambri_type_insert = insert_fill_category  # "Ламбри без термо" или "Ламбри с термо"
+                            lambri_areas[lambri_type_insert] = lambri_areas.get(lambri_type_insert, 0) + insert_area
                             
-                            print(f"   📊 Площади стеклопакетов:")
-                            print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
-                            print(f"      Вставка ({insert_glass_type_normalized}): {insert_area:.2f}м²")
+                            print(f"   📊 Площади заполнения:")
+                            print(f"      Основной фасад ({panel_type}): {main_facade_area:.2f}м²")
+                            print(f"      Вставка ({lambri_type_insert}): {insert_area:.2f}м²")
                         else:
-                            print(f"   📊 Площади стеклопакетов:")
-                            print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
-                            print(f"      Вставка: БЕЗ стеклопакета (выбрано: {insert_glass_type})")
+                            # СТЕКЛОПАКЕТ ВСТАВКИ
+                            insert_glass_type = insert_data.get("glass_type", "Двойной")
+                            
+                            # КРИТИЧНО: Проверяем что выбран стеклопакет, а не "Нет"
+                            if insert_glass_type and insert_glass_type.lower() != "нет":
+                                insert_glass_type_normalized = insert_glass_type.capitalize()  # Нормализуем
+                                glass_areas[insert_glass_type_normalized] = glass_areas.get(insert_glass_type_normalized, 0) + insert_area
+                                
+                                print(f"   📊 Площади стеклопакетов:")
+                                print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
+                                print(f"      Вставка ({insert_glass_type_normalized}): {insert_area:.2f}м²")
+                            else:
+                                print(f"   📊 Площади стеклопакетов:")
+                                print(f"      Основной фасад ({glass_type if panel_type == 'glass' else 'нет'}): {main_facade_area:.2f}м²")
+                                print(f"      Вставка: БЕЗ стеклопакета (выбрано: {insert_glass_type})")
                 
                 # РАСЧЕТ СТЕКЛОПАКЕТОВ (по общей площади каждого типа)
                 glass_cost = 0
