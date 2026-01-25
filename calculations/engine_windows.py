@@ -305,6 +305,36 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
     # ===== МАТЕРИАЛЫ (Справочник-1) =====
     materials_dict = {}
     
+    # ОТЛАДКА: Показать что ищем
+    print(f"\n🔍 ПОИСК МАТЕРИАЛОВ В СПРАВОЧНИКЕ-1:")
+    for pos_idx, position in enumerate(positions):
+        pos_code = position.get("code", "")
+        print(f"   Позиция {pos_idx+1}: CODE = {pos_code}")
+    
+    # ОТЛАДКА: Показать примеры из справочника
+    print(f"\n📋 Примеры CODE из Справочника-1 (первые 20 релевантных):")
+    shown = 0
+    for row in ref1[:100]:  # Проверяем первые 100
+        row_code = str(row.get("CODE") or row.get("code") or "").strip()
+        товар = row.get("Товар", "")
+        # Показываем только релевантные
+        if "2030" in row_code or "45" in row_code or "door" in row_code.lower() or "alg" in row_code.lower():
+            print(f"   {shown+1}. CODE='{row_code}' → {товар}")
+            shown += 1
+            if shown >= 20:
+                break
+    
+    if shown == 0:
+        print(f"   ⚠️ Не найдено ни одного CODE с '2030', '45', 'door' или 'alg'")
+        print(f"   📋 Показываю первые 10 CODE какие есть:")
+        for i, row in enumerate(ref1[:10], 1):
+            row_code = str(row.get("CODE") or row.get("code") or "").strip()
+            товар = row.get("Товар", "")
+            if row_code:
+                print(f"   {i}. CODE='{row_code}' → {товар}")
+    
+    print(f"\n🔍 Начинаем поиск материалов...")
+    
     for pos_idx, position in enumerate(positions):
         pos_type = (position.get("product_type") or 
                    position.get("type") or 
@@ -348,6 +378,20 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
                     }
                 
                 materials_dict[key]["qty_fact"] += qty_fact
+    
+    # ОТЛАДКА: Показать результаты поиска
+    print(f"\n✅ РЕЗУЛЬТАТЫ ПОИСКА:")
+    print(f"   Найдено уникальных материалов: {len(materials_dict)}")
+    if len(materials_dict) == 0:
+        print(f"   ❌ НИ ОДНОГО МАТЕРИАЛА НЕ НАЙДЕНО!")
+        print(f"   🔧 Проверьте:")
+        print(f"      1. Правильность CODE в позиции")
+        print(f"      2. Наличие такого CODE в Справочнике-1")
+        print(f"      3. Регистр букв (CODE чувствителен к регистру)")
+    else:
+        print(f"   Первые 5 найденных материалов:")
+        for i, (key, data) in enumerate(list(materials_dict.items())[:5], 1):
+            print(f"   {i}. {data['товар']} - {data['qty_fact']:.2f} {data['unit']}")
     
     # Формируем список материалов
     materials_sum = 0.0
