@@ -322,6 +322,20 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
         
         print(f"   🔑 CODE: {code}")
         
+
+        # === FALLBACK для пустого CODE ===
+        if not code or code.strip() == "":
+            print(f"   ⚠️ CODE пустой! Ищем материалы по системе '{system}'...")
+            materials_by_system = [m for m in ref1 if m.get("Система") == system]
+            if materials_by_system:
+                code = materials_by_system[0].get("CODE", "")
+                if code:
+                    print(f"   ✅ Найден CODE: {code}")
+                else:
+                    print(f"   ❌ У системы '{system}' нет CODE в справочнике!")
+            else:
+                print(f"   ❌ Система '{system}' не найдена в Справочнике-1!")
+        
         # Ищем материалы в Справочнике-1
         print(f"\n🔍 Поиск материалов по CODE={code}...")
         
