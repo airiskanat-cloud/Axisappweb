@@ -19,6 +19,7 @@ from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
 from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3, load_facade_reference  # ДОБАВЛЕНО load_facade_reference
 from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING
 from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials, calculate_tambour_materials_v2  # ДОБАВЛЕНО
+from calculations.material_basket import MaterialBasket
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
 from export.export_kp import export_to_excel, export_facade_to_excel
 from history.save_history import save_history
@@ -474,9 +475,89 @@ def render_windows_doors_page():
                 "positions": st.session_state.get("positions", [])
             }
             
-            # Расчет через новый движок для окон V2
+            # Расчет через новый движок для окон V2 + ГЛОБАЛЬНАЯ КОРЗИНА
             try:
-                res = calculate_window_smeta(order_data, ref1, ref2, ref3)
+                # === ГЛОБАЛЬНАЯ КОРЗИНА МАТЕРИАЛОВ ===
+                # Устраняет 5× перерасход профилей за счёт округления один раз
+                basket = MaterialBasket(ref1)
+                all_results = []
+                
+                # Рассчитываем каждую позицию отдельно
+                for position in st.session_state.positions:
+                    pos_order_data = {
+                        "common": order_data["common"],
+                        "positions": [position]
+                    }
+                    pos_result = calculate_window_smeta(pos_order_data, ref1, ref2, ref3)
+                    all_results.append(pos_result)
+                    
+                    # Добавляем материалы в корзину (БЕЗ округления!)
+                    for material in pos_result.get("part2_materials", []):
+                        basket.add_material(
+                            article=material["Артикул"],
+                            quantity_raw=material.get("Количество_raw", material["Количество"]),
+                            unit=material["Единица"],
+                            price=material["Цена"],
+                            name=material["Элемент"]
+                        )
+                
+                # Округляем материалы ОДИН РАЗ
+                basket.round_all_materials()
+                basket_costs = basket.calculate_costs()
+                
+                # Объединяем результаты
+                if not all_results:
+                    raise Exception("Нет результатов расчёта")
+                
+                # Суммируем метрики из всех результатов
+                total_area = sum(r.get("metrics", {}).get("total_area", 0) for r in all_results)
+                total_perimeter = sum(r.get("metrics", {}).get("total_perimeter", 0) for r in all_results)
+                
+                # Используем материалы из корзины (с правильным округлением!)
+                materials_list = basket.get_materials_list()
+                materials_cost = basket_costs["total_materials_cost"]
+                
+                # Стекло, услуги берём из суммы всех результатов
+                total_glass = sum(r.get("part3_final", {}).get("Стеклопакет", 0) for r in all_results)
+                total_lambri = sum(r.get("part3_final", {}).get("Ламбри", 0) for r in all_results)
+                total_toning = sum(r.get("part3_final", {}).get("Тонировка", 0) for r in all_results)
+                total_assembly = sum(r.get("part3_final", {}).get("Сборка", 0) for r in all_results)
+                total_install = sum(r.get("part3_final", {}).get("Монтаж", 0) for r in all_results)
+                total_additional = sum(r.get("part3_final", {}).get("Дополнительные детали", 0) for r in all_results)
+                
+                # Себестоимость
+                subtotal = materials_cost + total_glass + total_lambri + total_toning + total_assembly + total_install + total_additional
+                
+                # Обеспечение ОДИН РАЗ
+                margin = subtotal * 0.81
+                total_with_margin = subtotal + margin
+                
+                # Формируем итоговый результат
+                res = {
+                    "part1_summary": [],  # Габариты из всех результатов
+                    "part2_materials": materials_list,  # Материалы из корзины
+                    "part3_final": {
+                        "Стеклопакет": round(total_glass, 0),
+                        "Ламбри": round(total_lambri, 0),
+                        "Тонировка": round(total_toning, 0),
+                        "Сборка": round(total_assembly, 0),
+                        "Монтаж": round(total_install, 0),
+                        "Дополнительные детали": round(total_additional, 0),
+                        "Материалы": round(materials_cost, 0),
+                        "Обеспечение (81%)": round(margin, 0)
+                    },
+                    "materials_cost": round(subtotal, 0),
+                    "total_with_margin": round(total_with_margin, 0),
+                    "metrics": {
+                        "total_area": total_area,
+                        "total_perimeter": total_perimeter
+                    },
+                    "basket_savings": basket_costs.get("total_saved_quantity", 0)
+                }
+                
+                # Собираем габариты из всех результатов
+                for result in all_results:
+                    res["part1_summary"].extend(result.get("part1_summary", []))
                 
                 # Сохранение результата в session_state для экспорта
                 st.session_state.last_result = res
@@ -503,6 +584,10 @@ def render_windows_doors_page():
                 m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
                 m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м.п.")
                 m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
+                
+                # Показать экономию от глобальной корзины
+                if res.get("basket_savings", 0) > 0:
+                    st.success(f"💰 Экономия материалов: {res['basket_savings']:.1f}м благодаря глобальной корзине (округление ОДИН РАЗ вместо поштучного)")
                 
                 st.divider()
                 
