@@ -494,8 +494,8 @@ def render_windows_doors_page():
                     # Добавляем материалы в корзину (БЕЗ округления!)
                     for material in pos_result.get("part2_materials", []):
                         basket.add_material(
-                            article=material["Артикул"],
-                            quantity_raw=material.get("Количество_raw", material["Количество"]),
+                            article=material.get("Артикул", ""),
+                            quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
                             unit=material["Единица"],
                             price=material["Цена"],
                             name=material["Элемент"]
