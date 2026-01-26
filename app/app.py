@@ -496,9 +496,9 @@ def render_windows_doors_page():
                         basket.add_material(
                             article=material.get("Артикул", ""),
                             quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
-                            unit=material["Единица"],
-                            price=material["Цена"],
-                            name=material["Элемент"]
+                            unit=material.get("Единица", "шт"),
+                            price=material.get("Цена", 0),
+                            name=material.get("Элемент", "")
                         )
                 
                 # Округляем материалы ОДИН РАЗ
