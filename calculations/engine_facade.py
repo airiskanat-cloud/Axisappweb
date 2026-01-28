@@ -356,6 +356,7 @@ def calculate_facade_frame(
     
     return result
 
+
 def calculate_facade_inserts(
     inserts: List[Dict],
     ref1: List[Dict],
@@ -364,17 +365,27 @@ def calculate_facade_inserts(
     facade_profiles_ref: List[Dict]
 ) -> Dict[str, Any]:
     """
-    ✅ ИСПРАВЛЕНО V9 - УСТРАНЕНИЕ ДВОЙНОЙ МАРЖИ
+    Расчёт материалов вставок (окна/двери)
     
-    Расчёт материалов вставок (окна/двери) БЕЗ двойной маржи
+    Args:
+        inserts: Список вставок
+        ref1, ref2, ref3: Справочники
+        facade_profiles_ref: Справочник фасадных профилей
+    
+    Returns:
+        {
+            "materials": {...},
+            "total_cost": float,
+            "adapter_frames": {...}  # Адаптеры рамы
+        }
     """
     
     print("\n" + "="*70)
-    print("РАСЧЁТ МАТЕРИАЛОВ ВСТАВОК (БЕЗ ДВОЙНОЙ МАРЖИ)")
+    print("РАСЧЁТ МАТЕРИАЛОВ ВСТАВОК")
     print("="*70)
     
     result = {
-        "materials_cost": 0,  # ТОЛЬКО себестоимость (без обеспечения!)
+        "materials": {},
         "total_cost": 0,
         "adapter_frames": {
             "quantity": 0,
@@ -387,90 +398,50 @@ def calculate_facade_inserts(
         return result
     
     total_adapter_perimeter = 0
-    total_inserts_cost = 0
     
     for idx, insert in enumerate(inserts):
         print(f"\nВставка #{idx+1}:")
         print(f"  Тип: {insert.get('type', '?')}")
+        print(f"  Размер: {insert.get('width', 0)} × {insert.get('height', 0)} м")
         
+        # Периметр вставки для адаптера рамы
         w = insert.get('width', 0)
         h = insert.get('height', 0)
+        perimeter = 2 * (w + h)
+        total_adapter_perimeter += perimeter
         
-        # ✅ ИСПРАВЛЕНО: Адаптер рамы 2h + w (БЕЗ низа)
-        adapter_perimeter = h + h + w
-        total_adapter_perimeter += adapter_perimeter
+        # ПРИМЕЧАНИЕ: Расчёт материалов вставок выполняется отдельно в app.py
+        # через функцию calculate_window_smeta с правильными параметрами
+        # Здесь только считаем адаптер рамы
         
-        print(f"  Размер: {w:.2f}м × {h:.2f}м")
-        print(f"  Адаптер рамы: {adapter_perimeter:.2f}м (2h + w)")
-        
-        # ✅ КРИТИЧНО: Берём materials_cost, а НЕ total_with_margin!
-        if calculate_window_smeta:
-            insert_order_data = {
-                "positions": [{
-                    "data": {
-                        "width": w * 1000,
-                        "height": h * 1000,
-                        "product_type": insert.get('product_type', 'Дверь 1 створч.'),
-                        "imposts": insert.get('imposts', {}),
-                        "sashes": insert.get('sashes', [])
-                    },
-                    "count": 1
-                }],
-                "common": {
-                    "system": insert.get('system', 'ALG 2030-45C'),
-                    "fill_category": insert.get('fill_category', 'Стеклопакет'),
-                    "glass_type": insert.get('glass_type', 'Двойной'),
-                    "toning": "Нет",
-                    "assembly": "Нет",
-                    "installation": "Нет"
-                }
-            }
-            
-            print(f"  🔧 Расчёт материалов вставки...")
-            insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
-            
-            # ✅ КЛЮЧЕВОЕ: materials_cost вместо total_with_margin
-            insert_cost = insert_result.get("materials_cost", 0)
-            total_inserts_cost += insert_cost
-            
-            print(f"  ✅ Материалы вставки (БЕЗ обеспечения): {insert_cost:,.0f}₸")
-        else:
-            print(f"  ⚠️ calculate_window_smeta недоступна")
+        print(f"  Вставка будет рассчитана отдельно (окна/двери)")
     
-    result["materials_cost"] = total_inserts_cost
+    # ============================================================================
+    # АДАПТЕР РАМЫ (автоматически для всех вставок)
+    # ============================================================================
     
-    # АДАПТЕР РАМЫ
     if total_adapter_perimeter > 0:
         adapter_info = find_profile_in_ref(facade_profiles_ref, "Адаптер рамы")
-        adapter_qty_rounded = round_to_multiple_up(total_adapter_perimeter, 6)
-        cost_adapter = adapter_qty_rounded * adapter_info["price"]
         
-        print(f"\nАДАПТЕР РАМЫ (ИСПРАВЛЕНО!):")
+        cost_adapter = total_adapter_perimeter * adapter_info["price"]
+        
+        print(f"\nАДАПТЕР РАМЫ (автоматически):")
         print(f"  Артикул: {adapter_info['article']}")
-        print(f"  Формула: 2h + w для каждой вставки")
-        print(f"  Расчёт: {total_adapter_perimeter:.2f}м (чистая длина)")
-        print(f"  Округление: ⌈{total_adapter_perimeter:.2f}/6⌉ × 6 = {adapter_qty_rounded:.0f}м")
+        print(f"  Количество: {total_adapter_perimeter:.2f} м")
         print(f"  Стоимость: {cost_adapter:,.0f}₸")
         
         result["adapter_frames"] = {
-            "quantity": adapter_qty_rounded,
-            "quantity_raw": total_adapter_perimeter,
+            "quantity": total_adapter_perimeter,
             "unit": "м",
             "price": adapter_info["price"],
             "cost": cost_adapter,
             "article": adapter_info["article"]
         }
         
-        result["total_cost"] = total_inserts_cost + cost_adapter
-    else:
-        result["total_cost"] = total_inserts_cost
-    
-    print(f"\n✅ ИТОГО ВСТАВКИ:")
-    print(f"   Материалы вставок (БЕЗ обеспечения): {total_inserts_cost:,.0f}₸")
-    print(f"   Адаптер рамы: {result['adapter_frames'].get('cost', 0):,.0f}₸")
-    print(f"   ВСЕГО: {result['total_cost']:,.0f}₸")
+        result["total_cost"] += cost_adapter
     
     return result
+
 
 def calculate_facade_materials(
     W: float,
@@ -531,54 +502,6 @@ def calculate_facade_materials(
         brackets_per_mullion=brackets_per_mullion,
         facade_profiles_ref=facade_profiles_ref
     )
-
-    
-    # ============================================================================
-    # МУВИЛЬ (НАЩЕЛЬНИК) - ТОЛЬКО ПО ВНЕШНЕМУ ПЕРИМЕТРУ
-    # ============================================================================
-    
-    print(f"\n" + "="*70)
-    print(f"РАСЧЁТ МУВИЛЯ (НАЩЕЛЬНИКА) - ИСПРАВЛЕНО!")
-    print(f"="*70)
-    print(f"✅ Считается ОДИН РАЗ по внешнему периметру фасада")
-    print(f"❌ НЕ считается по периметру вставок (дверей)")
-    
-    # Формула: H1 + H2 + W (примыкание к стене, 3 стороны)
-    H2_actual = H2 if H2 else H1
-    movil_length_raw = H1 + H2_actual + W
-    
-    # Округляем до кратного 3м (кратность Мувиля = 3м)
-    movil_qty_rounded = round_to_multiple_up(movil_length_raw, 3)
-    
-    movil_info = find_profile_in_ref(facade_profiles_ref, "Фахверк")
-    
-    if movil_info["found"]:
-        cost_movil = movil_qty_rounded * movil_info["price"]
-        frame["total_cost"] += cost_movil
-        
-        print(f"\nФормула: H1 + H2 + W")
-        print(f"Расчёт: {H1:.2f} + {H2_actual:.2f} + {W:.2f} = {movil_length_raw:.2f}м")
-        print(f"Округление: ⌈{movil_length_raw:.2f}/3⌉ × 3 = {movil_qty_rounded:.0f}м")
-        print(f"Артикул: {movil_info['article']}")
-        print(f"Цена: {movil_info['price']:,.0f}₸/м")
-        print(f"Стоимость: {cost_movil:,.0f}₸")
-        
-        frame["movil"] = {
-            "quantity": movil_qty_rounded,
-            "quantity_raw": movil_length_raw,
-            "unit": "м",
-            "price": movil_info["price"],
-            "cost": cost_movil,
-            "article": movil_info["article"]
-        }
-    else:
-        print("⚠️ Мувиль (Фахверк) не найден в справочнике!")
-        frame["movil"] = {
-            "quantity": 0,
-            "cost": 0
-        }
-    
-    print("="*70)
     
     # ============================================================================
     # 3. ВСТАВКИ (окна/двери)

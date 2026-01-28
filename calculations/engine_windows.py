@@ -212,221 +212,220 @@ def calculate_window_smeta(order_data: Dict, ref1: List, ref2: Dict, ref3: List)
 
 def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3: List) -> Dict:
     """
-    ✅ ИСПРАВЛЕННАЯ ВЕРСИЯ V9 - УСТРАНЕНИЕ ДВОЙНОЙ МАРЖИ
-    
     Полный расчет сметы для окон и дверей
-    
-    КЛЮЧЕВОЕ ИЗМЕНЕНИЕ:
-    - НЕ начисляет обеспечение (81%) внутри функции
-    - Возвращает ТОЛЬКО себестоимость материалов в поле 'materials_cost'
-    - Обеспечение начисляется ОДИН РАЗ на уровне всего заказа в app.py
     
     ПОДДЕРЖИВАЕМЫЕ ТИПЫ ИЗДЕЛИЙ:
     - Окно с откр.
     - Окно глух.
-    - Дверь 2-х створч.
     - Дверь 1 створч.
+    - Дверь 2-х створч.
+    - Фасад
     
-    Args:
-        order_data: {
-            "positions": [{
-                "data": {
-                    "width": int,
-                    "height": int,
-                    "product_type": str,
-                    "imposts": dict,
-                    "sashes": list
-                },
-                "count": int
-            }],
-            "common": {
-                "system": str,
-                "fill_category": str,
-                "glass_type": str,
-                "toning": str,
-                "assembly": str,
-                "installation": str
-            }
-        }
-        ref1: Справочник-1 (материалы)
-        ref2: Справочник-2 (услуги, стеклопакет)
-        ref3: Справочник-3 (габаритная ведомость)
-        
-    Returns:
-        {
-            "part1_gabarits": [{Элемент, Значение}],
-            "part2_materials": [{Артикул, Элемент, Количество, Цена, Стоимость}],
-            "part3_final": {
-                "Стеклопакет": float,
-                "Ламбри": float,
-                "Тонировка": float,
-                "Сборка": float,
-                "Монтаж": float,
-                "Дополнительные детали": float,
-                "Материалы": float
-            },
-            "materials_cost": float,  # ← ТОЛЬКО СЕБЕСТОИМОСТЬ (без обеспечения!)
-            "total_with_margin": float,  # ← DEPRECATED: для обратной совместимости
-            "metrics": {
-                "total_area": float,
-                "total_perimeter": float
-            }
-        }
+    ИСПРАВЛЕНИЯ V7 (Двери):
+    - ДОБАВЛЕНО: w_s_total (суммарная ширина створок для 2-створчатых дверей)
+    - ДОБАВЛЕНО: w, h (алиасы для W, H в строчных буквах)
+    - ИСПРАВЛЕНО: n_sash для учёта количества створок в штапике/уплотнителях
+    - Импосты учитываются в формуле рамы
+    - Материалы считаются для каждой позиции отдельно
     """
     
-    positions = order_data.get("positions", [])
     common = order_data.get("common", {})
     
-    if not positions:
-        return {"error": "Нет позиций для расчёта"}
+    # === ПОДДЕРЖКА РАЗНЫХ НАЗВАНИЙ КЛЮЧЕЙ ===
+    target_type = (common.get("main_type") or 
+                   common.get("product_type") or 
+                   common.get("type", "Окно с откр."))
     
-    system = common.get("system") or common.get("system_id", "ALG 2030-73C")
-    
-    print("\n" + "="*70)
-    print("🔧 ПОЛНЫЙ РАСЧЁТ МАТЕРИАЛОВ (БЕЗ ДВОЙНОЙ МАРЖИ)")
-    print("="*70)
-    print(f"Тип: window")
-    print(f"Система: {system}")
+    target_sys = (common.get("system_id") or 
+                  common.get("system") or 
+                  "ALG 2030-73C")
     
     result = {
+        "metrics": {
+            "total_area": 0.0,
+            "total_perimeter": 0.0
+        },
         "part1_gabarits": [],
-        "part1_summary": [],  # Алиас
         "part2_materials": [],
         "part3_final": {},
-        "metrics": {"total_area": 0, "total_perimeter": 0}
+        "total_with_margin": 0.0,
+        "debug_info": {}  # ← ИСПРАВЛЕНО: Добавлен ключ для app.py
     }
     
-    materials_sum = 0
+    positions = order_data.get("positions", [])
     all_contexts = []
     
-    # ===== ОБРАБОТКА КАЖДОЙ ПОЗИЦИИ =====
-    
+    # ===== ОБРАБОТКА ПОЗИЦИЙ =====
     for pos_idx, position in enumerate(positions):
         pos_data = position.get("data", {})
-        pos_count = position.get("count", 1)
+        pos_data["count"] = position.get("count", 1)
         
-        # Геометрия позиции
-        context = calculate_window_geometry(pos_data, system)
-        context["count"] = pos_count
+        pos_system = (position.get("system_id") or 
+                     position.get("system") or 
+                     target_sys)
+        
+        context = calculate_window_geometry(pos_data, pos_system)
+        # Добавляем CODE в context для использования в Справочнике-3
+        context["code"] = position.get("code", "")
         all_contexts.append(context)
         
-        print(f"\n--- ПОЗИЦИЯ {pos_idx + 1} ---")
-        print(f"   Габариты: {context['W']:.2f}м × {context['H']:.2f}м")
-        print(f"   Количество: {pos_count}")
+        # ИСПРАВЛЕНО: count УЖЕ применяется В ФОРМУЛАХ!
+        # Здесь просто суммируем результаты формул
+        # Формулы в Справочнике используют: area * count, perimeter * count
+        # Поэтому здесь НЕ умножаем повторно!
         
-        # Определяем CODE для поиска материалов
-        product_type = pos_data.get("product_type", "")
+        # ===== ГАБАРИТНАЯ ВЕДОМОСТЬ (Справочник-3) =====
+        pos_type = (position.get("product_type") or 
+                   position.get("type") or 
+                   target_type)
         
-        from calculations.mapping import get_code_for_windows_doors
-        code = get_code_for_windows_doors(product_type, system)
-        
-        print(f"   🔑 CODE: {code}")
-        
-
-        # === FALLBACK для пустого CODE ===
-        if not code or code.strip() == "":
-            print(f"   ⚠️ CODE пустой! Ищем материалы по системе '{system}'...")
-            materials_by_system = [m for m in ref1 if m.get("Система") == system]
-            if materials_by_system:
-                code = materials_by_system[0].get("CODE", "")
-                if code:
-                    print(f"   ✅ Найден CODE: {code}")
-                else:
-                    print(f"   ❌ У системы '{system}' нет CODE в справочнике!")
-            else:
-                print(f"   ❌ Система '{system}' не найдена в Справочнике-1!")
-        
-        # Ищем материалы в Справочнике-1
-        print(f"\n🔍 Поиск материалов по CODE={code}...")
-        
-        materials_for_position = []
-        for item in ref1:
-            item_code = item.get("CODE", "")
-            if item_code == code:
-                materials_for_position.append(item)
-        
-        print(f"Найдено: {len(materials_for_position)} позиций")
-        
-        if not materials_for_position:
-            print(f"⚠️ ВНИМАНИЕ: Материалы для CODE={code} не найдены!")
-            continue
-        
-        # Считаем материалы
-        print("\n💰 Округление до упаковок:")
-        
-        for material in materials_for_position:
-            article = material.get("Артикул", "")
-            element = material.get("Элемент", "")
-            unit = material.get("Единица", "")
-            price = safe_float(material.get("Цена за единицу", 0))
-            formula_raw = material.get("Формула", "1")
-            pack_size = safe_float(material.get("Кратность", 1))
+        for row in ref3:
+            # ИСПРАВЛЕНО: поддержка обоих вариантов написания колонки
+            row_code = str(row.get("CODE") or row.get("code") or "").strip()
+            pos_code = context.get("code", "")
             
-            # Вычисляем количество через формулу
-            try:
-                qty_calc = safe_eval(formula_raw, context)
-            except Exception as e:
-                print(f"⚠️ Ошибка в формуле '{formula_raw}': {e}")
-                qty_calc = 0
+            if row_code and pos_code and row_code == pos_code:
+                formula = row.get("Формула_Python", "")
+                if not formula:
+                    formula = row.get("формула фактического расхода", "")
+                if not formula:
+                    continue
+                
+                val = safe_eval(formula, context)
+                
+                if val > 0:
+                    result["part1_gabarits"].append({
+                        "Позиция": f"№{pos_idx + 1}",
+                        "Тип изделия": pos_type,
+                        "Категория": row.get("Тип элемента", "Прочее"),
+                        "Элемент": row.get("тип элемент", "Не указано"),
+                        "Значение": round(val, 2)
+                    })
+    
+    # ===== МАТЕРИАЛЫ (Справочник-1) =====
+    materials_dict = {}
+    
+    # ОТЛАДКА: Показать что ищем
+    print(f"\n🔍 ПОИСК МАТЕРИАЛОВ В СПРАВОЧНИКЕ-1:")
+    for pos_idx, position in enumerate(positions):
+        pos_code = position.get("code", "")
+        print(f"   Позиция {pos_idx+1}: CODE = {pos_code}")
+    
+    # ОТЛАДКА: Показать примеры из справочника
+    print(f"\n📋 Примеры CODE из Справочника-1 (первые 20 релевантных):")
+    shown = 0
+    for row in ref1[:100]:  # Проверяем первые 100
+        row_code = str(row.get("CODE") or row.get("code") or "").strip()
+        товар = row.get("Товар", "")
+        # Показываем только релевантные
+        if "2030" in row_code or "45" in row_code or "door" in row_code.lower() or "alg" in row_code.lower():
+            print(f"   {shown+1}. CODE='{row_code}' → {товар}")
+            shown += 1
+            if shown >= 20:
+                break
+    
+    if shown == 0:
+        print(f"   ⚠️ Не найдено ни одного CODE с '2030', '45', 'door' или 'alg'")
+        print(f"   📋 Показываю первые 10 CODE какие есть:")
+        for i, row in enumerate(ref1[:10], 1):
+            row_code = str(row.get("CODE") or row.get("code") or "").strip()
+            товар = row.get("Товар", "")
+            if row_code:
+                print(f"   {i}. CODE='{row_code}' → {товар}")
+    
+    print(f"\n🔍 Начинаем поиск материалов...")
+    
+    for pos_idx, position in enumerate(positions):
+        pos_type = (position.get("product_type") or 
+                   position.get("type") or 
+                   target_type)
+        
+        pos_system = (position.get("system_id") or 
+                     position.get("system") or 
+                     target_sys)
+        
+        pos_system_norm = normalize_system(pos_system)
+        
+        context = all_contexts[pos_idx]
+        
+        for row in ref1:
+            # ИСПРАВЛЕНО: поддержка обоих вариантов написания колонки
+            row_code = str(row.get("CODE") or row.get("code") or "").strip()
+            pos_code = position.get("code", "")
             
-            if qty_calc <= 0:
-                continue
-            
-            # Округляем до упаковок
-            if pack_size > 0:
-                qty_packs = math.ceil(qty_calc / pack_size)
-                qty_final = qty_packs * pack_size
-            else:
-                qty_final = qty_calc
-            
-            cost = qty_final * price
-            materials_sum += cost
-            
-            print(f"   {element}: {qty_calc:.2f}{unit} → {qty_packs} упак × {pack_size}{unit} = {cost:,.0f}₸")
-            
+            if row_code and pos_code and row_code == pos_code:
+                formula = row.get("Формула_Python", "")
+                if not formula:
+                    formula = row.get("формула фактического расхода", "")
+                if not formula:
+                    continue
+                
+                qty_fact = safe_eval(formula, context)
+                
+                товар = str(row.get("Товар", ""))
+                артикул = str(row.get("Артикул", ""))
+                key = f"{товар}|{артикул}"
+                
+                if key not in materials_dict:
+                    materials_dict[key] = {
+                        "товар": товар,
+                        "артикул": артикул,
+                        "тип_эл": row.get("Тип элемента", ""),
+                        "qty_fact": 0,
+                        "norm": safe_float(row.get("кол-во норм к упаковке", 1)),
+                        "price": safe_float(row.get("цена за ед ", 0)),
+                        "unit": str(row.get("Ед.", "шт"))
+                    }
+                
+                materials_dict[key]["qty_fact"] += qty_fact
+    
+    # ОТЛАДКА: Показать результаты поиска
+    print(f"\n✅ РЕЗУЛЬТАТЫ ПОИСКА:")
+    print(f"   Найдено уникальных материалов: {len(materials_dict)}")
+    if len(materials_dict) == 0:
+        print(f"   ❌ НИ ОДНОГО МАТЕРИАЛА НЕ НАЙДЕНО!")
+        print(f"   🔧 Проверьте:")
+        print(f"      1. Правильность CODE в позиции")
+        print(f"      2. Наличие такого CODE в Справочнике-1")
+        print(f"      3. Регистр букв (CODE чувствителен к регистру)")
+    else:
+        print(f"   Первые 5 найденных материалов:")
+        for i, (key, data) in enumerate(list(materials_dict.items())[:5], 1):
+            print(f"   {i}. {data['товар']} - {data['qty_fact']:.2f} {data['unit']}")
+    
+    # Формируем список материалов
+    materials_sum = 0.0
+    
+    for key, mat in materials_dict.items():
+        qty_fact = mat["qty_fact"]
+        norm = mat["norm"]
+        price = mat["price"]
+        
+        if norm > 0:
+            qty_ship = math.ceil(qty_fact / norm)
+        else:
+            qty_ship = math.ceil(qty_fact)
+        
+        row_sum = (price * norm) * qty_ship
+        materials_sum += row_sum
+        
+        if qty_fact > 0:
             result["part2_materials"].append({
-                "Артикул": article,
-                "Элемент": element,
-                "Количество": round(qty_final, 3),
-                "Количество_raw": round(qty_calc, 3),  # ДО округления - для глобальной корзины
-                "Единица": unit,
+                "Товар": mat["товар"],
+                "Артикул": mat["артикул"],
+                "Тип элемента": mat["тип_эл"],
                 "Цена": price,
-                "Стоимость": round(cost, 0)
+                "Ед.": mat["unit"],
+                "Расход факт.": round(qty_fact, 2),
+                "Норма": norm,
+                "К отгрузке": qty_ship,
+                "Сумма": round(row_sum, 0)
             })
     
-    print(f"\nИТОГО МАТЕРИАЛЫ: {materials_sum:,.0f}₸")
-    
-    # ===== ГАБАРИТНАЯ ВЕДОМОСТЬ (Справочник-3) =====
-    
-    print("\n" + "="*70)
-    print("📊 ГАБАРИТНАЯ ВЕДОМОСТЬ (Справочник-3)")
-    print("="*70)
-    
-    for gab_item in ref3:
-        elem_name = gab_item.get("Элемент", "")
-        formula_raw = gab_item.get("Формула", "0")
-        unit = gab_item.get("Единица", "")
-        
-        # Считаем по всем позициям
-        total_value = 0
-        for context in all_contexts:
-            try:
-                val = safe_eval(formula_raw, context)
-                total_value += val
-            except:
-                pass
-        
-        print(f"{elem_name}: {total_value:.3f} {unit}")
-        
-        result["part1_gabarits"].append({
-            "Элемент": elem_name,
-            "Значение": round(total_value, 3),
-            "Единица": unit
-        })
-    
-    # Извлекаем метрики из габаритной ведомости
-    total_area_calc = 0
-    total_perimeter_calc = 0
+    # ===== ПЕРЕСЧИТЫВАЕМ МЕТРИКИ ПРАВИЛЬНО =====
+    # Считаем площадь и периметр из габаритной ведомости
+    total_area_calc = 0.0
+    total_perimeter_calc = 0.0
     
     for item in result["part1_gabarits"]:
         elem = str(item.get("Элемент", "")).lower()
@@ -443,6 +442,7 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
     # Если в габаритной ведомости не нашли, считаем из позиций
     if total_area_calc == 0:
         for context in all_contexts:
+            # Площадь считается через формулы Справочника-3 (выше в коде)
             total_area_calc += context["area_m2"] * context["count"]
     
     if total_perimeter_calc == 0:
@@ -592,15 +592,6 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
     else:
         print(f"   ⚠️ 'Нащельник' не найден в Справочнике-2")
     
-    # ===== КРИТИЧНО: УБРАНА ДВОЙНАЯ МАРЖА! =====
-    # Раньше было:
-    # subtotal = materials_sum + cost_glass + cost_lambri + cost_toning + cost_assembly + cost_installation + cost_additional
-    # margin = subtotal * 0.81
-    # total_with_margin = subtotal + margin
-    #
-    # Теперь:
-    # Обеспечение начисляется ОДИН РАЗ на уровне всего заказа в app.py
-    
     result["part3_final"] = {
         "Стеклопакет": round(cost_glass, 0),
         "Ламбри": round(cost_lambri, 0),
@@ -611,25 +602,17 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
         "Материалы": round(materials_sum, 0)
     }
     
-    # КЛЮЧЕВОЕ ИЗМЕНЕНИЕ: materials_cost теперь ТОЛЬКО себестоимость без маржи
-    materials_cost_only = materials_sum + cost_glass + cost_lambri + cost_toning + cost_assembly + cost_installation + cost_additional
-    
-    result["materials_cost"] = round(materials_cost_only, 0)  # ← ТОЛЬКО СЕБЕСТОИМОСТЬ!
-    
-    # Для обратной совместимости оставляем total_with_margin, но помечаем как DEPRECATED
-    result["total_with_margin"] = round(materials_cost_only, 0)  # DEPRECATED: используйте materials_cost
+    subtotal = sum(result["part3_final"].values())
+    margin = subtotal * 0.81  # ИЗМЕНЕНО: было 0.65, стало 0.81
+    result["part3_final"]["Обеспечение"] = round(margin, 0)  # Убрал "(65%)" из названия
+    result["total_with_margin"] = round(subtotal + margin, 0)
     
     result["metrics"]["total_area"] = round(result["metrics"]["total_area"], 3)
     result["metrics"]["total_perimeter"] = round(result["metrics"]["total_perimeter"], 3)
     
     # === АЛИАСЫ ДЛЯ СОВМЕСТИМОСТИ С app.py ===
     result["part1_summary"] = result["part1_gabarits"]
-    
-    print("\n" + "="*70)
-    print("✅ РАСЧЁТ ЗАВЕРШЁН (БЕЗ ДВОЙНОЙ МАРЖИ)")
-    print(f"   Себестоимость материалов: {materials_cost_only:,.0f}₸")
-    print(f"   Обеспечение (81%) начисляется на уровне заказа в app.py")
-    print("="*70)
+    result["materials_cost"] = round(subtotal, 0)  # ДОБАВЛЕНО для фасадных вставок
     
     return result
 
