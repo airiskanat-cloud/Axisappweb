@@ -19,6 +19,7 @@ from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
 from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3, load_facade_reference  # ДОБАВЛЕНО load_facade_reference
 from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING
 from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials, calculate_tambour_materials_v2  # ДОБАВЛЕНО
+from calculations.material_basket import MaterialAggregator as MaterialBasket
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
 from export.export_kp import export_to_excel, export_facade_to_excel
 from history.save_history import save_history
@@ -474,9 +475,89 @@ def render_windows_doors_page():
                 "positions": st.session_state.get("positions", [])
             }
             
-            # Расчет через новый движок для окон V2
+            # Расчет через новый движок для окон V2 + ГЛОБАЛЬНАЯ КОРЗИНА
             try:
-                res = calculate_window_smeta(order_data, ref1, ref2, ref3)
+                # === ГЛОБАЛЬНАЯ КОРЗИНА МАТЕРИАЛОВ ===
+                # Устраняет 5× перерасход профилей за счёт округления один раз
+                basket = MaterialBasket(ref1)
+                all_results = []
+                
+                # Рассчитываем каждую позицию отдельно
+                for position in st.session_state.positions:
+                    pos_order_data = {
+                        "common": order_data["common"],
+                        "positions": [position]
+                    }
+                    pos_result = calculate_window_smeta(pos_order_data, ref1, ref2, ref3)
+                    all_results.append(pos_result)
+                    
+                    # Добавляем материалы в корзину (БЕЗ округления!)
+                    for material in pos_result.get("part2_materials", []):
+                        basket.add_material(
+                            article=material.get("Артикул", ""),
+                            quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
+                            unit=material.get("Единица", "шт"),
+                            price=material.get("Цена", 0),
+                            name=material.get("Элемент", "")
+                        )
+                
+                # Округляем материалы ОДИН РАЗ
+                basket.round_all_materials()
+                basket_costs = basket.calculate_costs()
+                
+                # Объединяем результаты
+                if not all_results:
+                    raise Exception("Нет результатов расчёта")
+                
+                # Суммируем метрики из всех результатов
+                total_area = sum(r.get("metrics", {}).get("total_area", 0) for r in all_results)
+                total_perimeter = sum(r.get("metrics", {}).get("total_perimeter", 0) for r in all_results)
+                
+                # Используем материалы из корзины (с правильным округлением!)
+                materials_list = basket.get_materials_list()
+                materials_cost = basket_costs["total_materials_cost"]
+                
+                # Стекло, услуги берём из суммы всех результатов
+                total_glass = sum(r.get("part3_final", {}).get("Стеклопакет", 0) for r in all_results)
+                total_lambri = sum(r.get("part3_final", {}).get("Ламбри", 0) for r in all_results)
+                total_toning = sum(r.get("part3_final", {}).get("Тонировка", 0) for r in all_results)
+                total_assembly = sum(r.get("part3_final", {}).get("Сборка", 0) for r in all_results)
+                total_install = sum(r.get("part3_final", {}).get("Монтаж", 0) for r in all_results)
+                total_additional = sum(r.get("part3_final", {}).get("Дополнительные детали", 0) for r in all_results)
+                
+                # Себестоимость
+                subtotal = materials_cost + total_glass + total_lambri + total_toning + total_assembly + total_install + total_additional
+                
+                # Обеспечение ОДИН РАЗ
+                margin = subtotal * 0.81
+                total_with_margin = subtotal + margin
+                
+                # Формируем итоговый результат
+                res = {
+                    "part1_summary": [],  # Габариты из всех результатов
+                    "part2_materials": materials_list,  # Материалы из корзины
+                    "part3_final": {
+                        "Стеклопакет": round(total_glass, 0),
+                        "Ламбри": round(total_lambri, 0),
+                        "Тонировка": round(total_toning, 0),
+                        "Сборка": round(total_assembly, 0),
+                        "Монтаж": round(total_install, 0),
+                        "Дополнительные детали": round(total_additional, 0),
+                        "Материалы": round(materials_cost, 0),
+                        "Обеспечение (81%)": round(margin, 0)
+                    },
+                    "materials_cost": round(subtotal, 0),
+                    "total_with_margin": round(total_with_margin, 0),
+                    "metrics": {
+                        "total_area": total_area,
+                        "total_perimeter": total_perimeter
+                    },
+                    "basket_savings": basket_costs.get("total_saved_quantity", 0)
+                }
+                
+                # Собираем габариты из всех результатов
+                for result in all_results:
+                    res["part1_summary"].extend(result.get("part1_summary", []))
                 
                 # Сохранение результата в session_state для экспорта
                 st.session_state.last_result = res
@@ -496,65 +577,222 @@ def render_windows_doors_page():
                 except Exception as e:
                     st.warning(f"⚠️ История не сохранена: {e}")
 
-                st.header("📊 Детальная смета AXIS")
+                # ============================================================
+                # ВЫВОД РЕЗУЛЬТАТОВ ПО ТЗ V.9
+                # ============================================================
                 
-                # Метрики вверху
-                m_col1, m_col2, m_col3 = st.columns(3)
-                m_col1.metric("Общая площадь", f"{res['metrics']['total_area']:.3f} м²")
-                m_col2.metric("Суммарный периметр", f"{res['metrics']['total_perimeter']:.3f} м.п.")
-                m_col3.metric("💰 ИТОГО К ОПЛАТЕ", f"{res['total_with_margin']:,} ₸")
+                st.success("✅ Расчёт выполнен!")
+                
+                # Главная метрика
+                st.metric(
+                    "💰 ИТОГО К ОПЛАТЕ",
+                    f"{res['total_with_margin']:,} ₸",
+                    delta="Проектный метод V.9"
+                )
                 
                 st.divider()
                 
-                # ЧАСТЬ 1: Габаритная ведомость (СВЕРНУТАЯ)
-                with st.expander("🔹 ЧАСТЬ 1: Габаритная ведомость (общая по типам)", expanded=False):
-                    if res["part1_summary"]:
-                        st.markdown("#### 📊 Общий расчет элементов по типам изделия:")
-                        
-                        # Группируем по типу изделия
-                        by_type = {}
-                        for item in res["part1_summary"]:
-                            prod_type = item["Тип изделия"]
-                            if prod_type not in by_type:
-                                by_type[prod_type] = []
-                            by_type[prod_type].append(item)
-                        
-                        for prod_type, items in by_type.items():
-                            st.markdown(f"**{prod_type}:**")
-                            df = pd.DataFrame(items)
-                            df = df[["Категория", "Элемент", "Значение"]]
-                            st.dataframe(df, width="stretch", hide_index=True)
-                            st.markdown("---")
-                    else:
-                        st.info("Данные для габаритной ведомости отсутствуют")
-
-                # ЧАСТЬ 2: Ведомость материалов
-                with st.expander("🔹 ЧАСТЬ 2: Ведомость материалов (Артикулы)", expanded=True):
-                    if res["part2_materials"]:
-                        df2 = pd.DataFrame(res["part2_materials"])
-                        st.dataframe(df2, width="stretch", hide_index=True)
-                        
-                        # Итого по материалам
-                        total_mat = sum(m["Сумма"] for m in res["part2_materials"])
-                        st.metric("Итого материалы", f"{total_mat:,} ₸")
-                    else:
-                        st.warning("⚠️ Данные для ведомости материалов отсутствуют")
-                        st.info("Возможные причины: не найдены материалы в Справочнике-1 для выбранной системы")
-
-                # ЧАСТЬ 3: Итоговый расчет
-                with st.expander("🔹 ЧАСТЬ 3: Итоговый расчет", expanded=True):
-                    df3 = pd.DataFrame(res["part3_final"].items(), columns=["Наименование", "Сумма (₸)"])
-                    st.dataframe(df3, width="stretch", hide_index=True)
+                # ============================================================
+                # ЧАСТЬ 1: ОБЩИЕ МЕТРИКИ
+                # ============================================================
+                st.header("📊 ЧАСТЬ 1: Общие показатели")
                 
-                # Отладочная информация (скрытая)
-                with st.expander("🔍 Отладочная информация", expanded=False):
-                    # Показываем метрики
-                    st.write("**Метрики:**")
-                    st.json(res.get("metrics", {}))
-                    st.write("**Количество материалов:**")
-                    st.write(f"- part2_materials: {len(res.get('part2_materials', []))}")
-                    st.write(f"- part3_final keys: {list(res.get('part3_final', {}).keys())}")
-            
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Общая площадь", f"{res['metrics']['total_area']:.2f} м²")
+                col2.metric("Общий периметр", f"{res['metrics']['total_perimeter']:.2f} м")
+                col3.metric("Позиций в заказе", len(st.session_state.positions))
+                
+                st.divider()
+                
+                # ============================================================
+                # ЧАСТЬ 2: ИНФОРМАЦИОННАЯ ДЕТАЛИЗАЦИЯ (БЕЗ ЦЕН!)
+                # ============================================================
+                with st.expander("🔹 ЧАСТЬ 2: Список изделий (информация)", expanded=False):
+                    st.info("ℹ️ Справочная информация для контроля состава заказа. Цены в этом блоке НЕ указаны.")
+                    
+                    # Собираем детали позиций
+                    position_details = []
+                    for idx, position in enumerate(st.session_state.positions, 1):
+                        position_details.append({
+                            'Позиция': idx,
+                            'Тип': position.get('product_type', ''),
+                            'Ширина (мм)': position['data']['width'],
+                            'Высота (мм)': position['data']['height'],
+                            'Площадь (м²)': round(
+                                position['data']['width'] * position['data']['height'] / 1_000_000, 3
+                            ),
+                            'Периметр (м)': round(
+                                2 * (position['data']['width'] + position['data']['height']) / 1000, 2
+                            )
+                        })
+                    
+                    if position_details:
+                        df_positions = pd.DataFrame(position_details)
+                        st.dataframe(df_positions, use_container_width=True, hide_index=True)
+                    else:
+                        st.warning("Нет данных о позициях")
+                
+                st.divider()
+                
+                # ============================================================
+                # ЧАСТЬ 3: АГРЕГИРОВАННАЯ СПЕЦИФИКАЦИЯ МАТЕРИАЛОВ
+                # ============================================================
+                st.header("📦 ЧАСТЬ 3: Спецификация материалов")
+                
+                st.info(
+                    "✨ **Проектный метод:** Материалы из всех позиций суммированы и округлены ОДИН РАЗ. "
+                    "Это устраняет перерасход профилей и позволяет сравнить с заводским расчётом поартикульно."
+                )
+                
+                materials = res.get("part2_materials", [])
+                
+                if materials:
+                    df_materials = pd.DataFrame(materials)
+                    
+                    # Показываем таблицу
+                    st.dataframe(
+                        df_materials,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config={
+                            "Количество_raw": st.column_config.NumberColumn(
+                                "Кол-во нетто",
+                                help="Точное количество ДО округления",
+                                format="%.3f"
+                            ) if "Количество_raw" in df_materials.columns else None,
+                            "Количество": st.column_config.NumberColumn(
+                                "Кол-во брутто",
+                                help="Количество ПОСЛЕ округления до упаковок",
+                                format="%.2f"
+                            ),
+                            "Сумма": st.column_config.NumberColumn(
+                                "Сумма (₸)",
+                                format="%d"
+                            )
+                        }
+                    )
+                    
+                    # Итого по материалам
+                    materials_cost = res.get("part3_final", {}).get("Материалы", 0)
+                    st.metric(
+                        "💼 ИТОГО материалы",
+                        f"{materials_cost:,} ₸",
+                        help="Стоимость всех материалов после округления"
+                    )
+                    
+                    # Показываем экономию от глобальной корзины
+                    if res.get("basket_savings", 0) > 0:
+                        st.success(
+                            f"📉 Экономия на профилях: {res['basket_savings']:.1f}м благодаря округлению ОДИН РАЗ "
+                            f"(вместо поштучного округления)"
+                        )
+                else:
+                    st.warning("⚠️ Материалы не найдены. Возможно, система не определена в Справочнике-1.")
+                
+                st.divider()
+                
+                # ============================================================
+                # ЧАСТЬ 4: ФИНАНСОВЫЙ ИТОГ (ПРОЕКТНЫЙ МЕТОД)
+                # ============================================================
+                st.header("💰 ЧАСТЬ 4: Финансовый итог")
+                
+                st.markdown("**Расчёт ведётся ОДИН РАЗ для всего блока окон/дверей:**")
+                
+                # Таблица итогов
+                final_items = []
+                part3 = res.get("part3_final", {})
+                
+                if part3.get('Стеклопакет', 0) > 0:
+                    final_items.append({
+                        'Наименование': 'Стеклопакеты',
+                        'Площадь (м²)': f"{res['metrics']['total_area']:.2f}",
+                        'Сумма (₸)': f"{part3['Стеклопакет']:,}"
+                    })
+                
+                if part3.get('Ламбри', 0) > 0:
+                    final_items.append({
+                        'Наименование': 'Ламбри',
+                        'Площадь (м²)': '-',
+                        'Сумма (₸)': f"{part3['Ламбри']:,}"
+                    })
+                
+                if part3.get('Тонировка', 0) > 0:
+                    final_items.append({
+                        'Наименование': 'Тонировка',
+                        'Площадь (м²)': '-',
+                        'Сумма (₸)': f"{part3['Тонировка']:,}"
+                    })
+                
+                if part3.get('Сборка', 0) > 0:
+                    final_items.append({
+                        'Наименование': 'Сборка',
+                        'Площадь (м²)': f"{res['metrics']['total_area']:.2f}",
+                        'Сумма (₸)': f"{part3['Сборка']:,}"
+                    })
+                
+                if part3.get('Монтаж', 0) > 0:
+                    final_items.append({
+                        'Наименование': 'Монтаж',
+                        'Площадь (м²)': f"{res['metrics']['total_area']:.2f}",
+                        'Сумма (₸)': f"{part3['Монтаж']:,}"
+                    })
+                
+                if part3.get('Дополнительные детали', 0) > 0:
+                    final_items.append({
+                        'Наименование': 'Дополнительные детали',
+                        'Площадь (м²)': '-',
+                        'Сумма (₸)': f"{part3['Дополнительные детали']:,}"
+                    })
+                
+                final_items.append({
+                    'Наименование': 'Материалы',
+                    'Площадь (м²)': '-',
+                    'Сумма (₸)': f"{part3.get('Материалы', 0):,}"
+                })
+                
+                # Показываем таблицу
+                if final_items:
+                    df_final = pd.DataFrame(final_items)
+                    st.dataframe(df_final, use_container_width=True, hide_index=True)
+                
+                st.divider()
+                
+                # Обеспечение и итого
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.metric(
+                        "Обеспечение",
+                        f"{part3.get('Обеспечение (81%)', 0):,} ₸",
+                        help="Наценка 81% на себестоимость (начислена ОДИН РАЗ)"
+                    )
+                with col_b:
+                    st.metric(
+                        "💰 К ОПЛАТЕ",
+                        f"{res['total_with_margin']:,} ₸",
+                        delta="Финальная сумма"
+                    )
+                
+                # Детализация расчёта обеспечения
+                with st.expander("ℹ️ Как рассчитано обеспечение", expanded=False):
+                    materials_sum = part3.get('Материалы', 0)
+                    services_sum = (
+                        part3.get('Стеклопакет', 0) +
+                        part3.get('Ламбри', 0) +
+                        part3.get('Тонировка', 0) +
+                        part3.get('Сборка', 0) +
+                        part3.get('Монтаж', 0) +
+                        part3.get('Дополнительные детали', 0)
+                    )
+                    subtotal = materials_sum + services_sum
+                    
+                    st.write(f"**Материалы:** {materials_sum:,} ₸")
+                    st.write(f"**Услуги:** {services_sum:,} ₸")
+                    st.write(f"**Себестоимость:** {subtotal:,} ₸")
+                    st.write(f"**Обеспечение (81%):** {part3.get('Обеспечение (81%)', 0):,} ₸")
+                    st.divider()
+                    st.write(f"**ИТОГО:** {res['total_with_margin']:,} ₸")
+                
+
             except Exception as e:
                 st.error(f"❌ Ошибка при расчете: {e}")
                 st.exception(e)
