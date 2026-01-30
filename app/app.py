@@ -518,6 +518,18 @@ def render_windows_doors_page():
                 materials_list = basket.get_category_materials('windows_doors')
                 materials_cost = totals["materials_total"]
                 
+                # === ОТЛАДКА: Выводим содержимое корзины ===
+                print(f"\n🔍 ОТЛАДКА КОРЗИНЫ ОКОН/ДВЕРЕЙ:")
+                print(f"   Всего категорий: {len(basket.categories)}")
+                print(f"   Материалов в windows_doors: {len(basket.categories.get('windows_doors', {}))}")
+                print(f"   Материалов в materials_list: {len(materials_list)}")
+                if materials_list:
+                    print(f"   Первый материал: {materials_list[0].get('Артикул', 'N/A')}")
+                else:
+                    print("   ⚠️ materials_list ПУСТ!")
+                print(f"   Общая стоимость: {materials_cost:,.0f}₸")
+                # === КОНЕЦ ОТЛАДКИ ===
+                
                 # Стекло, услуги берём из суммы всех результатов
                 total_glass = sum(r.get("part3_final", {}).get("Стеклопакет", 0) for r in all_results)
                 total_lambri = sum(r.get("part3_final", {}).get("Ламбри", 0) for r in all_results)
@@ -1594,8 +1606,21 @@ def render_facade_page():
                 facade_totals = facade_basket.calculate_final_totals(margin_rate=0.81)
                 
                 # Получаем материалы
-                materials_list = facade_basket.get_category_materials('facade')
+                materials_list = facade_basket.get_category_materials('facade_frame')
                 materials_cost = facade_totals["materials_total"]
+                
+                # === ОТЛАДКА: Выводим содержимое корзины фасадов ===
+                print(f"\n🔍 ОТЛАДКА КОРЗИНЫ ФАСАДОВ:")
+                print(f"   Всего категорий: {len(facade_basket.categories)}")
+                print(f"   Материалов в facade_frame: {len(facade_basket.categories.get('facade_frame', {}))}")
+                print(f"   Материалов в materials_list: {len(materials_list)}")
+                if materials_list:
+                    print(f"   Первый материал: {materials_list[0].get('Артикул', 'N/A')}")
+                    print(f"   Пример данных: {materials_list[0]}")
+                else:
+                    print("   ⚠️ materials_list ПУСТ!")
+                print(f"   Общая стоимость: {materials_cost:,.0f}₸")
+                # === КОНЕЦ ОТЛАДКИ ===
                 
                 # Средняя стоимость за м²
                 total_cost_per_sqm = materials_cost / total_area if total_area > 0 else 0
