@@ -494,6 +494,7 @@ def render_windows_doors_page():
                     # Добавляем материалы в корзину (БЕЗ округления!)
                     for material in pos_result.get("part2_materials", []):
                         basket.add_material(
+                            category='windows_doors',
                             article=material.get("Артикул", ""),
                             quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
                             unit=material.get("Единица", "шт"),
@@ -1421,13 +1422,14 @@ def render_facade_page():
                         })
                 
                 # ===== РАСЧЁТ МАТЕРИАЛОВ ФАСАДА =====
-                # НОВОЕ: Считаем каждую позицию отдельно!
+                # ПРИМЕЧАНИЕ: Для фасадов материалы округляются внутри calculate_facade_materials()
+                # Каждая позиция считается отдельно, затем стоимости суммируются
                 
                 total_materials_cost = 0
                 total_area = 0
                 total_perimeter = 0
                 total_cost_per_sqm = 0
-                all_positions_calcs = []  # Сохраняем результаты каждой позиции
+                all_positions_calcs = []
                 
                 print(f"\n{'='*70}")
                 print(f"РАСЧЁТ {len(st.session_state.facade_positions)} ПОЗИЦИЙ ФАСАДА")
