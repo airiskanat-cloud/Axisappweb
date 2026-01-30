@@ -606,8 +606,7 @@ def calculate_facade_materials(
             "name": f"Стойка {mullion_size}мм",
             "quantity_raw": frame["mullions"].get("quantity_raw", 0),
             "unit": "м",
-            "pack_size": 6.0,
-            "price": frame["mullions"].get("price", 0)
+                        "price": frame["mullions"].get("price", 0)
         })
     
     # Ригели
@@ -617,8 +616,7 @@ def calculate_facade_materials(
             "name": f"Ригель {transom_size}мм",
             "quantity_raw": frame["transoms"].get("quantity_raw", 0),
             "unit": "м",
-            "pack_size": 6.0,
-            "price": frame["transoms"].get("price", 0)
+                        "price": frame["transoms"].get("price", 0)
         })
     
     # Прижимной профиль (НЕ округляется до 6м!)
@@ -641,8 +639,7 @@ def calculate_facade_materials(
             "name": "Крышка фасадная",
             "quantity_raw": cover_qty,
             "unit": "м",
-            "pack_size": 1.0,
-            "price": frame["cover"].get("price", 0)
+                        "price": frame["cover"].get("price", 0)
         })
     
     # Уплотнитель (НЕ округляется!)
@@ -653,8 +650,7 @@ def calculate_facade_materials(
             "name": "Уплотнитель фасадный",
             "quantity_raw": seal_qty,
             "unit": "м",
-            "pack_size": 1.0,
-            "price": frame["seals"].get("price", 0)
+                        "price": frame["seals"].get("price", 0)
         })
     
     # Кронштейны (штуки)
@@ -665,8 +661,7 @@ def calculate_facade_materials(
             "name": "Кронштейны",
             "quantity_raw": brackets_qty,
             "unit": "шт",
-            "pack_size": 1.0,
-            "price": frame["brackets"].get("price", 0)
+                        "price": frame["brackets"].get("price", 0)
         })
     
     # Термомост
@@ -677,8 +672,7 @@ def calculate_facade_materials(
             "name": "Термомост",
             "quantity_raw": tb_qty,
             "unit": "м",
-            "pack_size": 1.0,
-            "price": frame["thermal_break"].get("price", 0)
+                        "price": frame["thermal_break"].get("price", 0)
         })
     
     result = {

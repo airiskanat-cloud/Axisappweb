@@ -494,7 +494,6 @@ def render_windows_doors_page():
                     # Добавляем материалы в корзину (БЕЗ округления!)
                     for material in pos_result.get("part2_materials", []):
                         basket.add_material(
-                            category='windows_doors',
                             article=material.get("Артикул", ""),
                             quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
                             unit=material.get("Единица", "шт"),
@@ -1520,26 +1519,21 @@ def render_facade_page():
                             # ИСПРАВЛЕНО: Извлекаем материалы из part2_materials (новый формат от adapter.py)
                             part2_materials = insert_result.get("part2_materials", [])
                             
-                            # Разделяем материалы по типам элементов
-                            part1_cost = 0  # Профили
-                            part2_cost = 0  # Фурнитура + Комплектующие + Уплотнители
+                            # ВСЕ материалы вставки (профили + фурнитура + комплектующие + уплотнители)
+                            # НО БЕЗ: стеклопакета, нащельника, обеспечения
+                            insert_materials_cost = 0
                             
                             for material in part2_materials:
                                 material_type = material.get("Тип элемента", "")
                                 material_sum = material.get("Сумма", 0)
                                 
-                                if material_type == "Профиль":
-                                    part1_cost += material_sum
-                                elif material_type in ["Фурнитура", "Комплектующие", "Уплотнитель"]:
-                                    part2_cost += material_sum
-                            
-                            # ИТОГО: ТОЛЬКО Профили + Фурнитура (БЕЗ стеклопакета, БЕЗ нащельника, БЕЗ обеспечения)
-                            insert_materials_cost = part1_cost + part2_cost
+                                # Берём ВСЁ кроме стеклопакета (он в общем итоге фасада)
+                                if material_type in ["Профиль", "Фурнитура", "Комплектующие", "Уплотнитель"]:
+                                    insert_materials_cost += material_sum
                             insert_calc_details = insert_result  # Сохраняем для детализации
                             
                             print(f"   💎 Детализация вставки:")
-                            print(f"      Профили: {part1_cost:,.0f}₸")
-                            print(f"      Фурнитура: {part2_cost:,.0f}₸")
+                            print(f"      Всего материалов: {insert_materials_cost:,.0f}₸")
                             print(f"      (Нащельник считается в общем нащельнике фасада)")
                             print(f"      (Стеклопакет считается в общем итоге)")
                             print(f"   ✅ ИТОГО материалы вставки: {insert_materials_cost:,.0f}₸")
@@ -1570,13 +1564,11 @@ def render_facade_page():
                     # === ДОБАВЛЯЕМ МАТЕРИАЛЫ В КОРЗИНУ (БЕЗ ОКРУГЛЕНИЯ!) ===
                     for material in pos_calc.get("materials_raw", []):
                         facade_basket.add_material(
-                            category='facade',
                             article=material["article"],
                             quantity_raw=material["quantity_raw"],
                             unit=material["unit"],
                             price=material["price"],
-                            name=material["name"],
-                            pack_size=material.get("pack_size", 6.0)
+                            name=material["name"]
                         )
                     
                     # Метрики
