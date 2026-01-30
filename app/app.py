@@ -494,6 +494,7 @@ def render_windows_doors_page():
                     # Добавляем материалы в корзину (БЕЗ округления!)
                     for material in pos_result.get("part2_materials", []):
                         basket.add_material(
+                            category='windows_doors',
                             article=material.get("Артикул", ""),
                             quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
                             unit=material.get("Единица", "шт"),
@@ -1564,6 +1565,7 @@ def render_facade_page():
                     # === ДОБАВЛЯЕМ МАТЕРИАЛЫ В КОРЗИНУ (БЕЗ ОКРУГЛЕНИЯ!) ===
                     for material in pos_calc.get("materials_raw", []):
                         facade_basket.add_material(
+                            category='facade_frame',
                             article=material["article"],
                             quantity_raw=material["quantity_raw"],
                             unit=material["unit"],
