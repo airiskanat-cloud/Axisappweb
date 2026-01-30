@@ -504,9 +504,6 @@ def render_windows_doors_page():
                 
                 # Округляем материалы ОДИН РАЗ
                 basket.round_all_materials()
-                basket_costs = basket.calculate_costs()
-                # Округляем материалы ОДИН РАЗ
-                basket.round_all_materials()
                 totals = basket.calculate_final_totals(margin_rate=0.81)
                 
                 # Объединяем результаты
@@ -1421,18 +1418,18 @@ def render_facade_page():
                             "Тип заполнения": fill_name
                         })
                 
-                # ===== РАСЧЁТ МАТЕРИАЛОВ ФАСАДА =====
-                # ПРИМЕЧАНИЕ: Для фасадов материалы округляются внутри calculate_facade_materials()
-                # Каждая позиция считается отдельно, затем стоимости суммируются
+                # ===== РАСЧЁТ МАТЕРИАЛОВ ФАСАДА С КОРЗИНОЙ! =====
+                # НОВОЕ: MaterialBasket для фасадов (как Logikal!)
+                # Материалы суммируются БЕЗ округления, затем округляются ОДИН РАЗ
                 
-                total_materials_cost = 0
+                facade_basket = MaterialBasket(ref_facade)  # Корзина для фасадных материалов
+                
                 total_area = 0
                 total_perimeter = 0
-                total_cost_per_sqm = 0
                 all_positions_calcs = []
                 
                 print(f"\n{'='*70}")
-                print(f"РАСЧЁТ {len(st.session_state.facade_positions)} ПОЗИЦИЙ ФАСАДА")
+                print(f"РАСЧЁТ {len(st.session_state.facade_positions)} ПОЗИЦИЙ ФАСАДА С КОРЗИНОЙ")
                 print(f"{'='*70}")
                 
                 for idx, pos in enumerate(st.session_state.facade_positions, 1):
@@ -1559,7 +1556,7 @@ def render_facade_page():
                         H2=H2,
                         cols=cols,
                         rows=rows,
-                        count=1,  # ИСПРАВЛЕНО: каждая позиция считается отдельно!
+                        count=1,  # ВАЖНО: каждая позиция отдельно!
                         mullion_size=mullion_size,
                         transom_size=transom_size,
                         brackets_per_mullion=brackets_per_mullion,
@@ -1570,13 +1567,22 @@ def render_facade_page():
                         ref3=ref3
                     )
                     
-                    # Суммируем результаты
-                    pos_cost = pos_calc.get("total_cost", 0)
-                    pos_cost += insert_materials_cost  # НОВОЕ: Добавляем стоимость вставки!
+                    # === ДОБАВЛЯЕМ МАТЕРИАЛЫ В КОРЗИНУ (БЕЗ ОКРУГЛЕНИЯ!) ===
+                    for material in pos_calc.get("materials_raw", []):
+                        facade_basket.add_material(
+                            category='facade',
+                            article=material["article"],
+                            quantity_raw=material["quantity_raw"],
+                            unit=material["unit"],
+                            price=material["price"],
+                            name=material["name"],
+                            pack_size=material.get("pack_size", 6.0)
+                        )
+                    
+                    # Метрики
                     pos_area = pos_calc.get("metrics", {}).get("total_area", 0)
                     pos_perimeter = pos_calc.get("metrics", {}).get("total_perimeter", 0)
                     
-                    total_materials_cost += pos_cost
                     total_area += pos_area
                     total_perimeter += pos_perimeter
                     
@@ -1585,21 +1591,33 @@ def render_facade_page():
                     pos_calc["insert_calc_details"] = insert_calc_details
                     all_positions_calcs.append(pos_calc)
                     
-                    print(f"   ✅ Позиция {idx}: {pos_area:.2f}м², {pos_perimeter:.2f}м, {pos_cost:,.0f}₸")
+                    print(f"   ✅ Позиция {idx}: {pos_area:.2f}м², {pos_perimeter:.2f}м")
                     if insert_materials_cost > 0:
-                        print(f"      (в т.ч. вставка: {insert_materials_cost:,.0f}₸)")
+                        print(f"      (вставка: {insert_materials_cost:,.0f}₸)")
+                
+                # === ОКРУГЛЯЕМ МАТЕРИАЛЫ ОДИН РАЗ (КАК LOGIKAL!) ===
+                facade_basket.round_all_materials()
+                facade_totals = facade_basket.calculate_final_totals(margin_rate=0.81)
+                
+                # Получаем материалы
+                materials_list = facade_basket.get_category_materials('facade')
+                materials_cost = facade_totals["materials_total"]
                 
                 # Средняя стоимость за м²
-                if total_area > 0:
-                    total_cost_per_sqm = total_materials_cost / total_area
+                total_cost_per_sqm = materials_cost / total_area if total_area > 0 else 0
                 
                 print(f"\n{'='*70}")
-                print(f"ИТОГО ПО ВСЕМ ПОЗИЦИЯМ:")
+                print(f"ИТОГО МАТЕРИАЛЫ ФАСАДА (С КОРЗИНОЙ):")
                 print(f"   Площадь: {total_area:.2f} м²")
                 print(f"   Периметр: {total_perimeter:.2f} м")
-                print(f"   Стоимость: {total_materials_cost:,.0f}₸")
+                print(f"   Стоимость: {materials_cost:,.0f}₸")
                 print(f"   Средняя ₸/м²: {total_cost_per_sqm:,.0f}₸/м²")
+                if facade_totals.get("total_saved_quantity", 0) > 0:
+                    print(f"   💰 Экономия: {facade_totals['total_saved_quantity']:.1f}м")
                 print(f"{'='*70}")
+                
+                # Используем materials_cost вместо total_materials_cost
+                total_materials_cost = materials_cost
                 
                 materials_cost = total_materials_cost
                 

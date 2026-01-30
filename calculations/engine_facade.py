@@ -596,16 +596,101 @@ def calculate_facade_materials(
     # 4. ИТОГОВЫЙ РЕЗУЛЬТАТ
     # ============================================================================
     
+    # === НОВОЕ: Формируем materials_raw для MaterialBasket ===
+    materials_raw = []
+    
+    # Стойки
+    if "mullions" in frame:
+        materials_raw.append({
+            "article": frame["mullions"].get("article", ""),
+            "name": f"Стойка {mullion_size}мм",
+            "quantity_raw": frame["mullions"].get("quantity_raw", 0),
+            "unit": "м",
+            "pack_size": 6.0,
+            "price": frame["mullions"].get("price", 0)
+        })
+    
+    # Ригели
+    if "transoms" in frame:
+        materials_raw.append({
+            "article": frame["transoms"].get("article", ""),
+            "name": f"Ригель {transom_size}мм",
+            "quantity_raw": frame["transoms"].get("quantity_raw", 0),
+            "unit": "м",
+            "pack_size": 6.0,
+            "price": frame["transoms"].get("price", 0)
+        })
+    
+    # Прижимной профиль (НЕ округляется до 6м!)
+    if "press_profile" in frame:
+        press_qty = frame["press_profile"].get("quantity", 0)
+        materials_raw.append({
+            "article": frame["press_profile"].get("article", ""),
+            "name": "Прижимной профиль",
+            "quantity_raw": press_qty,  # Уже округлён (Lst + Lrig)
+            "unit": "м",
+            "pack_size": 1.0,  # НЕ кратно 6м!
+            "price": frame["press_profile"].get("price", 0)
+        })
+    
+    # Крышка фасадная
+    if "cover" in frame:
+        cover_qty = frame["cover"].get("quantity", 0)
+        materials_raw.append({
+            "article": frame["cover"].get("article", ""),
+            "name": "Крышка фасадная",
+            "quantity_raw": cover_qty,
+            "unit": "м",
+            "pack_size": 1.0,
+            "price": frame["cover"].get("price", 0)
+        })
+    
+    # Уплотнитель (НЕ округляется!)
+    if "seals" in frame:
+        seal_qty = frame["seals"].get("quantity", 0)
+        materials_raw.append({
+            "article": frame["seals"].get("article", ""),
+            "name": "Уплотнитель фасадный",
+            "quantity_raw": seal_qty,
+            "unit": "м",
+            "pack_size": 1.0,
+            "price": frame["seals"].get("price", 0)
+        })
+    
+    # Кронштейны (штуки)
+    if "brackets" in frame:
+        brackets_qty = frame["brackets"].get("quantity", 0)
+        materials_raw.append({
+            "article": frame["brackets"].get("article", ""),
+            "name": "Кронштейны",
+            "quantity_raw": brackets_qty,
+            "unit": "шт",
+            "pack_size": 1.0,
+            "price": frame["brackets"].get("price", 0)
+        })
+    
+    # Термомост
+    if "thermal_break" in frame:
+        tb_qty = frame["thermal_break"].get("quantity", 0)
+        materials_raw.append({
+            "article": frame["thermal_break"].get("article", ""),
+            "name": "Термомост",
+            "quantity_raw": tb_qty,
+            "unit": "м",
+            "pack_size": 1.0,
+            "price": frame["thermal_break"].get("price", 0)
+        })
+    
     result = {
         "geometry": geometry,
         "frame": frame,
         "inserts": inserts_result,
+        "materials_raw": materials_raw,  # ← НОВОЕ ДЛЯ КОРЗИНЫ!
         "total_cost": frame["total_cost"] + inserts_result["total_cost"],
         "metrics": {
-            "total_area": geometry["area"],         # ИЗМЕНЕНО: area → total_area
-            "total_perimeter": geometry["perimeter"], # ИЗМЕНЕНО: perimeter → total_perimeter
-            "cost_per_sqm": 0,  # Рассчитается позже
-            # НОВОЕ: Габариты для расчёта нащельника
+            "total_area": geometry["area"],
+            "total_perimeter": geometry["perimeter"],
+            "cost_per_sqm": 0,
             "W": W,
             "H1": H1,
             "H2": H2 if H2 else 0
