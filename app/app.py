@@ -19,7 +19,7 @@ from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
 from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3, load_facade_reference  # ДОБАВЛЕНО load_facade_reference
 from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING
 from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials, calculate_tambour_materials_v2  # ДОБАВЛЕНО
-from calculations.material_basket import MaterialBasket
+from calculations.material_basket import MaterialAggregator as MaterialBasket
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
 from export.export_kp import export_to_excel, export_facade_to_excel
 from history.save_history import save_history
