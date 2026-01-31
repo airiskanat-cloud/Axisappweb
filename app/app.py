@@ -17,7 +17,7 @@ if str(root_dir) not in sys.path:
 from auth.auth import authenticate
 from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
 from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3, load_facade_reference  # ДОБАВЛЕНО load_facade_reference
-from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING, calculate_window_smeta_legacy
+from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING
 from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials, calculate_tambour_materials_v2  # ДОБАВЛЕНО
 from calculations.material_basket import MaterialAggregator as MaterialBasket
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
@@ -483,42 +483,22 @@ def render_windows_doors_page():
                 all_results = []
                 
                 # Рассчитываем каждую позицию отдельно
-                for pos_idx, position in enumerate(st.session_state.positions):
+                for position in st.session_state.positions:
                     pos_order_data = {
                         "common": order_data["common"],
                         "positions": [position]
                     }
                     pos_result = calculate_window_smeta(pos_order_data, ref1, ref2, ref3)
-                    
-                    # FALLBACK: если unified не вернул part2_materials — вызываем legacy
-                    if not pos_result.get("part2_materials"):
-                        print(f"   ⚠️ Позиция {pos_idx+1}: unified не вернул part2_materials, пробуем legacy...")
-                        pos_result = calculate_window_smeta_legacy(pos_order_data, ref1, ref2, ref3)
-                        print(f"   📋 Legacy вернул: {len(pos_result.get('part2_materials', []))} материалов")
-                    
                     all_results.append(pos_result)
                     
                     # Добавляем материалы в корзину (БЕЗ округления!)
-                    pos_materials = pos_result.get("part2_materials", [])
-                    print(f"   📥 Позиция {pos_idx+1}: добавляем {len(pos_materials)} материалов в корзину")
-                    
-                    for material in pos_materials:
-                        art = material.get("Артикул", "")
-                        # Берём RAW количество если есть, иначе обычное
-                        qty = material.get("Количество_raw", material.get("Количество", 0))
-                        # Если qty это строка — парсим
-                        if isinstance(qty, str):
-                            try:
-                                qty = float(qty.replace(" ", "").replace(",", ".").split()[0])
-                            except:
-                                qty = 0
-                        print(f"      + {art}: qty_raw={qty}, unit={material.get('Единица','')}, price={material.get('Цена',0)}")
+                    for material in pos_result.get("part2_materials", []):
                         basket.add_material(
                             category='windows_doors',
-                            article=art,
-                            quantity_raw=float(qty),
+                            article=material.get("Артикул", ""),
+                            quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
                             unit=material.get("Единица", "шт"),
-                            price=float(material.get("Цена", 0)),
+                            price=material.get("Цена", 0),
                             name=material.get("Элемент", "")
                         )
                 
@@ -1454,7 +1434,7 @@ def render_facade_page():
                 # НОВОЕ: MaterialBasket для фасадов (как Logikal!)
                 # Материалы суммируются БЕЗ округления, затем округляются ОДИН РАЗ
                 
-                facade_basket = MaterialBasket(ref1)  # ИСПРАВЛЕНО: ref1 а НЕ ref_facade!
+                facade_basket = MaterialBasket(ref_facade)  # Корзина для фасадных материалов
                 
                 total_area = 0
                 total_perimeter = 0
@@ -1594,11 +1574,8 @@ def render_facade_page():
                         ref3=ref3
                     )
                     
-                    # === ДОБАВЛЯЕМ МАТЕРИАЛЫ В КОРЗИНУ (БЕЗ ОКРУГЛЕНИЯ!) ===
-                    raw_materials = pos_calc.get("materials_raw", [])
-                    print(f"   📥 Позиция {idx}: materials_raw содержит {len(raw_materials)} позиций")
-                    for material in raw_materials:
-                        print(f"      + {material.get('article','')}: qty_raw={material.get('quantity_raw',0)}")
+                    # === ДОБАВЛЯЕМ МАТЕРИАЛЫ КАРКАСА В КОРЗИНУ (facade_frame) ===
+                    for material in pos_calc.get("materials_raw", []):
                         facade_basket.add_material(
                             category='facade_frame',
                             article=material["article"],
@@ -1607,7 +1584,29 @@ def render_facade_page():
                             price=material["price"],
                             name=material["name"]
                         )
-                    print(f"   📊 Корзина facade_frame теперь: {len(facade_basket.categories.get('facade_frame', {}))} артикулов")
+                    
+                    # === ✅ ЭТАП 4: ДОБАВЛЯЕМ ВСТАВКИ В КОРЗИНУ (facade_inserts) ===
+                    for material in pos_calc.get("insert_materials_raw", []):
+                        facade_basket.add_material(
+                            category='facade_inserts',
+                            article=material["article"],
+                            quantity_raw=material["quantity_raw"],
+                            unit=material["unit"],
+                            price=material["price"],
+                            name=material["name"]
+                        )
+                    
+                    # Адаптер рамы — тоже в корзину (каркас)
+                    adapter = pos_calc.get("inserts", {}).get("adapter_frames", {})
+                    if adapter.get("quantity_raw", 0) > 0:
+                        facade_basket.add_material(
+                            category='facade_frame',
+                            article=adapter.get("article", ""),
+                            quantity_raw=adapter["quantity_raw"],
+                            unit=adapter.get("unit", "м"),
+                            price=adapter.get("price", 0),
+                            name=adapter.get("name", "Адаптер рамы")
+                        )
                     
                     # Метрики
                     pos_area = pos_calc.get("metrics", {}).get("total_area", 0)
@@ -1772,8 +1771,8 @@ def render_facade_page():
                 print(f"\n📊 РАСЧЁТ СТЕКЛОПАКЕТОВ:")
                 for glass_type, total_glass_area in glass_areas.items():
                     if total_glass_area > 0:
-                        # ИСПРАВЛЕНО: берём из ref2 с нормализацией регистра
-                        price_per_m2 = ref2.get(glass_type.lower(), 9000)
+                        # ✅ V9 Этап 1: цена из ref2, без fallback
+                        price_per_m2 = ref2.get(glass_type.lower(), 0)
                         cost = total_glass_area * price_per_m2
                         glass_cost += cost
                         print(f"   {glass_type}: {total_glass_area:.2f}м² × {price_per_m2:,.0f}₸/м² = {cost:,.0f}₸")
@@ -1788,8 +1787,8 @@ def render_facade_page():
                         # Кол-во к отгрузке = ceil(площадь / 6)
                         q_otgr = math.ceil(lambri_area / 6.0)
                         
-                        # ИСПРАВЛЕНО: берём из ref2 по типу, нормализация регистра
-                        price_per_m_lambri = ref2.get(lambri_type.lower(), 2248)
+                        # ✅ V9 Этап 1: цена из ref2, без fallback
+                        price_per_m_lambri = ref2.get(lambri_type.lower(), 0)
                         
                         # Сумма = цена_за_метр * (кол-во_хлыстов * 6м)
                         cost = price_per_m_lambri * (q_otgr * 6)
@@ -1801,13 +1800,13 @@ def render_facade_page():
                 # Тонировка
                 toning_cost = 0
                 if facade_toning == "Есть":
-                    price_toning = ref2.get("тонировка", 2000)
+                    price_toning = ref2.get("тонировка", 0)  # ✅ V9: без fallback
                     toning_cost = total_area * price_toning
                 
                 # Сборка
                 assembly_cost = 0
                 if facade_assembly == "Есть":
-                    price_assembly = ref2.get("сборка", 10000)
+                    price_assembly = ref2.get("сборка", 0)  # ✅ V9: без fallback
                     assembly_cost = total_area * price_assembly
                 
                 # Монтаж - ИСПРАВЛЕНО: берём из ref2 с нормализацией
@@ -1815,7 +1814,7 @@ def render_facade_page():
                 if facade_installation != "Нет":
                     # Нормализуем: убираем пробелы вокруг / и приводим к нижнему регистру
                     install_key = facade_installation.lower().replace(" / ", "/")
-                    price_installation = ref2.get(install_key, 10000)
+                    price_installation = ref2.get(install_key, 0)  # ✅ V9: без fallback
                     installation_cost = total_area * price_installation
                 
                 # ДОБАВЛЕНО: Дополнительные детали (НАЩЕЛЬНИК)
@@ -1901,7 +1900,7 @@ def render_facade_page():
                 # Стеклопакеты - ОБЩАЯ СУММА (БЕЗ РАЗБИВКИ ПО ТИПАМ)
                 total_glass_cost_all = 0
                 for glass_type, glass_area in glass_areas.items():
-                    price_glass = ref2.get(glass_type.lower(), 9000)
+                    price_glass = ref2.get(glass_type.lower(), 0)  # ✅ V9: без fallback
                     cost_glass_type = glass_area * price_glass if glass_area > 0 else 0
                     total_glass_cost_all += cost_glass_type
                 
@@ -1912,7 +1911,7 @@ def render_facade_page():
                 total_lambri_cost_all = 0
                 for lambri_type, lambri_area in lambri_areas.items():
                     q_otgr = math.ceil(lambri_area / 6.0) if lambri_area > 0 else 0
-                    price_lambri = ref2.get(lambri_type.lower(), 2248)
+                    price_lambri = ref2.get(lambri_type.lower(), 0)  # ✅ V9: без fallback
                     cost_lambri_type = price_lambri * (q_otgr * 6) if lambri_area > 0 else 0
                     total_lambri_cost_all += cost_lambri_type
                 

@@ -372,29 +372,32 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
             if qty_calc <= 0:
                 continue
             
-            # Округляем до упаковок
-            if pack_size > 0:
-                qty_packs = math.ceil(qty_calc / pack_size)
-                qty_final = qty_packs * pack_size
-            else:
-                qty_final = qty_calc
+            # ✅ V9 Этап 2: НЕ округляем здесь.
+            # Округление — только в MaterialAggregator.
+            # Стоимость НЕ считаем — считается после округления в корзине.
+            qty_final = qty_calc  # = quantity_raw
+            cost = 0  # пересчитается в корзине
             
-            cost = qty_final * price
-            materials_sum += cost
-            
-            print(f"   {element}: {qty_calc:.2f}{unit} → {qty_packs} упак × {pack_size}{unit} = {cost:,.0f}₸")
+            print(f"   {element}: {qty_calc:.3f}{unit} (НЕТТО) → округление в корзине")
             
             result["part2_materials"].append({
                 "Артикул": article,
                 "Элемент": element,
-                "Количество": round(qty_final, 3),
-                "Количество_raw": round(qty_calc, 3),  # ДО округления - для глобальной корзины
+                "Количество": round(qty_calc, 3),        # = raw (для обратной совместимости)
+                "Количество_raw": round(qty_calc, 3),    # НЕТТО — для корзины
                 "Единица": unit,
                 "Цена": price,
-                "Стоимость": round(cost, 0)
+                "Стоимость": 0                           # пересчитается в корзине
             })
     
-    print(f"\nИТОГО МАТЕРИАЛЫ: {materials_sum:,.0f}₸")
+    # ✅ V9 Этап 2: materials_sum считаем из raw × price
+    # (в цикле выше cost = 0, потому что округление — в корзине)
+    materials_sum = sum(
+        m.get("Количество_raw", 0) * m.get("Цена", 0)
+        for m in result["part2_materials"]
+    )
+    
+    print(f"\nИТОГО МАТЕРИАЛЫ (по НЕТТО): {materials_sum:,.0f}₸")
     
     # ===== ГАБАРИТНАЯ ВЕДОМОСТЬ (Справочник-3) =====
     
@@ -455,25 +458,24 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
     # ===== ИТОГОВЫЙ РАСЧЕТ =====
     
     def get_price_from_ref2(key_word: str) -> float:
-        """Поиск цены в Справочнике-2"""
-        # Нормализуем: приводим к нижнему регистру и убираем пробелы вокруг /
+        """Поиск цены в Справочнике-2 (без хардкодов — ТЗ V9 Этап 1)"""
         key_normalized = key_word.lower().replace(" / ", "/")
         price = ref2.get(key_normalized)
         
-        # Запасные значения если нет в справочнике
+        # Поиск по подстроке если точное совпадение не нашло
         if price is None:
-            defaults = {
-                "ламбри без термо": 2248,
-                "ламбри с термо": 2800
-            }
-            price = defaults.get(key_normalized)
+            for key in ref2.keys():
+                if key_normalized in key.lower() or key.lower() in key_normalized:
+                    price = ref2[key]
+                    key_normalized = key
+                    break
         
-        print(f"🔎 Ищем: '{key_word}' → normalized: '{key_normalized}' → найдено: {price}")
+        if price is not None:
+            print(f"🔍 Поиск материала [{key_word}] в Справочнике-2: Найдено — {float(price):,.0f}₸")
+            return float(price)
         
-        if price is None:
-            print(f"⚠️ WARNING: Цена НЕ НАЙДЕНА!")
-            return 0.0
-        return float(price)
+        print(f"🔍 Поиск материала [{key_word}] в Справочнике-2: Не найдено")
+        return 0.0
     
     total_area = result["metrics"]["total_area"]
     
@@ -522,14 +524,12 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
             cost_glass += cost
             print(f"   ✅ Стеклопакет: {pos_area:.3f} м² × {price_glass} тг/м² = {cost:.2f} тг")
         elif "Ламбри" in fill_cat:
-            # Ламбри: округляем до кратного 6м (хлысты), потом × цена за 1м
+            # Ламбри: передаём raw площадь, округление в корзине
             price_lambri = get_price_from_ref2(fill_cat)
-            # Округляем площадь до кратного 6 (завод отпускает хлыстами по 6м)
-            qty_hlysti = math.ceil(pos_area / 6) if pos_area > 0 else 0
-            total_meters = qty_hlysti * 6
-            cost = total_meters * price_lambri
+            # V9: НЕ округляем до хлыстов здесь — в корзине
+            cost = pos_area * price_lambri  # raw × цена (для оценки)
             cost_lambri += cost
-            print(f"   ✅ Ламбри: {pos_area:.3f} м² → {qty_hlysti} хлыстов × 6м = {total_meters}м × {price_lambri} тг/м = {cost:.2f} тг")
+            print(f"   ✅ Ламбри: {pos_area:.3f} м² × {price_lambri} тг/м = {cost:.2f} тг (НЕТТО, округление в корзине)")
         else:
             print(f"   ⚠️ Неизвестный тип заполнения: {fill_cat}")
     
@@ -585,10 +585,10 @@ def calculate_window_smeta_legacy(order_data: Dict, ref1: List, ref2: Dict, ref3
     
     if additional_name:
         price_additional = ref2.get(additional_name, 0)
-        # Формула: ОКРУГЛЕНИЕ ВВЕРХ (периметр / 3) * цена
-        cost_additional = math.ceil(total_perimeter / 3) * price_additional
-        print(f"   Формула: ⌈периметр / 3⌉ × цена")
-        print(f"   Расчёт: ⌈{total_perimeter:.3f} / 3⌉ × {price_additional} = {math.ceil(total_perimeter / 3)} × {price_additional} = {cost_additional:.2f} тг")
+        # V9: НЕ округляем здесь — в корзине
+        cost_additional = total_perimeter * price_additional  # raw
+        print(f"   Формула: периметр × цена (НЕТТО)")
+        print(f"   Расчёт: {total_perimeter:.3f}м × {price_additional} = {cost_additional:.2f} тг (округление в корзине)")
     else:
         print(f"   ⚠️ 'Нащельник' не найден в Справочнике-2")
     

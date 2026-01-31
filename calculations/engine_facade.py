@@ -1,17 +1,25 @@
 """
 Модуль расчёта фасадных систем (Ruit 50F)
-ОБНОВЛЕНО: Поддержка трапеции, ручной выбор профилей, исправленные формулы
+ОБНОВЛЕНО V9: Поддержка трапеции, ручной выбор профилей, исправленные формулы.
+Этап 1: все цены извлекаются из справочников через get_material_data().
+Этап 2: функции возвращают quantity_raw (НЕТТО), округление — только в MaterialAggregator.
 """
 
 import math
 from typing import Dict, List, Any, Optional
+
+# Импорт констант (Этап 3)
+try:
+    from calculations.constants import MaterialKeys, TambourArticles, ServiceKeys
+except ImportError:
+    # Fallback для тестов вне пакета
+    from constants import MaterialKeys, TambourArticles, ServiceKeys
 
 # Импорты для расчёта вставок
 try:
     from calculations.engine_windows import calculate_window_smeta
     from calculations.mapping import get_code_for_windows_doors
 except ImportError:
-    # Fallback если импорты не работают
     calculate_window_smeta = None
     get_code_for_windows_doors = None
 
@@ -24,13 +32,59 @@ def parse_price(value):
     if value == "":
         return 0.0
     try:
-        # Убираем все виды пробелов
         for space in ['\xa0', '\u00a0', '\u202f', '\u2009', ' ']:
             value = value.replace(space, '')
         value = value.replace(',', '.')
         return float(value)
     except:
         return 0.0
+
+
+def get_material_data(article_id: str, ref_data: List[Dict], search_field: str = "Артикул") -> Dict[str, Any]:
+    """
+    ✅ ЦЕНТРАЛЬНЫЙ МАППЕР (Этап 1 ТЗ V.9)
+    Извлекает данные материала из справочника по артикулу или ключевому слову.
+    
+    Единственная точка доступа к ценам в движках.
+    Запрещено использовать числа как цены — только через эту функцию.
+    
+    Args:
+        article_id: Артикул или ключевое слово для поиска
+        ref_data:   Список справочника (ref1 или ref_facade)
+        search_field: Поле для поиска ("Артикул" или "Элемент")
+    
+    Returns:
+        {
+            "article":  str,   — артикул найденного элемента
+            "name":     str,   — название элемента
+            "price":    float, — цена за единицу
+            "package_size": float, — кратность (размер хлыста)
+            "found":    bool   — найден ли элемент
+        }
+    """
+    for item in ref_data:
+        val = str(item.get(search_field, ""))
+        # Точное совпадение или подстрока (регистронезависимо)
+        if val == article_id or article_id.lower() in val.lower():
+            result = {
+                "article":      item.get(MaterialKeys.ARTICLE, ""),
+                "name":         item.get(MaterialKeys.ELEMENT, ""),
+                "price":        parse_price(item.get(MaterialKeys.PRICE, 0)),
+                "package_size": parse_price(item.get(MaterialKeys.PACKAGE_SIZE, 1)),
+                "found":        True
+            }
+            print(f"🔍 Поиск материала [{article_id}] в Справочнике: Найдено — "
+                  f"{result['name']} | {result['article']} | {result['price']:,.0f}₸")
+            return result
+
+    print(f"🔍 Поиск материала [{article_id}] в Справочнике: Не найдено")
+    return {
+        "article":      "",
+        "name":         article_id,
+        "price":        0.0,
+        "package_size": 1.0,
+        "found":        False
+    }
 
 
 def calculate_facade_geometry(
@@ -82,31 +136,8 @@ def calculate_facade_geometry(
 
 
 def round_to_multiple_up(value: float, multiple: float = 6.0) -> float:
-    """Округление ВВЕРХ кратно заданному значению"""
+    """Округление ВВЕРХ кратно заданному значению (используется только в тестах и легаси)"""
     return math.ceil(value / multiple) * multiple
-
-
-def find_profile_in_ref(
-    facade_profiles_ref: List[Dict],
-    element_name: str
-) -> Dict[str, Any]:
-    """
-    Поиск профиля в справочнике по названию элемента
-    
-    Returns:
-        {"price": float, "article": str, "found": bool}
-    """
-    for item in facade_profiles_ref:
-        elem = item.get('Элемент', '')
-        if element_name.lower() in elem.lower():
-            return {
-                "price": parse_price(item.get('Цена за единицу', 0)),
-                "article": item.get('Артикул', ''),
-                "name": elem,
-                "found": True
-            }
-    
-    return {"price": 0, "article": "", "name": element_name, "found": False}
 
 
 def calculate_facade_frame(
@@ -115,244 +146,173 @@ def calculate_facade_frame(
     cols: int,
     rows: int,
     count: int,
-    mullion_size: int,  # Ручной выбор!
-    transom_size: int,  # Ручной выбор!
-    brackets_per_mullion: int,  # Кронштейнов на 1 стойку
+    mullion_size: int,
+    transom_size: int,
+    brackets_per_mullion: int,
     facade_profiles_ref: List[Dict]
 ) -> Dict[str, Any]:
     """
-    Расчёт каркаса фасада (ИСПРАВЛЕННЫЕ ФОРМУЛЫ по ТЗ)
+    Расчёт каркаса фасада.
     
-    Args:
-        W: Ширина фасада
-        Havg: Средняя высота
-        cols: Количество столбцов
-        rows: Количество рядов
-        count: Количество фасадов
-        mullion_size: Сечение стойки (мм) - РУЧНОЙ ВЫБОР
-        transom_size: Сечение ригеля (мм) - РУЧНОЙ ВЫБОР
-        brackets_per_mullion: Кронштейнов на 1 стойку
-        facade_profiles_ref: Справочник профилей
+    ✅ V9 Этап 2: возвращает ТОЛЬКО quantity_raw (НЕТТО).
+    Стоимости НЕ считаются здесь — считаются в MaterialAggregator после округления.
     
-    Returns:
-        {
-            "mullions": {...},
-            "transoms": {...},
-            "press_profile": {...},
-            "seals": {...},
-            "brackets": {...},
-            ...
-        }
+    ✅ V9 Этап 1: все цены извлекаются через get_material_data().
     """
     
     result = {}
-    total_cost = 0
     
     print("\n" + "="*70)
-    print("РАСЧЁТ КАРКАСА ФАСАДА (ИСПРАВЛЕННЫЕ ФОРМУЛЫ)")
+    print("РАСЧЁТ КАРКАСА ФАСАДА (V9 — НЕТТО)")
     print("="*70)
     
-    # ============================================================================
-    # 1. СТОЙКИ (Mullions)
-    # ============================================================================
+    # ============================================================
+    # 1. СТОЙКИ
+    # ============================================================
+    n_mullions = cols + 1
+    Lst_raw = n_mullions * Havg * count  # НЕТТО
     
-    n_mullions = cols + 1  # Количество стоек
-    Lst_raw = n_mullions * Havg * count  # БЕЗ округления
-    Lst = round_to_multiple_up(Lst_raw, 6)  # Округление вверх кратно 6м
-    
-    mullion_info = find_profile_in_ref(facade_profiles_ref, f"Стойка {mullion_size} мм")
-    
-    cost_mullions = Lst * mullion_info["price"]
-    total_cost += cost_mullions
+    mullion_info = get_material_data(f"Стойка {mullion_size} мм", facade_profiles_ref, search_field="Элемент")
     
     print(f"\n1. СТОЙКИ {mullion_size}мм:")
-    print(f"   Формула: (cols + 1) × Havg × count")
-    print(f"   Расчёт: {n_mullions} × {Havg:.2f}м × {count} = {Lst_raw:.2f}м")
-    print(f"   Округление: ⌈{Lst_raw:.2f}/6⌉ × 6 = {Lst:.0f}м")
-    print(f"   Цена: {mullion_info['price']:,}₸/м")
-    print(f"   Стоимость: {cost_mullions:,.0f}₸")
+    print(f"   ({n_mullions}) × {Havg:.2f}м × {count} = {Lst_raw:.3f}м (НЕТТО)")
     
     result["mullions"] = {
-        "quantity": Lst,
         "quantity_raw": Lst_raw,
         "unit": "м",
         "price": mullion_info["price"],
-        "cost": cost_mullions,
         "size": mullion_size,
-        "article": mullion_info["article"]
+        "article": mullion_info["article"],
+        "name": mullion_info["name"]
     }
     
-    # ============================================================================
-    # 2. РИГЕЛИ (Transoms)
-    # ============================================================================
+    # ============================================================
+    # 2. РИГЕЛИ
+    # ============================================================
+    Lrig_raw = W * rows * count  # НЕТТО
     
-    Lrig_raw = W * rows * count  # БЕЗ округления
-    Lrig = round_to_multiple_up(Lrig_raw, 6)  # Округление вверх кратно 6м
-    
-    transom_info = find_profile_in_ref(facade_profiles_ref, f"Ригель {transom_size} мм")
-    
-    cost_transoms = Lrig * transom_info["price"]
-    total_cost += cost_transoms
+    transom_info = get_material_data(f"Ригель {transom_size} мм", facade_profiles_ref, search_field="Элемент")
     
     print(f"\n2. РИГЕЛИ {transom_size}мм:")
-    print(f"   Формула: W × rows × count")
-    print(f"   Расчёт: {W:.2f}м × {rows} × {count} = {Lrig_raw:.2f}м")
-    print(f"   Округление: ⌈{Lrig_raw:.2f}/6⌉ × 6 = {Lrig:.0f}м")
-    print(f"   Цена: {transom_info['price']:,}₸/м")
-    print(f"   Стоимость: {cost_transoms:,.0f}₸")
+    print(f"   {W:.2f}м × {rows} × {count} = {Lrig_raw:.3f}м (НЕТТО)")
     
     result["transoms"] = {
-        "quantity": Lrig,
         "quantity_raw": Lrig_raw,
         "unit": "м",
         "price": transom_info["price"],
-        "cost": cost_transoms,
         "size": transom_size,
-        "article": transom_info["article"]
+        "article": transom_info["article"],
+        "name": transom_info["name"]
     }
     
-    # ============================================================================
-    # 3. ПРИЖИМНОЙ ПРОФИЛЬ / КРЫШКА (ИСПРАВЛЕНО!)
-    # ============================================================================
-    # ✅ ПРАВИЛЬНАЯ ФОРМУЛА: Lpr = Lst + Lrig (БЕЗ коэффициентов!)
+    # ============================================================
+    # 3. ПРИЖИМНОЙ ПРОФИЛЬ (по raw!)
+    # ============================================================
+    Lpr_raw = Lst_raw + Lrig_raw  # НЕТТО
     
-    Lpr = Lst + Lrig  # Просто сумма!
+    press_info = get_material_data("Прижимной профиль", facade_profiles_ref, search_field="Элемент")
     
-    press_info = find_profile_in_ref(facade_profiles_ref, "Прижимной профиль")
-    
-    cost_press = Lpr * press_info["price"]
-    total_cost += cost_press
-    
-    print(f"\n3. ПРИЖИМНОЙ ПРОФИЛЬ (ИСПРАВЛЕНО!):")
-    print(f"   Формула: Lst + Lrig")
-    print(f"   Расчёт: {Lst:.0f}м + {Lrig:.0f}м = {Lpr:.0f}м")
-    print(f"   Цена: {press_info['price']:,}₸/м")
-    print(f"   Стоимость: {cost_press:,.0f}₸")
+    print(f"\n3. ПРИЖИМНОЙ ПРОФИЛЬ:")
+    print(f"   Lst_raw + Lrig_raw = {Lst_raw:.3f} + {Lrig_raw:.3f} = {Lpr_raw:.3f}м (НЕТТО)")
     
     result["press_profile"] = {
-        "quantity": Lpr,
+        "quantity_raw": Lpr_raw,
         "unit": "м",
         "price": press_info["price"],
-        "cost": cost_press
+        "article": press_info["article"],
+        "name": press_info["name"]
     }
     
-    # Крышка фасадная (аналогично)
-    cover_info = find_profile_in_ref(facade_profiles_ref, "Крышка фасадная")
-    cost_cover = Lpr * cover_info["price"]
-    total_cost += cost_cover
+    # Крышка фасадная
+    cover_info = get_material_data("Крышка фасадная", facade_profiles_ref, search_field="Элемент")
     
     result["cover"] = {
-        "quantity": Lpr,
+        "quantity_raw": Lpr_raw,
         "unit": "м",
         "price": cover_info["price"],
-        "cost": cost_cover
+        "article": cover_info["article"],
+        "name": cover_info["name"]
     }
     
-    # ============================================================================
-    # 4. УПЛОТНИТЕЛЬ (ИСПРАВЛЕНО!)
-    # ============================================================================
-    # ✅ ПРАВИЛЬНАЯ ФОРМУЛА: Lseal = (Lst + Lrig) × 2 × 1.05
+    # ============================================================
+    # 4. УПЛОТНИТЕЛЬ (по raw!)
+    # ============================================================
+    Lseal_raw = (Lst_raw + Lrig_raw) * 2 * 1.05  # ×2 двусторонний + 5% запас
     
-    Lseal = (Lst + Lrig) * 2 * 1.05  # × 2 (двусторонний) + 5% запас
-    # ВАЖНО: Уплотнитель НЕ округляется кратно 6м!
+    seal_info = get_material_data("Упл фасада", facade_profiles_ref, search_field="Элемент")
     
-    seal_info = find_profile_in_ref(facade_profiles_ref, "Упл фасада")
-    
-    cost_seal = Lseal * seal_info["price"]
-    total_cost += cost_seal
-    
-    print(f"\n4. УПЛОТНИТЕЛЬ (ИСПРАВЛЕНО!):")
-    print(f"   Формула: (Lst + Lrig) × 2 × 1.05")
-    print(f"   Расчёт: ({Lst:.0f} + {Lrig:.0f}) × 2 × 1.05 = {Lseal:.2f}м")
-    print(f"   ⚠️ Не округляется кратно 6м!")
-    print(f"   Цена: {seal_info['price']:,}₸/м")
-    print(f"   Стоимость: {cost_seal:,.0f}₸")
+    print(f"\n4. УПЛОТНИТЕЛЬ:")
+    print(f"   (Lst_raw + Lrig_raw) × 2 × 1.05 = {Lseal_raw:.3f}м (НЕТТО)")
     
     result["seals"] = {
-        "quantity": Lseal,
+        "quantity_raw": Lseal_raw,
         "unit": "м",
         "price": seal_info["price"],
-        "cost": cost_seal
+        "article": seal_info["article"],
+        "name": seal_info["name"]
     }
     
-    # ============================================================================
-    # 5. КРОНШТЕЙНЫ (по новому параметру)
-    # ============================================================================
-    
+    # ============================================================
+    # 5. КРОНШТЕЙНЫ (штуки)
+    # ============================================================
     count_brackets = brackets_per_mullion * n_mullions * count
     
-    bracket_info = find_profile_in_ref(facade_profiles_ref, "Кронштейн")
-    
-    cost_brackets = count_brackets * bracket_info["price"]
-    total_cost += cost_brackets
+    bracket_info = get_material_data("Кронштейн", facade_profiles_ref, search_field="Элемент")
     
     print(f"\n5. КРОНШТЕЙНЫ:")
-    print(f"   Формула: brackets_per_mullion × n_mullions × count")
-    print(f"   Расчёт: {brackets_per_mullion} × {n_mullions} × {count} = {count_brackets} шт")
-    print(f"   Стоимость: {cost_brackets:,.0f}₸")
+    print(f"   {brackets_per_mullion} × {n_mullions} × {count} = {count_brackets} шт")
     
     result["brackets"] = {
-        "quantity": count_brackets,
+        "quantity_raw": count_brackets,
         "unit": "шт",
         "price": bracket_info["price"],
-        "cost": cost_brackets
+        "article": bracket_info["article"],
+        "name": bracket_info["name"]
     }
     
-    # ============================================================================
+    # ============================================================
     # 6. ДОПОЛНИТЕЛЬНЫЕ ЭЛЕМЕНТЫ
-    # ============================================================================
+    # ============================================================
     
-    # U-соединители ригеля (по 2 на каждый ригель)
+    # U-соединители (по 2 на каждый ригель)
     count_u = 2 * rows * (cols + 1) * count
-    u_info = find_profile_in_ref(facade_profiles_ref, "U-соединитель")
-    cost_u = count_u * u_info["price"]
-    total_cost += cost_u
+    u_info = get_material_data("U-соединитель", facade_profiles_ref, search_field="Элемент")
     
     result["u_connectors"] = {
-        "quantity": count_u,
+        "quantity_raw": count_u,
         "unit": "шт",
         "price": u_info["price"],
-        "cost": cost_u
+        "article": u_info["article"],
+        "name": u_info["name"]
     }
     
-    # Термомост
-    L_thermo = (Lst + Lrig) * 1.05  # +5% запас
-    thermo_info = find_profile_in_ref(facade_profiles_ref, "Термомост 18мм")
-    cost_thermo = L_thermo * thermo_info["price"]
-    total_cost += cost_thermo
+    # Термомост (+5% запас)
+    L_thermo_raw = (Lst_raw + Lrig_raw) * 1.05
+    thermo_info = get_material_data("Термомост 18мм", facade_profiles_ref, search_field="Элемент")
     
     result["thermobridges"] = {
-        "quantity": L_thermo,
+        "quantity_raw": L_thermo_raw,
         "unit": "м",
         "price": thermo_info["price"],
-        "cost": cost_thermo
+        "article": thermo_info["article"],
+        "name": thermo_info["name"]
     }
     
     # Держатели СП (по 2 на ячейку)
-    count_cells = cols * rows * count
-    count_holders = 2 * count_cells
-    holder_info = find_profile_in_ref(facade_profiles_ref, "Держатель")
-    cost_holders = count_holders * holder_info["price"]
-    total_cost += cost_holders
+    count_holders = 2 * cols * rows * count
+    holder_info = get_material_data("Держатель", facade_profiles_ref, search_field="Элемент")
     
     result["holders"] = {
-        "quantity": count_holders,
+        "quantity_raw": count_holders,
         "unit": "шт",
         "price": holder_info["price"],
-        "cost": cost_holders
+        "article": holder_info["article"],
+        "name": holder_info["name"]
     }
     
     print(f"\n" + "="*70)
-    print(f"ИТОГО КАРКАС: {total_cost:,.0f}₸")
+    print(f"КАРКАС: все значения НЕТТО. Округление и стоимости — в корзине.")
     print("="*70)
-    
-    result["total_cost"] = total_cost
-    result["summary"] = {
-        "Lst": Lst,
-        "Lrig": Lrig,
-        "Lpr": Lpr,
-        "Lseal": Lseal
-    }
     
     return result
 
@@ -364,22 +324,26 @@ def calculate_facade_inserts(
     facade_profiles_ref: List[Dict]
 ) -> Dict[str, Any]:
     """
-    ✅ ИСПРАВЛЕНО V9 - УСТРАНЕНИЕ ДВОЙНОЙ МАРЖИ
+    Расчёт вставок (окна/двери в фасаде).
     
-    Расчёт материалов вставок (окна/двери) БЕЗ двойной маржи
+    ✅ V9 Этап 2: адаптер рамы возвращает quantity_raw (НЕТТО).
+    ✅ V9 Этап 1: цена адаптера из справочника через get_material_data().
+    ✅ V9 Этап 4: вставки идут в корзину с category='facade_inserts'.
     """
     
     print("\n" + "="*70)
-    print("РАСЧЁТ МАТЕРИАЛОВ ВСТАВОК (БЕЗ ДВОЙНОЙ МАРЖИ)")
+    print("РАСЧЁТ ВСТАВОК (V9 — НЕТТО + МАТРЁШКА)")
     print("="*70)
     
     result = {
-        "materials_cost": 0,  # ТОЛЬКО себестоимость (без обеспечения!)
+        "materials_cost": 0,
         "total_cost": 0,
         "adapter_frames": {
-            "quantity": 0,
+            "quantity_raw": 0,
             "cost": 0
-        }
+        },
+        # ✅ Этап 4: список материалов вставок для корзины
+        "insert_materials_raw": []
     }
     
     if not inserts:
@@ -396,79 +360,83 @@ def calculate_facade_inserts(
         w = insert.get('width', 0)
         h = insert.get('height', 0)
         
-        # ✅ ИСПРАВЛЕНО: Адаптер рамы 2h + w (БЕЗ низа)
+        # Адаптер рамы: 2h + w (без низа)
         adapter_perimeter = h + h + w
         total_adapter_perimeter += adapter_perimeter
         
         print(f"  Размер: {w:.2f}м × {h:.2f}м")
-        print(f"  Адаптер рамы: {adapter_perimeter:.2f}м (2h + w)")
+        print(f"  Адаптер рамы: {adapter_perimeter:.3f}м (2h + w) — НЕТТО")
         
-        # ✅ КРИТИЧНО: Берём materials_cost, а НЕ total_with_margin!
+        # ✅ Этап 4 (Матрёшка): вызываем calculate_window_smeta для каждой вставки
         if calculate_window_smeta:
             insert_order_data = {
                 "positions": [{
                     "data": {
                         "width": w * 1000,
                         "height": h * 1000,
-                        "product_type": insert.get('product_type', 'Дверь 1 створч.'),
-                        "imposts": insert.get('imposts', {}),
-                        "sashes": insert.get('sashes', [])
+                        "product_type": insert.get("product_type", "Дверь 1 створч."),
+                        "imposts": insert.get("imposts", {}),
+                        "sashes": insert.get("sashes", [])
                     },
                     "count": 1
                 }],
                 "common": {
-                    "system": insert.get('system', 'ALG 2030-45C'),
-                    "fill_category": insert.get('fill_category', 'Стеклопакет'),
-                    "glass_type": insert.get('glass_type', 'Двойной'),
+                    "system": insert.get("system", "ALG 2030-45C"),
+                    "fill_category": insert.get("fill_category", "Стеклопакет"),
+                    "glass_type": insert.get("glass_type", "Двойной"),
                     "toning": "Нет",
                     "assembly": "Нет",
                     "installation": "Нет"
                 }
             }
             
-            print(f"  🔧 Расчёт материалов вставки...")
+            print(f"  🔧 Расчёт материалов вставки (матрёшка)...")
             insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
             
-            # ✅ КЛЮЧЕВОЕ: materials_cost вместо total_with_margin
+            # Себестоимость вставки (без обеспечения)
             insert_cost = insert_result.get("materials_cost", 0)
             total_inserts_cost += insert_cost
             
-            print(f"  ✅ Материалы вставки (БЕЗ обеспечения): {insert_cost:,.0f}₸")
+            # ✅ Этап 4: сохраняем part2_materials для передачи в корзину facade_inserts
+            for mat in insert_result.get("part2_materials", []):
+                result["insert_materials_raw"].append({
+                    "article":      mat.get("Артикул", ""),
+                    "name":         mat.get("Элемент", ""),
+                    "quantity_raw": mat.get("Количество_raw", mat.get("Количество", 0)),
+                    "unit":         mat.get("Единица", "шт"),
+                    "price":        mat.get("Цена", 0)
+                })
+            
+            print(f"  ✅ Себестоимость вставки (НЕТТО): {insert_cost:,.0f}₸")
+            print(f"  ✅ Материалов для корзины: {len(insert_result.get('part2_materials', []))} позиций")
         else:
             print(f"  ⚠️ calculate_window_smeta недоступна")
     
     result["materials_cost"] = total_inserts_cost
     
-    # АДАПТЕР РАМЫ
+    # АДАПТЕР РАМЫ — через get_material_data, НЕТТО
     if total_adapter_perimeter > 0:
-        adapter_info = find_profile_in_ref(facade_profiles_ref, "Адаптер рамы")
-        adapter_qty_rounded = round_to_multiple_up(total_adapter_perimeter, 6)
-        cost_adapter = adapter_qty_rounded * adapter_info["price"]
+        adapter_info = get_material_data("Адаптер рамы", facade_profiles_ref, search_field="Элемент")
         
-        print(f"\nАДАПТЕР РАМЫ (ИСПРАВЛЕНО!):")
-        print(f"  Артикул: {adapter_info['article']}")
-        print(f"  Формула: 2h + w для каждой вставки")
-        print(f"  Расчёт: {total_adapter_perimeter:.2f}м (чистая длина)")
-        print(f"  Округление: ⌈{total_adapter_perimeter:.2f}/6⌉ × 6 = {adapter_qty_rounded:.0f}м")
-        print(f"  Стоимость: {cost_adapter:,.0f}₸")
+        print(f"\nАДАПТЕР РАМЫ:")
+        print(f"  Суммарная длина: {total_adapter_perimeter:.3f}м (НЕТТО)")
+        print(f"  Округление → в корзине")
         
         result["adapter_frames"] = {
-            "quantity": adapter_qty_rounded,
-            "quantity_raw": total_adapter_perimeter,
+            "quantity_raw": total_adapter_perimeter,  # НЕТТО
             "unit": "м",
             "price": adapter_info["price"],
-            "cost": cost_adapter,
-            "article": adapter_info["article"]
+            "article": adapter_info["article"],
+            "name": adapter_info["name"]
         }
         
-        result["total_cost"] = total_inserts_cost + cost_adapter
+        result["total_cost"] = total_inserts_cost
     else:
         result["total_cost"] = total_inserts_cost
     
     print(f"\n✅ ИТОГО ВСТАВКИ:")
-    print(f"   Материалы вставок (БЕЗ обеспечения): {total_inserts_cost:,.0f}₸")
-    print(f"   Адаптер рамы: {result['adapter_frames'].get('cost', 0):,.0f}₸")
-    print(f"   ВСЕГО: {result['total_cost']:,.0f}₸")
+    print(f"   Себестоимость вставок: {total_inserts_cost:,.0f}₸")
+    print(f"   Адаптер рамы: {total_adapter_perimeter:.3f}м (НЕТТО, стоимость в корзине)")
     
     return result
 
@@ -479,9 +447,9 @@ def calculate_facade_materials(
     cols: int,
     rows: int,
     count: int,
-    mullion_size: int,  # НОВОЕ: Ручной выбор
-    transom_size: int,  # НОВОЕ: Ручной выбор
-    brackets_per_mullion: int,  # НОВОЕ: Кронштейнов на стойку
+    mullion_size: int,
+    transom_size: int,
+    brackets_per_mullion: int,
     inserts: List[Dict],
     facade_profiles_ref: List[Dict],
     ref1: List[Dict],
@@ -489,22 +457,22 @@ def calculate_facade_materials(
     ref3: List[Dict]
 ) -> Dict[str, Any]:
     """
-    ГЛАВНАЯ ФУНКЦИЯ: Полный расчёт материалов фасада
+    ГЛАВНАЯ ФУНКЦИЯ: Полный расчёт фасада.
     
-    ОБНОВЛЕНО ПО ТЗ:
-    - Поддержка трапеции (H1, H2)
-    - Ручной выбор профилей (mullion_size, transom_size)
-    - Исправленные формулы (Lpr, Lseal)
+    ✅ V9 Этап 2: возвращает materials_raw со всеми НЕТТО значениями.
+    ✅ V9 Этап 1: все цены из справочников.
+    ✅ V9 Этап 4: вставки — через матрёшку, с insert_materials_raw.
+    
+    Мувиль (нащельник) НЕ считается здесь — считается в app.py по общему периметру проекта.
     """
     
     print("\n" + "="*70)
-    print("РАСЧЁТ ФАСАДНОЙ СИСТЕМЫ (Ruit 50F)")
+    print("РАСЧЁТ ФАСАДНОЙ СИСТЕМЫ (Ruit 50F) — V9")
     print("="*70)
     
-    # ============================================================================
-    # 1. ГЕОМЕТРИЯ (трапеция или прямоугольник)
-    # ============================================================================
-    
+    # ============================================================
+    # 1. ГЕОМЕТРИЯ
+    # ============================================================
     geometry = calculate_facade_geometry(W, H1, H2, count)
     
     print(f"\nГЕОМЕТРИЯ:")
@@ -516,10 +484,9 @@ def calculate_facade_materials(
     print(f"  Площадь: {geometry['area']:.2f} м²")
     print(f"  Периметр: {geometry['perimeter']:.2f} м")
     
-    # ============================================================================
-    # 2. КАРКАС (с исправленными формулами)
-    # ============================================================================
-    
+    # ============================================================
+    # 2. КАРКАС (V9 — НЕТТО)
+    # ============================================================
     frame = calculate_facade_frame(
         W=W,
         Havg=geometry["Havg"],
@@ -531,59 +498,10 @@ def calculate_facade_materials(
         brackets_per_mullion=brackets_per_mullion,
         facade_profiles_ref=facade_profiles_ref
     )
-
     
-    # ============================================================================
-    # МУВИЛЬ (НАЩЕЛЬНИК) - ТОЛЬКО ПО ВНЕШНЕМУ ПЕРИМЕТРУ
-    # ============================================================================
-    
-    print(f"\n" + "="*70)
-    print(f"РАСЧЁТ МУВИЛЯ (НАЩЕЛЬНИКА) - ИСПРАВЛЕНО!")
-    print(f"="*70)
-    print(f"✅ Считается ОДИН РАЗ по внешнему периметру фасада")
-    print(f"❌ НЕ считается по периметру вставок (дверей)")
-    
-    # Формула: H1 + H2 + W (примыкание к стене, 3 стороны)
-    H2_actual = H2 if H2 else H1
-    movil_length_raw = H1 + H2_actual + W
-    
-    # Округляем до кратного 3м (кратность Мувиля = 3м)
-    movil_qty_rounded = round_to_multiple_up(movil_length_raw, 3)
-    
-    movil_info = find_profile_in_ref(facade_profiles_ref, "Фахверк")
-    
-    if movil_info["found"]:
-        cost_movil = movil_qty_rounded * movil_info["price"]
-        frame["total_cost"] += cost_movil
-        
-        print(f"\nФормула: H1 + H2 + W")
-        print(f"Расчёт: {H1:.2f} + {H2_actual:.2f} + {W:.2f} = {movil_length_raw:.2f}м")
-        print(f"Округление: ⌈{movil_length_raw:.2f}/3⌉ × 3 = {movil_qty_rounded:.0f}м")
-        print(f"Артикул: {movil_info['article']}")
-        print(f"Цена: {movil_info['price']:,.0f}₸/м")
-        print(f"Стоимость: {cost_movil:,.0f}₸")
-        
-        frame["movil"] = {
-            "quantity": movil_qty_rounded,
-            "quantity_raw": movil_length_raw,
-            "unit": "м",
-            "price": movil_info["price"],
-            "cost": cost_movil,
-            "article": movil_info["article"]
-        }
-    else:
-        print("⚠️ Мувиль (Фахверк) не найден в справочнике!")
-        frame["movil"] = {
-            "quantity": 0,
-            "cost": 0
-        }
-    
-    print("="*70)
-    
-    # ============================================================================
-    # 3. ВСТАВКИ (окна/двери)
-    # ============================================================================
-    
+    # ============================================================
+    # 3. ВСТАВКИ (матрёшка)
+    # ============================================================
     inserts_result = calculate_facade_inserts(
         inserts=inserts,
         ref1=ref1,
@@ -592,120 +510,73 @@ def calculate_facade_materials(
         facade_profiles_ref=facade_profiles_ref
     )
     
-    # ============================================================================
-    # 4. ИТОГОВЫЙ РЕЗУЛЬТАТ
-    # ============================================================================
-    
-    # === НОВОЕ: Формируем materials_raw для MaterialBasket ===
+    # ============================================================
+    # 4. ФОРМИРОВАНИЕ materials_raw ДЛЯ КОРЗИНЫ
+    # ============================================================
+    # Каркас — все элементы через одинаковый паттерн
     materials_raw = []
     
-    # Стойки
-    if "mullions" in frame:
+    frame_elements = [
+        ("mullions",       f"Стойка {mullion_size}мм"),
+        ("transoms",       f"Ригель {transom_size}мм"),
+        ("press_profile",  "Прижимной профиль"),
+        ("cover",          "Крышка фасадная"),
+        ("seals",          "Уплотнитель фасадный"),
+        ("brackets",       "Кронштейны"),
+        ("u_connectors",   "U-соединители"),
+        ("thermobridges",  "Термомост"),
+        ("holders",        "Держатели СП"),
+    ]
+    
+    for key, default_name in frame_elements:
+        if key in frame:
+            elem = frame[key]
+            materials_raw.append({
+                "article":      elem.get("article", ""),
+                "name":         elem.get("name", default_name),
+                "quantity_raw": elem.get("quantity_raw", 0),
+                "unit":         elem.get("unit", "м"),
+                "price":        elem.get("price", 0)
+            })
+    
+    # Адаптер рамы (из вставок)
+    adapter = inserts_result.get("adapter_frames", {})
+    if adapter.get("quantity_raw", 0) > 0:
         materials_raw.append({
-            "article": frame["mullions"].get("article", ""),
-            "name": f"Стойка {mullion_size}мм",
-            "quantity_raw": frame["mullions"].get("quantity_raw", 0),
-            "unit": "м",
-                        "price": frame["mullions"].get("price", 0)
+            "article":      adapter.get("article", ""),
+            "name":         adapter.get("name", "Адаптер рамы"),
+            "quantity_raw": adapter.get("quantity_raw", 0),
+            "unit":         adapter.get("unit", "м"),
+            "price":        adapter.get("price", 0)
         })
     
-    # Ригели
-    if "transoms" in frame:
-        materials_raw.append({
-            "article": frame["transoms"].get("article", ""),
-            "name": f"Ригель {transom_size}мм",
-            "quantity_raw": frame["transoms"].get("quantity_raw", 0),
-            "unit": "м",
-                        "price": frame["transoms"].get("price", 0)
-        })
-    
-    # Прижимной профиль (НЕ округляется до 6м!)
-    if "press_profile" in frame:
-        press_qty = frame["press_profile"].get("quantity", 0)
-        materials_raw.append({
-            "article": frame["press_profile"].get("article", ""),
-            "name": "Прижимной профиль",
-            "quantity_raw": press_qty,  # Уже округлён (Lst + Lrig)
-            "unit": "м",
-            "pack_size": 1.0,  # НЕ кратно 6м!
-            "price": frame["press_profile"].get("price", 0)
-        })
-    
-    # Крышка фасадная
-    if "cover" in frame:
-        cover_qty = frame["cover"].get("quantity", 0)
-        materials_raw.append({
-            "article": frame["cover"].get("article", ""),
-            "name": "Крышка фасадная",
-            "quantity_raw": cover_qty,
-            "unit": "м",
-                        "price": frame["cover"].get("price", 0)
-        })
-    
-    # Уплотнитель (НЕ округляется!)
-    if "seals" in frame:
-        seal_qty = frame["seals"].get("quantity", 0)
-        materials_raw.append({
-            "article": frame["seals"].get("article", ""),
-            "name": "Уплотнитель фасадный",
-            "quantity_raw": seal_qty,
-            "unit": "м",
-                        "price": frame["seals"].get("price", 0)
-        })
-    
-    # Кронштейны (штуки)
-    if "brackets" in frame:
-        brackets_qty = frame["brackets"].get("quantity", 0)
-        materials_raw.append({
-            "article": frame["brackets"].get("article", ""),
-            "name": "Кронштейны",
-            "quantity_raw": brackets_qty,
-            "unit": "шт",
-                        "price": frame["brackets"].get("price", 0)
-        })
-    
-    # Термомост
-    if "thermal_break" in frame:
-        tb_qty = frame["thermal_break"].get("quantity", 0)
-        materials_raw.append({
-            "article": frame["thermal_break"].get("article", ""),
-            "name": "Термомост",
-            "quantity_raw": tb_qty,
-            "unit": "м",
-                        "price": frame["thermal_break"].get("price", 0)
-        })
-    
+    # ============================================================
+    # 5. РЕЗУЛЬТАТ
+    # ============================================================
     result = {
-        "geometry": geometry,
-        "frame": frame,
-        "inserts": inserts_result,
-        "materials_raw": materials_raw,  # ← НОВОЕ ДЛЯ КОРЗИНЫ!
-        "total_cost": frame["total_cost"] + inserts_result["total_cost"],
+        "geometry":     geometry,
+        "frame":        frame,
+        "inserts":      inserts_result,
+        "materials_raw": materials_raw,          # ← Каркас НЕТТО для facade_frame
+        "insert_materials_raw": inserts_result.get("insert_materials_raw", []),  # ← Вставки для facade_inserts
+        "total_cost":   inserts_result.get("total_cost", 0),  # Только себестоимость вставок (каркас в корзине)
         "metrics": {
-            "total_area": geometry["area"],
+            "total_area":      geometry["area"],
             "total_perimeter": geometry["perimeter"],
-            "cost_per_sqm": 0,
-            "W": W,
+            "cost_per_sqm":    0,
+            "W":  W,
             "H1": H1,
             "H2": H2 if H2 else 0
         }
     }
     
-    # Стоимость за 1 м²
-    if geometry["area"] > 0:
-        result["metrics"]["cost_per_sqm"] = result["total_cost"] / geometry["area"]
-    
     print(f"\n" + "="*70)
-    print(f"ИТОГО ФАСАД: {result['total_cost']:,.0f}₸")
-    print(f"Стоимость за 1 м²: {result['metrics']['cost_per_sqm']:,.0f}₸/м²")
+    print(f"ФАСАД: materials_raw сформирован ({len(materials_raw)} каркас + "
+          f"{len(inserts_result.get('insert_materials_raw', []))} вставки)")
+    print(f"  ✅ Мувиль НЕ считается здесь — в app.py по общему периметру")
     print("="*70)
     
     return result
-
-
-# ============================================================================
-# ФУНКЦИИ ДЛЯ ТАМБУРА (из старой версии)
-# ============================================================================
 
 def calculate_tambour_materials_v2(
     positions: List[Dict],
@@ -714,64 +585,53 @@ def calculate_tambour_materials_v2(
     ref3: List[Dict]
 ) -> Dict[str, Any]:
     """
-    Расчёт материалов для оконного тамбура V2
-    
-    Тамбур = готовые двери/окна + соединительные элементы (направляющий, трубы)
+    Расчёт оконного тамбура V2.
+    ✅ V9 Этап 1: все цены через get_material_data().
+    ✅ V9 Этап 3: system через system_id с fallback на system.
     """
     
-    # Импорты уже в начале файла
-    
     print("\n" + "="*70)
-    print("РАСЧЁТ ОКОННОГО ТАМБУРА V2 (ИЗДЕЛИЯ + НАПРАВЛЯЮЩИЙ)")
+    print("РАСЧЁТ ОКОННОГО ТАМБУРА V2 (V9)")
     print("="*70)
     
     result = {
-        "products": [],  # Изделия (двери/окна)
-        "connecting": {},  # Соединительные элементы
+        "products": [],
+        "connecting": {},
         "total_products_cost": 0,
         "total_connecting_cost": 0,
         "total_cost": 0,
-        
-        # ДОБАВЛЕНО: Метрики (как в engine_windows)
+        "materials_raw": [],  # ← для корзины tambour
         "metrics": {
             "total_area": 0.0,
             "total_perimeter": 0.0
         }
     }
     
-    # ===== ЧАСТЬ 1: ИЗДЕЛИЯ (ДВЕРИ/ОКНА) =====
+    # ===== ЧАСТЬ 1: ИЗДЕЛИЯ =====
     print("\nЧАСТЬ 1: ИЗДЕЛИЯ")
     print("="*70)
     
     products_cost = 0
     total_perimeter = 0
     
-    # Импорт необходимых функций
     try:
         from calculations.engine_windows import calculate_window_smeta
         from calculations.mapping import get_code_for_windows_doors
     except ImportError:
-        print("⚠️ Предупреждение: Не удалось импортировать calculate_window_smeta")
+        print("⚠️ Не удалось импортировать calculate_window_smeta")
         calculate_window_smeta = None
         get_code_for_windows_doors = None
     
     for i, pos in enumerate(positions, 1):
+        # ✅ Этап 3: system_id с fallback
         product_type = pos.get("product_type", "Дверь 2-х створч.")
-        system = pos.get("system", "ALG 2030-63C")
+        system = pos.get("system_id", pos.get("system", "ALG 2030-63C"))
         width = pos.get("width", 1800)
         height = pos.get("height", 2200)
-        glass_type = pos.get("glass_type", "двойной")
-        opening_type = pos.get("opening_type", "Откр.")
-        h_imposts = pos.get("horizontal_imposts", 0)
-        v_imposts = pos.get("vertical_imposts", 0)
         
         print(f"\nИзделие {i}: {product_type} {system}")
         print(f"  Размер: {width}мм × {height}мм")
-        print(f"  Стекло: {glass_type}")
-        print(f"  Открывание: {opening_type}")
-        print(f"  Импосты: {h_imposts}H × {v_imposts}V")
         
-        # Считаем метрики
         width_m = width / 1000
         height_m = height / 1000
         area = width_m * height_m
@@ -785,7 +645,6 @@ def calculate_tambour_materials_v2(
         else:
             code = "UNKNOWN"
         
-        # Формируем данные для расчёта
         order_data = {
             "common": {
                 "order_number": f"TAMBOUR_ITEM_{i}",
@@ -795,20 +654,15 @@ def calculate_tambour_materials_v2(
             },
             "positions": [{
                 "product_type": product_type,
-                "system": system,
+                "system_id": system,
                 "code": code,
                 "count": 1,
-                
                 "data": {
                     "width": width,
                     "height": height,
                     "count": 1,
-                    
-                    # Заполнение
                     "fill_category": pos.get("fill_category", "Стеклопакет"),
-                    "glass_type": pos.get("glass_type", glass_type),
-                    
-                    # Импосты
+                    "glass_type": pos.get("glass_type", "двойной"),
                     "imposts": pos.get("imposts", {
                         "auto_calculate": True,
                         "has_left": False,
@@ -816,26 +670,16 @@ def calculate_tambour_materials_v2(
                         "has_right": False,
                         "has_tor": False
                     }),
-                    
-                    # Створки
                     "sashes": pos.get("sashes", [])
                 }
             }]
         }
         
-        # Вызываем расчёт
         try:
             if calculate_window_smeta:
                 item_result = calculate_window_smeta(order_data, ref1, ref2, ref3)
                 item_cost = item_result.get("materials_cost", 0)
                 products_cost += item_cost
-                
-                item_metrics = item_result.get("metrics", {})
-                item_area = item_metrics.get("total_area", 0)
-                item_perimeter = item_metrics.get("total_perimeter", 0)
-                
-                result["metrics"]["total_area"] += item_area
-                result["metrics"]["total_perimeter"] += item_perimeter
                 
                 result["products"].append({
                     "name": f"{product_type} {system}",
@@ -843,9 +687,7 @@ def calculate_tambour_materials_v2(
                     "cost": item_cost
                 })
                 
-                # Считаем периметр для направляющего
-                total_perimeter += 2 * ((width + height) / 1000)  # в метры
-                
+                total_perimeter += perimeter
                 print(f"  ✅ Стоимость: {item_cost:,.0f}₸")
         except Exception as e:
             print(f"  ⚠️ Ошибка расчёта: {e}")
@@ -859,55 +701,55 @@ def calculate_tambour_materials_v2(
     
     connecting_cost = 0
     
-    # --- НАПРАВЛЯЮЩИЙ (2-00-5581) ---
+    # --- НАПРАВЛЯЮЩИЙ ---
     L_guide = total_perimeter * 1.05  # +5% запас
+    guide_info = get_material_data(TambourArticles.GUIDE, ref1)
     
-    price_guide = 1200  # Запасное
-    for item in ref1:
-        if '2-00-5581' in item.get('Артикул', ''):
-            price_guide = parse_price(item.get('Цена за единицу', 1200))
-            break
-    
-    cost_guide = L_guide * price_guide
+    cost_guide = L_guide * guide_info["price"]
     connecting_cost += cost_guide
     
-    print(f"\n1. НАПРАВЛЯЮЩИЙ (2-00-5581):")
-    print(f"   Формула: Σ(периметры изделий) × 1.05")
-    print(f"   Расчёт: {total_perimeter:.2f}м × 1.05 = {L_guide:.2f}м")
-    print(f"   Цена: {price_guide:,}₸/м")
-    print(f"   Стоимость: {cost_guide:,.0f}₸")
+    print(f"\n1. НАПРАВЛЯЮЩИЙ ({TambourArticles.GUIDE}):")
+    print(f"   {total_perimeter:.2f}м × 1.05 = {L_guide:.2f}м | {guide_info['price']:,.0f}₸/м = {cost_guide:,.0f}₸")
     
     result["connecting"]["Направляющий"] = {
         "quantity": L_guide,
         "unit": "м",
-        "price": price_guide,
+        "price": guide_info["price"],
         "cost": cost_guide
     }
+    result["materials_raw"].append({
+        "article": guide_info["article"],
+        "name": "Направляющий",
+        "quantity_raw": L_guide,
+        "unit": "м",
+        "price": guide_info["price"]
+    })
     
-    # --- СОЕДИНИТЕЛЬНАЯ ТРУБА (опционально) ---
+    # --- ТРУБА (если > 2 изделия) ---
     if len(positions) > 2:
         max_height = max(pos.get("height", 2200) for pos in positions) / 1000
-        L_pipe = max_height * 2  # Две вертикальные стойки
+        L_pipe = max_height * 2
+        pipe_info = get_material_data(TambourArticles.PIPE, ref1)
         
-        price_pipe = 2500  # Запасное
-        for item in ref1:
-            if '2-00-2010' in item.get('Артикул', ''):
-                price_pipe = parse_price(item.get('Цена за единицу', 2500))
-                break
-        
-        cost_pipe = L_pipe * price_pipe
+        cost_pipe = L_pipe * pipe_info["price"]
         connecting_cost += cost_pipe
         
-        print(f"\n2. СОЕДИНИТЕЛЬНАЯ ТРУБА 90° (2-00-2010):")
-        print(f"   Длина: {L_pipe:.2f}м")
-        print(f"   Стоимость: {cost_pipe:,.0f}₸")
+        print(f"\n2. ТРУБА 90° ({TambourArticles.PIPE}):")
+        print(f"   {L_pipe:.2f}м | {pipe_info['price']:,.0f}₸/м = {cost_pipe:,.0f}₸")
         
         result["connecting"]["Труба соединительная"] = {
             "quantity": L_pipe,
             "unit": "м",
-            "price": price_pipe,
+            "price": pipe_info["price"],
             "cost": cost_pipe
         }
+        result["materials_raw"].append({
+            "article": pipe_info["article"],
+            "name": "Труба соединительная",
+            "quantity_raw": L_pipe,
+            "unit": "м",
+            "price": pipe_info["price"]
+        })
     
     result["total_connecting_cost"] = connecting_cost
     result["total_cost"] = products_cost + connecting_cost
@@ -921,6 +763,8 @@ def calculate_tambour_materials_v2(
     return result
 
 
+
+
 def calculate_tambour_materials(
     W: float,
     H: float,
@@ -932,27 +776,23 @@ def calculate_tambour_materials(
     ref3: List[Dict]
 ) -> Dict[str, Any]:
     """
-    Расчёт материалов для оконного тамбура (сцепка рам ALG)
-    
-    Применяется для тамбуров, собираемых из готовых дверных/оконных блоков.
+    Расчёт тамбура (сцепка рам ALG).
+    ✅ V9 Этап 1: все цены через get_material_data().
     """
     
     print("\n" + "="*70)
-    print("РАСЧЁТ ОКОННОГО ТАМБУРА (ALG)")
+    print("РАСЧЁТ ОКОННОГО ТАМБУРА (ALG) — V9")
     print("="*70)
     
     w_cell = W / cols
     h_cell = H / rows
     
-    print(f"\nИсходные данные:")
-    print(f"  Габариты: {W}м × {H}м")
-    print(f"  Сетка: {cols} столбцов × {rows} рядов")
-    print(f"  Ячейка: {w_cell:.2f}м × {h_cell:.2f}м")
-    print(f"  Количество сторон: {count}")
+    print(f"\n  Габариты: {W}м × {H}м | Сетка: {cols}×{rows} | Ячейка: {w_cell:.2f}×{h_cell:.2f}м")
     
     result = {
         "skeleton": {},
         "total_cost": 0,
+        "materials_raw": [],  # для корзины
         "details": []
     }
     
@@ -960,179 +800,155 @@ def calculate_tambour_materials(
     
     # --- РАМА (Frame) ---
     L_f = (W + H) * 2 * count
+    frame_info = get_material_data("Рама", ref1, search_field="Элемент")
+    # Если не нашли по слову, пробуем по системе ALG
+    if not frame_info["found"]:
+        for item in ref1:
+            elem = item.get("Элемент", "")
+            system = item.get("Система", "")
+            if "рама" in elem.lower() and "ALG" in system:
+                frame_info = {
+                    "article": item.get("Артикул", ""),
+                    "name": elem,
+                    "price": parse_price(item.get("Цена за единицу", 0)),
+                    "found": True
+                }
+                print(f"🔍 Поиск материала [Рама ALG] в Справочнике: Найдено — {elem} | {frame_info['price']:,.0f}₸")
+                break
     
-    price_frame = 3500  # Запасное значение
-    for item in ref1:
-        elem = item.get('Элемент', '')
-        system = item.get('Система', '')
-        if ('рама' in elem.lower() or 'Рама' in elem) and 'ALG' in system:
-            price_frame = parse_price(item.get('Цена за единицу', 3500))
-            break
-    
-    cost_frame = L_f * price_frame
+    cost_frame = L_f * frame_info["price"]
     skeleton_cost += cost_frame
     
-    print(f"\n1. РАМА (Frame):")
-    print(f"   Формула: (W + H) × 2 × count")
-    print(f"   Расчёт: ({W:.2f} + {H:.2f}) × 2 × {count} = {L_f:.2f}м")
-    print(f"   Цена: {price_frame:,}₸/м")
-    print(f"   Стоимость: {cost_frame:,.0f}₸")
+    print(f"\n1. РАМА: ({W:.2f}+{H:.2f})×2×{count} = {L_f:.2f}м | {frame_info['price']:,.0f}₸/м = {cost_frame:,.0f}₸")
     
-    result["skeleton"]["Рама"] = {
-        "quantity": L_f,
-        "unit": "м",
-        "price": price_frame,
-        "cost": cost_frame
-    }
+    result["skeleton"]["Рама"] = {"quantity": L_f, "unit": "м", "price": frame_info["price"], "cost": cost_frame}
+    result["materials_raw"].append({"article": frame_info["article"], "name": "Рама", "quantity_raw": L_f, "unit": "м", "price": frame_info["price"]})
     
-    # --- СОЕДИНИТЕЛЬНАЯ ТРУБА 90° ---
+    # --- ТРУБА 90° ---
     L_pipe = H * 2 * count
+    pipe_info = get_material_data(TambourArticles.PIPE, ref1)
     
-    price_pipe = 2500  # Запасное
-    for item in ref1:
-        if '2-00-2010' in item.get('Артикул', ''):
-            price_pipe = parse_price(item.get('Цена за единицу', 2500))
-            break
-    
-    cost_pipe = L_pipe * price_pipe
+    cost_pipe = L_pipe * pipe_info["price"]
     skeleton_cost += cost_pipe
     
-    print(f"\n2. СОЕДИНИТЕЛЬНАЯ ТРУБА 90° (2-00-2010):")
-    print(f"   Формула: H × 2 × count")
-    print(f"   Расчёт: {H:.2f} × 2 × {count} = {L_pipe:.2f}м")
-    print(f"   Стоимость: {cost_pipe:,.0f}₸")
+    print(f"\n2. ТРУБА 90°: {H:.2f}×2×{count} = {L_pipe:.2f}м | {pipe_info['price']:,.0f}₸/м = {cost_pipe:,.0f}₸")
     
-    result["skeleton"]["Труба соединительная"] = {
-        "quantity": L_pipe,
-        "unit": "м",
-        "price": price_pipe,
-        "cost": cost_pipe
-    }
+    result["skeleton"]["Труба соединительная"] = {"quantity": L_pipe, "unit": "м", "price": pipe_info["price"], "cost": cost_pipe}
+    result["materials_raw"].append({"article": pipe_info["article"], "name": "Труба соединительная", "quantity_raw": L_pipe, "unit": "м", "price": pipe_info["price"]})
     
     # --- АДАПТЕР ТРУБЫ ---
     L_ada = H * 4 * count
+    ada_info = get_material_data("Адаптер трубы", ref1, search_field="Элемент")
+    if not ada_info["found"]:
+        # Fallback: ищем по слову "адаптер"
+        for item in ref1:
+            if "адаптер" in item.get("Элемент", "").lower():
+                ada_info = {
+                    "article": item.get("Артикул", ""),
+                    "name": item.get("Элемент", ""),
+                    "price": parse_price(item.get("Цена за единицу", 0)),
+                    "found": True
+                }
+                print(f"🔍 Поиск материала [Адаптер трубы] в Справочнике: Найдено — {ada_info['name']} | {ada_info['price']:,.0f}₸")
+                break
     
-    price_adapter = 800  # Запасное
-    for item in ref1:
-        if 'адаптер' in item.get('Элемент', '').lower():
-            price_adapter = parse_price(item.get('Цена за единицу', 800))
-            break
+    cost_ada = L_ada * ada_info["price"]
+    skeleton_cost += cost_ada
     
-    cost_adapter = L_ada * price_adapter
-    skeleton_cost += cost_adapter
+    print(f"\n3. АДАПТЕР: {H:.2f}×4×{count} = {L_ada:.2f}м | {ada_info['price']:,.0f}₸/м = {cost_ada:,.0f}₸")
     
-    print(f"\n3. АДАПТЕР ТРУБЫ:")
-    print(f"   Формула: H × 4 × count")
-    print(f"   Расчёт: {H:.2f} × 4 × {count} = {L_ada:.2f}м")
-    print(f"   Стоимость: {cost_adapter:,.0f}₸")
-    
-    result["skeleton"]["Адаптер трубы"] = {
-        "quantity": L_ada,
-        "unit": "м",
-        "price": price_adapter,
-        "cost": cost_adapter
-    }
+    result["skeleton"]["Адаптер трубы"] = {"quantity": L_ada, "unit": "м", "price": ada_info["price"], "cost": cost_ada}
+    result["materials_raw"].append({"article": ada_info["article"], "name": "Адаптер трубы", "quantity_raw": L_ada, "unit": "м", "price": ada_info["price"]})
     
     # --- НАПРАВЛЯЮЩИЙ ---
-    L_guide = (W + H) * count * 1.05  # +5% запас
+    L_guide = (W + H) * count * 1.05
+    guide_info = get_material_data(TambourArticles.GUIDE, ref1)
     
-    price_guide = 1200  # Запасное
-    for item in ref1:
-        if '2-00-5581' in item.get('Артикул', ''):
-            price_guide = parse_price(item.get('Цена за единицу', 1200))
-            break
-    
-    cost_guide = L_guide * price_guide
+    cost_guide = L_guide * guide_info["price"]
     skeleton_cost += cost_guide
     
-    print(f"\n4. НАПРАВЛЯЮЩИЙ (2-00-5581):")
-    print(f"   Формула: (W + H) × count × 1.05")
-    print(f"   Расчёт: ({W:.2f} + {H:.2f}) × {count} × 1.05 = {L_guide:.2f}м")
-    print(f"   Стоимость: {cost_guide:,.0f}₸")
+    print(f"\n4. НАПРАВЛЯЮЩИЙ: ({W:.2f}+{H:.2f})×{count}×1.05 = {L_guide:.2f}м | {guide_info['price']:,.0f}₸/м = {cost_guide:,.0f}₸")
     
-    result["skeleton"]["Направляющий"] = {
-        "quantity": L_guide,
-        "unit": "м",
-        "price": price_guide,
-        "cost": cost_guide
-    }
+    result["skeleton"]["Направляющий"] = {"quantity": L_guide, "unit": "м", "price": guide_info["price"], "cost": cost_guide}
+    result["materials_raw"].append({"article": guide_info["article"], "name": "Направляющий", "quantity_raw": L_guide, "unit": "м", "price": guide_info["price"]})
     
     # --- ШТАПИК ---
     n_cells = cols * rows * count
-    w_g = w_cell - 0.1  # светопроём
+    w_g = w_cell - 0.1
     h_g = h_cell - 0.1
     L_b = (w_g + h_g) * 2 * n_cells
     
-    price_bead = 600  # Запасное
-    for item in ref1:
-        elem = item.get('Элемент', '')
-        system = item.get('Система', '')
-        if 'штапик' in elem.lower() and 'ALG' in system:
-            price_bead = parse_price(item.get('Цена за единицу', 600))
-            break
+    bead_info = get_material_data("Штапик", ref1, search_field="Элемент")
+    if not bead_info["found"]:
+        for item in ref1:
+            elem = item.get("Элемент", "")
+            system = item.get("Система", "")
+            if "штапик" in elem.lower() and "ALG" in system:
+                bead_info = {
+                    "article": item.get("Артикул", ""),
+                    "name": elem,
+                    "price": parse_price(item.get("Цена за единицу", 0)),
+                    "found": True
+                }
+                print(f"🔍 Поиск материала [Штапик ALG] в Справочнике: Найдено — {elem} | {bead_info['price']:,.0f}₸")
+                break
     
-    cost_bead = L_b * price_bead
+    cost_bead = L_b * bead_info["price"]
     skeleton_cost += cost_bead
     
-    print(f"\n5. ШТАПИК (Bead):")
-    print(f"   Формула: (w_g + h_g) × 2 × count_cells")
-    print(f"   Расчёт: ({w_g:.2f} + {h_g:.2f}) × 2 × {n_cells} = {L_b:.2f}м")
-    print(f"   Стоимость: {cost_bead:,.0f}₸")
+    print(f"\n5. ШТАПИК: ({w_g:.2f}+{h_g:.2f})×2×{n_cells} = {L_b:.2f}м | {bead_info['price']:,.0f}₸/м = {cost_bead:,.0f}₸")
     
-    result["skeleton"]["Штапик"] = {
-        "quantity": L_b,
-        "unit": "м",
-        "price": price_bead,
-        "cost": cost_bead
-    }
+    result["skeleton"]["Штапик"] = {"quantity": L_b, "unit": "м", "price": bead_info["price"], "cost": cost_bead}
+    result["materials_raw"].append({"article": bead_info["article"], "name": "Штапик", "quantity_raw": L_b, "unit": "м", "price": bead_info["price"]})
     
     # --- УПЛОТНИТЕЛЬ ---
-    L_s = L_b * 2 * 1.05  # +5% запас
+    L_s = L_b * 2 * 1.05
     
-    price_seal = 300  # Запасное
-    for item in ref1:
-        elem = item.get('Элемент', '')
-        system = item.get('Система', '')
-        if 'уплотн' in elem.lower() and 'ALG' in system:
-            price_seal = parse_price(item.get('Цена за единицу', 300))
-            break
+    seal_info = get_material_data("Уплотнитель", ref1, search_field="Элемент")
+    if not seal_info["found"]:
+        for item in ref1:
+            elem = item.get("Элемент", "")
+            system = item.get("Система", "")
+            if "уплотн" in elem.lower() and "ALG" in system:
+                seal_info = {
+                    "article": item.get("Артикул", ""),
+                    "name": elem,
+                    "price": parse_price(item.get("Цена за единицу", 0)),
+                    "found": True
+                }
+                print(f"🔍 Поиск материала [Уплотнитель ALG] в Справочнике: Найдено — {elem} | {seal_info['price']:,.0f}₸")
+                break
     
-    cost_seal = L_s * price_seal
+    cost_seal = L_s * seal_info["price"]
     skeleton_cost += cost_seal
     
-    print(f"\n6. УПЛОТНИТЕЛЬ:")
-    print(f"   Формула: L_b × 2 × 1.05")
-    print(f"   Расчёт: {L_b:.2f} × 2 × 1.05 = {L_s:.2f}м")
-    print(f"   Стоимость: {cost_seal:,.0f}₸")
+    print(f"\n6. УПЛОТНИТЕЛЬ: {L_b:.2f}×2×1.05 = {L_s:.2f}м | {seal_info['price']:,.0f}₸/м = {cost_seal:,.0f}₸")
     
-    result["skeleton"]["Уплотнитель"] = {
-        "quantity": L_s,
-        "unit": "м",
-        "price": price_seal,
-        "cost": cost_seal
-    }
+    result["skeleton"]["Уплотнитель"] = {"quantity": L_s, "unit": "м", "price": seal_info["price"], "cost": cost_seal}
+    result["materials_raw"].append({"article": seal_info["article"], "name": "Уплотнитель", "quantity_raw": L_s, "unit": "м", "price": seal_info["price"]})
     
     # --- ЛАМБЕРИ ---
     S_cell = w_cell * h_cell
     S_total = S_cell * n_cells
     L_lam = (S_total / 0.1) * 1.05
     
-    price_lambri = ref2.get("ламбри без термо", 2248)
+    # ✅ Этап 1: цена ламбри из ref2 через поиск по подстроке
+    price_lambri = 0.0
+    lambri_key_found = None
+    for key in ref2.keys():
+        if "ламбри без термо" in key.lower():
+            price_lambri = float(ref2[key])
+            lambri_key_found = key
+            break
+    print(f"🔍 Поиск материала [ламбри без термо] в Справочнике-2: {'Найдено — ' + str(price_lambri) + '₸' if lambri_key_found else 'Не найдено'}")
+    
     cost_lambri = L_lam * price_lambri
     skeleton_cost += cost_lambri
     
-    print(f"\n7. ЛАМБЕРИ:")
-    print(f"   Формула: (S_total / 0.1) × 1.05")
-    print(f"   Расчёт: ({S_total:.2f} / 0.1) × 1.05 = {L_lam:.2f}м")
-    print(f"   Цена: {price_lambri:,}₸/м")
-    print(f"   Стоимость: {cost_lambri:,.0f}₸")
+    print(f"\n7. ЛАМБЕРИ: ({S_total:.2f}/0.1)×1.05 = {L_lam:.2f}м | {price_lambri:,.0f}₸/м = {cost_lambri:,.0f}₸")
     
-    result["skeleton"]["Ламбери"] = {
-        "quantity": L_lam,
-        "unit": "м",
-        "price": price_lambri,
-        "cost": cost_lambri
-    }
+    result["skeleton"]["Ламбери"] = {"quantity": L_lam, "unit": "м", "price": price_lambri, "cost": cost_lambri}
+    result["materials_raw"].append({"article": lambri_key_found or "ламбри", "name": "Ламбери", "quantity_raw": L_lam, "unit": "м", "price": price_lambri})
     
     print(f"\n{'─'*70}")
     print(f"ИТОГО МАТЕРИАЛЫ ТАМБУРА: {skeleton_cost:,.0f}₸")
@@ -1141,3 +957,4 @@ def calculate_tambour_materials(
     result["total_cost"] = skeleton_cost
     
     return result
+
