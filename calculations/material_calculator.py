@@ -291,7 +291,7 @@ class MaterialCalculator:
         W = geometry.width_m
         H = geometry.height_m
         
-        n_sash = len(geometry.sashes)
+        n_sash = len(geometry.sashes) if geometry.sashes else 1  # глухое окно = 1 пакет
         
         if geometry.sashes:
             w_s = sum(s.width for s in geometry.sashes) / len(geometry.sashes) / 1000
@@ -339,6 +339,15 @@ class MaterialCalculator:
         """Поиск цены в Справочнике-2"""
         key_normalized = key_word.lower().replace(" / ", "/")
         price = self.ref2.get(key_normalized)
+        
+        if price is None:
+            defaults = {
+                "ламбри без термо": 2248,
+                "ламбри с термо": 2800,
+                "двойной": 9500,
+                "тройной": 12000
+            }
+            price = defaults.get(key_normalized)
         
         if price is None:
             return 0.0

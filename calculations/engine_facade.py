@@ -201,12 +201,13 @@ def calculate_facade_frame(
     # ============================================================
     # 2. РИГЕЛИ
     # ============================================================
-    Lrig_raw = W * rows * count  # НЕТТО
+    n_transoms = rows + 1  # верх + низ + межэтажные горизонтали
+    Lrig_raw = W * n_transoms * count  # НЕТТО
     
     transom_info = get_material_data(f"Ригель {transom_size} мм", facade_profiles_ref, search_field="Элемент")
     
     print(f"\n2. РИГЕЛИ {transom_size}мм:")
-    print(f"   {W:.2f}м × {rows} × {count} = {Lrig_raw:.3f}м (НЕТТО)")
+    print(f"   {W:.2f}м × {n_transoms} × {count} = {Lrig_raw:.3f}м (НЕТТО)")
     
     result["transoms"] = {
         "quantity_raw": Lrig_raw,
@@ -220,12 +221,12 @@ def calculate_facade_frame(
     # ============================================================
     # 3. ПРИЖИМНОЙ ПРОФИЛЬ (по raw!)
     # ============================================================
-    Lpr_raw = Lst_raw + Lrig_raw  # НЕТТО
+    Lpr_raw = Lrig_raw  # Прижим идёт только по ригелям (НЕТТО)
     
     press_info = get_material_data("Прижимной профиль", facade_profiles_ref, search_field="Элемент")
     
     print(f"\n3. ПРИЖИМНОЙ ПРОФИЛЬ:")
-    print(f"   Lst_raw + Lrig_raw = {Lst_raw:.3f} + {Lrig_raw:.3f} = {Lpr_raw:.3f}м (НЕТТО)")
+    print(f"   Lrig_raw = {Lrig_raw:.3f}м (НЕТТО)")
     
     result["press_profile"] = {
         "quantity_raw": Lpr_raw,
@@ -239,7 +240,7 @@ def calculate_facade_frame(
     cover_info = get_material_data("Крышка фасадная", facade_profiles_ref, search_field="Элемент")
     
     result["cover"] = {
-        "quantity_raw": Lpr_raw,
+        "quantity_raw": Lrig_raw,
         "unit": "м",
         "price": cover_info["price"],
         "article": cover_info["article"],
@@ -298,8 +299,8 @@ def calculate_facade_frame(
         "name": u_info["name"]
     }
     
-    # Термомост (+5% запас)
-    L_thermo_raw = (Lst_raw + Lrig_raw) * 1.05
+    # Термомост (+5% запас, только по ригелям)
+    L_thermo_raw = Lrig_raw * 1.05
     thermo_info = get_material_data("Термомост 18мм", facade_profiles_ref, search_field="Элемент")
     
     result["thermobridges"] = {
@@ -372,12 +373,14 @@ def calculate_facade_inserts(
         w = insert.get('width', 0)
         h = insert.get('height', 0)
         
-        # Адаптер рамы: 2h + w (без низа)
-        adapter_perimeter = h + h + w
-        total_adapter_perimeter += adapter_perimeter
-        
-        print(f"  Размер: {w:.2f}м × {h:.2f}м")
-        print(f"  Адаптер рамы: {adapter_perimeter:.3f}м (2h + w) — НЕТТО")
+        # Адаптер рамы: только для открывающихся вставок (не глухие)
+        insert_type = insert.get('type', '')
+        if insert_type != 'glass':
+            adapter_perimeter = h + h + w  # 2h + w (без низа)
+            total_adapter_perimeter += adapter_perimeter
+            print(f"  Адаптер рамы: {adapter_perimeter:.3f}м (2h + w) — НЕТТО")
+        else:
+            print(f"  Адаптер рамы: пропущен (глухая ячейка)")
         
         # ✅ Этап 4 (Матрёшка): вызываем calculate_window_smeta для каждой вставки
         if calculate_window_smeta:
@@ -413,9 +416,9 @@ def calculate_facade_inserts(
             for mat in insert_result.get("part2_materials", []):
                 result["insert_materials_raw"].append({
                     "article":      mat.get("Артикул", ""),
-                    "name":         mat.get("Товар", mat.get("Элемент", "")),
-                    "quantity_raw": mat.get("Расход факт.", mat.get("Количество_raw", mat.get("Количество", 0))),
-                    "unit":         mat.get("Ед.", mat.get("Единица", "шт")),
+                    "name":         mat.get("Элемент", ""),
+                    "quantity_raw": mat.get("Количество_raw", mat.get("Количество", 0)),
+                    "unit":         mat.get("Единица", "шт"),
                     "price":        mat.get("Цена", 0)
                 })
             
