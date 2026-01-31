@@ -17,7 +17,7 @@ if str(root_dir) not in sys.path:
 from auth.auth import authenticate
 from config.settings import SPREADSHEET_ID, GOOGLE_CREDENTIALS_PATH
 from references.sheets_reader import load_reference_1, load_reference_2, load_reference_3, load_facade_reference  # ДОБАВЛЕНО load_facade_reference
-from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING
+from calculations.engine_windows import calculate_window_smeta, calculate_impost_length, SYSTEM_MAPPING, calculate_window_smeta_legacy
 from calculations.engine_facade import calculate_facade_materials, calculate_tambour_materials, calculate_tambour_materials_v2  # ДОБАВЛЕНО
 from calculations.material_basket import MaterialAggregator as MaterialBasket
 from calculations.mapping import get_code_for_windows_doors, get_code_for_facade
@@ -483,22 +483,42 @@ def render_windows_doors_page():
                 all_results = []
                 
                 # Рассчитываем каждую позицию отдельно
-                for position in st.session_state.positions:
+                for pos_idx, position in enumerate(st.session_state.positions):
                     pos_order_data = {
                         "common": order_data["common"],
                         "positions": [position]
                     }
                     pos_result = calculate_window_smeta(pos_order_data, ref1, ref2, ref3)
+                    
+                    # FALLBACK: если unified не вернул part2_materials — вызываем legacy
+                    if not pos_result.get("part2_materials"):
+                        print(f"   ⚠️ Позиция {pos_idx+1}: unified не вернул part2_materials, пробуем legacy...")
+                        pos_result = calculate_window_smeta_legacy(pos_order_data, ref1, ref2, ref3)
+                        print(f"   📋 Legacy вернул: {len(pos_result.get('part2_materials', []))} материалов")
+                    
                     all_results.append(pos_result)
                     
                     # Добавляем материалы в корзину (БЕЗ округления!)
-                    for material in pos_result.get("part2_materials", []):
+                    pos_materials = pos_result.get("part2_materials", [])
+                    print(f"   📥 Позиция {pos_idx+1}: добавляем {len(pos_materials)} материалов в корзину")
+                    
+                    for material in pos_materials:
+                        art = material.get("Артикул", "")
+                        # Берём RAW количество если есть, иначе обычное
+                        qty = material.get("Количество_raw", material.get("Количество", 0))
+                        # Если qty это строка — парсим
+                        if isinstance(qty, str):
+                            try:
+                                qty = float(qty.replace(" ", "").replace(",", ".").split()[0])
+                            except:
+                                qty = 0
+                        print(f"      + {art}: qty_raw={qty}, unit={material.get('Единица','')}, price={material.get('Цена',0)}")
                         basket.add_material(
                             category='windows_doors',
-                            article=material.get("Артикул", ""),
-                            quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
+                            article=art,
+                            quantity_raw=float(qty),
                             unit=material.get("Единица", "шт"),
-                            price=material.get("Цена", 0),
+                            price=float(material.get("Цена", 0)),
                             name=material.get("Элемент", "")
                         )
                 
@@ -1434,7 +1454,7 @@ def render_facade_page():
                 # НОВОЕ: MaterialBasket для фасадов (как Logikal!)
                 # Материалы суммируются БЕЗ округления, затем округляются ОДИН РАЗ
                 
-                facade_basket = MaterialBasket(ref_facade)  # Корзина для фасадных материалов
+                facade_basket = MaterialBasket(ref1)  # ИСПРАВЛЕНО: ref1 а НЕ ref_facade!
                 
                 total_area = 0
                 total_perimeter = 0
@@ -1575,7 +1595,10 @@ def render_facade_page():
                     )
                     
                     # === ДОБАВЛЯЕМ МАТЕРИАЛЫ В КОРЗИНУ (БЕЗ ОКРУГЛЕНИЯ!) ===
-                    for material in pos_calc.get("materials_raw", []):
+                    raw_materials = pos_calc.get("materials_raw", [])
+                    print(f"   📥 Позиция {idx}: materials_raw содержит {len(raw_materials)} позиций")
+                    for material in raw_materials:
+                        print(f"      + {material.get('article','')}: qty_raw={material.get('quantity_raw',0)}")
                         facade_basket.add_material(
                             category='facade_frame',
                             article=material["article"],
@@ -1584,6 +1607,7 @@ def render_facade_page():
                             price=material["price"],
                             name=material["name"]
                         )
+                    print(f"   📊 Корзина facade_frame теперь: {len(facade_basket.categories.get('facade_frame', {}))} артикулов")
                     
                     # Метрики
                     pos_area = pos_calc.get("metrics", {}).get("total_area", 0)
