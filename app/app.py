@@ -1289,6 +1289,19 @@ def render_facade_page():
                                     insert_materials_cost += material_sum
                             insert_calc_details = insert_result  # Сохраняем для детализации
                             
+                            # Добавляем материалы вставки в корзину напрямую
+                            for mat in part2_materials:
+                                mat_type = mat.get("Тип элемента", "")
+                                if mat_type not in ["Стеклопакет", ""]:
+                                    facade_basket.add_material(
+                                        category='facade_inserts',
+                                        article=mat.get("Артикул", ""),
+                                        quantity_raw=mat.get("Расход факт.", mat.get("Количество_raw", 0)),
+                                        unit=mat.get("Ед.", mat.get("Единица", "шт")),
+                                        price=mat.get("Цена", 0),
+                                        name=mat.get("Товар", mat.get("Элемент", ""))
+                                    )
+                            
                             print(f"   💎 Детализация вставки:")
                             print(f"      Всего материалов: {insert_materials_cost:,.0f}₸")
                             print(f"      (Нащельник считается в общем нащельнике фасада)")
@@ -1742,89 +1755,7 @@ def render_facade_page():
                         st.write(f"**Итого материалы:** {tambour_calc.get('total_cost', 0):,.0f} ₸")
                     st.markdown("---")
                 else:
-                    # Для Ruit 50F показываем детализацию
-                    facade_calc = st.session_state.get("last_facade_result", {}).get("facade_calc")
-                    
-                    if facade_calc and facade_calc.get("all_positions"):
-                        # НОВОЕ: Показываем детализацию ПО КАЖДОЙ ПОЗИЦИИ
-                        positions_count = facade_calc.get("positions_count", 0)
-                        st.write(f"**Детализация по {positions_count} позициям:**")
-                        
-                        for idx, pos_calc in enumerate(facade_calc["all_positions"], 1):
-                            with st.expander(f"📋 Позиция {idx} - детали"):
-                                # Каркас этой позиции
-                                if pos_calc.get("frame"):
-                                    st.write("**Каркас:**")
-                                    frame_data = []
-                                    for elem, data in pos_calc["frame"].items():
-                                        if isinstance(data, dict) and "quantity" in data:
-                                            frame_data.append({
-                                                "Элемент": elem,
-                                                "Количество": f"{data.get('quantity', 0):.2f} {data.get('unit', '')}",
-                                                "Цена": f"{data.get('price', 0):,.0f} ₸",
-                                                "Стоимость": f"{data.get('cost', 0):,.0f} ₸"
-                                            })
-                                    if frame_data:
-                                        st.dataframe(pd.DataFrame(frame_data), width="stretch", hide_index=True)
-                                        st.write(f"**Итого каркас:** {pos_calc['frame'].get('total_cost', 0):,.0f} ₸")
-                                
-                                # Вставки этой позиции (ЭТАП 2: ДЕТАЛИЗАЦИЯ)
-                                if pos_calc.get("insert_calc_details"):
-                                    st.write("**Материалы вставки (окно/дверь):**")
-                                    
-                                    insert_details = pos_calc["insert_calc_details"]
-                                    
-                                    # Профили вставки
-                                    if insert_details.get("part1_final"):
-                                        st.write("*Профили:*")
-                                        profile_data = []
-                                        for name, cost in insert_details["part1_final"].items():
-                                            if cost > 0:
-                                                profile_data.append({
-                                                    "Элемент": name,
-                                                    "Стоимость": f"{cost:,.0f} ₸"
-                                                })
-                                        if profile_data:
-                                            st.dataframe(pd.DataFrame(profile_data), width="stretch", hide_index=True)
-                                    
-                                    # Фурнитура вставки
-                                    if insert_details.get("part2_final"):
-                                        st.write("*Фурнитура:*")
-                                        furn_data = []
-                                        for name, cost in insert_details["part2_final"].items():
-                                            if cost > 0:
-                                                furn_data.append({
-                                                    "Элемент": name,
-                                                    "Стоимость": f"{cost:,.0f} ₸"
-                                                })
-                                        if furn_data:
-                                            st.dataframe(pd.DataFrame(furn_data), width="stretch", hide_index=True)
-                                    
-                                    # Доп.детали вставки
-                                    if insert_details.get("part3_final"):
-                                        part3 = insert_details["part3_final"]
-                                        if "Дополнительные детали" in part3 and part3["Дополнительные детали"] > 0:
-                                            st.write("*Дополнительные детали:*")
-                                            st.write(f"- Нащельник: {part3['Дополнительные детали']:,.0f} ₸")
-                                    
-                                    # Итого вставка
-                                    insert_cost = pos_calc.get("insert_materials_cost", 0)
-                                    if insert_cost > 0:
-                                        st.write(f"**Итого вставка:** {insert_cost:,.0f} ₸")
-                                        st.caption("(Стеклопакет вставки считается в общем итоге)")
-                                
-                                # Адаптер рамы
-                                if pos_calc.get("inserts") and pos_calc["inserts"].get("adapter_frames"):
-                                    st.write("**Адаптер рамы:**")
-                                    adapter = pos_calc["inserts"]["adapter_frames"]
-                                    st.write(f"- Количество: {adapter.get('quantity', 0):.2f} {adapter.get('unit', 'м')}")
-                                    st.write(f"- Стоимость: {adapter.get('cost', 0):,.0f} ₸")
-                        
-                        st.markdown("---")
-                    else:
-                        st.info("ℹ️ Детализация по позициям недоступна")
-                    
-                    st.markdown("---")
+                    pass  # Ведомость материалов показывается ниже
                 
                 # === ОБЩАЯ ВЕДОМОСТЬ МАТЕРИАЛОВ (каркас + вставки) ===
                 facade_basket_saved = st.session_state.get("facade_basket")
