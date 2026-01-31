@@ -496,10 +496,10 @@ def render_windows_doors_page():
                         basket.add_material(
                             category='windows_doors',
                             article=material.get("Артикул", ""),
-                            quantity_raw=material.get("Количество_raw", material.get("Количество", 0)),
-                            unit=material.get("Единица", "шт"),
+                            quantity_raw=material.get("Расход факт.", material.get("Количество_raw", material.get("Количество", 0))),
+                            unit=material.get("Ед.", material.get("Единица", "шт")),
                             price=material.get("Цена", 0),
-                            name=material.get("Элемент", "")
+                            name=material.get("Товар", material.get("Элемент", ""))
                         )
                 
                 # Округляем материалы ОДИН РАЗ
@@ -2040,30 +2040,22 @@ def render_tambour_page():
                 print(f"  Формула: {max_height:.2f} × 2 × {count_joints} = {L_guide_raw:.2f}м")
                 print(f"  Округление: ⌈{L_guide_raw:.2f}/6⌉ = {sticks_guide} хлыстов × 6м = {L_guide:.2f}м")
                 
-                # Ищем цену в ref1 (Справочник-1)
-                price_guide = 3846  # Запасное из ТЗ
+                # Цена и артикул из справочника через get_material_data
+                from calculations.engine_facade import get_material_data
+                from calculations.constants import TambourArticles
+                guide_info = get_material_data(TambourArticles.GUIDE, ref1)
+                price_guide = guide_info["price"]
+                guide_article = guide_info["article"]
+                guide_name = guide_info["name"] or "Направляющий профиль"
                 
-                for item in ref1:
-                    art = item.get("Артикул", "")
-                    if "2-00-5581-60-0000" in art or "2-00-5581" in art:
-                        price_guide = item.get("Цена за единицу", 3846)
-                        if isinstance(price_guide, str):
-                            # Парсим если строка
-                            try:
-                                price_guide = float(price_guide.replace(" ", "").replace(",", "."))
-                            except:
-                                price_guide = 3846
-                        print(f"DEBUG: Найден направляющий - арт: {art}, цена: {price_guide}₸/м")
-                        break
-                
-                print(f"DEBUG: Используемая цена направляющего = {price_guide}₸/м")
+                print(f"DEBUG: Направляющий — арт: {guide_article}, цена: {price_guide}₸/м")
                 
                 cost_guide = L_guide * price_guide
                 
                 # Добавляем в МАТЕРИАЛЫ (part2), не в итоги!
                 result["part2_materials"].append({
-                    "Артикул": "2-00-5581-60-0000",
-                    "Наименование": "Направляющий профиль",
+                    "Артикул": guide_article,
+                    "Наименование": guide_name,
                     "Количество": f"{L_guide:.2f} м",
                     "Цена": round(price_guide, 0),
                     "Сумма": round(cost_guide, 0)

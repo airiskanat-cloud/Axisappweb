@@ -61,7 +61,7 @@ def calculate_window_smeta_unified(
         pos_result = calculate_product_materials(
             product_data={
                 "product_type": position.get("product_type", "Окно"),
-                "system": position.get("system", "ALG 2030-45C"),
+                "system": position.get("system_id", position.get("system", "ALG 2030-45C")),
                 "code": position.get("code", ""),
                 "data": data,
                 "common": order_data.get("common", {})

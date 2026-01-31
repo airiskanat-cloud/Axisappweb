@@ -16,7 +16,10 @@ from .product_model import (
 def safe_eval(formula: str, context: dict) -> float:
     """Безопасное вычисление формул Python"""
     try:
-        f = str(formula).replace(",", ".").replace(" ", "")
+        f = str(formula).replace(",", ".")
+        # Убираем только non-breaking space из Excel (\xa0 и т.п.), НЕ обычные пробелы
+        # Обычные пробелы нужны для "if" / "else" в формулах
+        f = f.replace("\xa0", " ").replace("\u00a0", " ").replace("\u202f", " ").replace("\u2009", " ")
         return float(eval(f, {"__builtins__": None, "math": math}, context))
     except Exception as e:
         print(f"⚠️ Ошибка в формуле '{formula}': {e}")
