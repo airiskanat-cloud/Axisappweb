@@ -413,9 +413,9 @@ def calculate_facade_inserts(
             for mat in insert_result.get("part2_materials", []):
                 result["insert_materials_raw"].append({
                     "article":      mat.get("Артикул", ""),
-                    "name":         mat.get("Элемент", ""),
-                    "quantity_raw": mat.get("Количество_raw", mat.get("Количество", 0)),
-                    "unit":         mat.get("Единица", "шт"),
+                    "name":         mat.get("Товар", mat.get("Элемент", "")),
+                    "quantity_raw": mat.get("Расход факт.", mat.get("Количество_raw", mat.get("Количество", 0))),
+                    "unit":         mat.get("Ед.", mat.get("Единица", "шт")),
                     "price":        mat.get("Цена", 0)
                 })
             

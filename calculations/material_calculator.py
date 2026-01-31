@@ -16,10 +16,7 @@ from .product_model import (
 def safe_eval(formula: str, context: dict) -> float:
     """Безопасное вычисление формул Python"""
     try:
-        f = str(formula).replace(",", ".")
-        # Убираем только non-breaking space из Excel (\xa0 и т.п.), НЕ обычные пробелы
-        # Обычные пробелы нужны для "if" / "else" в формулах
-        f = f.replace("\xa0", " ").replace("\u00a0", " ").replace("\u202f", " ").replace("\u2009", " ")
+        f = str(formula).replace(",", ".").replace(" ", "")
         return float(eval(f, {"__builtins__": None, "math": math}, context))
     except Exception as e:
         print(f"⚠️ Ошибка в формуле '{formula}': {e}")
@@ -342,15 +339,6 @@ class MaterialCalculator:
         """Поиск цены в Справочнике-2"""
         key_normalized = key_word.lower().replace(" / ", "/")
         price = self.ref2.get(key_normalized)
-        
-        if price is None:
-            defaults = {
-                "ламбри без термо": 2248,
-                "ламбри с термо": 2800,
-                "двойной": 9500,
-                "тройной": 12000
-            }
-            price = defaults.get(key_normalized)
         
         if price is None:
             return 0.0

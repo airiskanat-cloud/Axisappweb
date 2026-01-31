@@ -184,6 +184,7 @@ class MaterialAggregator:
                 'Артикул': data['article'],
                 'Элемент': data['name'],
                 'Количество_raw': round(data['quantity_raw'], 3),
+                'Кратность': data['package_size'],
                 'Количество': round(data['quantity_rounded'], 2),
                 'Единица': data['unit'],
                 'Цена': round(data['price'], 2),

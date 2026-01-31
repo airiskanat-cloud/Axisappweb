@@ -28,16 +28,11 @@ from history.save_history import save_history
 # ИСПРАВЛЕНО: "Окно глух." теперь с ОДНИМ пробелом (как в Справочнике-1)
 PRODUCT_TYPES = ["Окно с откр.", "Окно глух.", "Дверь 2-х створч.", "Дверь 1 створч.", "Фасад"]
 PROFILE_SYSTEMS = [
-    "ALG RUIT 73i 22MM",
-    "ALG RUIT 63i", 
-    "ALG RUIT 55i", 
-    "ALG RUIT 45i",
     "ALG 2030-73C", 
     "ALG 2030-63C", 
     "ALG 2030-55C", 
     "ALG 2030-45C", 
-    "ALG 2030-Slim", 
-    "Ruit 50F"
+    "ALG 2030-Slim"
 ]
 # GLASS_TYPES теперь загружаются динамически из ref2 (удалён хардкод)
 PANELS = ["Стеклопакет", "Ламбри без термо", "Ламбри с термо"]
@@ -394,7 +389,7 @@ def render_windows_doors_page():
             st.session_state.positions.append({
                 "count": 1,
                 "product_type": "Окно с откр.",
-                "system_id": "ALG RUIT 73i 22MM"
+                "system_id": "ALG 2030-73C"
             })
             st.rerun()
         
@@ -1290,7 +1285,7 @@ def render_facade_page():
                                 material_sum = material.get("Сумма", 0)
                                 
                                 # Берём ВСЁ кроме стеклопакета (он в общем итоге фасада)
-                                if material_type in ["Профиль", "Фурнитура", "Комплектующие", "Уплотнитель"]:
+                                if material_type not in ["Стеклопакет", ""]:
                                     insert_materials_cost += material_sum
                             insert_calc_details = insert_result  # Сохраняем для детализации
                             
@@ -1684,6 +1679,9 @@ def render_facade_page():
                     "facade_calc": facade_calc_combined  # ИСПРАВЛЕНО: Сохраняем объединённый результат
                 })
                 
+                # Сохраняем корзину для ведомости в UI
+                st.session_state.facade_basket = facade_basket
+                
                 # ИСПРАВЛЕНО: Сохранение в историю
                 try:
                     current_user = st.session_state.get("current_user", {})
@@ -1825,6 +1823,71 @@ def render_facade_page():
                         st.markdown("---")
                     else:
                         st.info("ℹ️ Детализация по позициям недоступна")
+                    
+                    st.markdown("---")
+                
+                # === ОБЩАЯ ВЕДОМОСТЬ МАТЕРИАЛОВ (каркас + вставки) ===
+                facade_basket_saved = st.session_state.get("facade_basket")
+                if facade_basket_saved:
+                    st.subheader("📋 Ведомость материалов")
+                    
+                    frame_materials = facade_basket_saved.get_category_materials('facade_frame')
+                    insert_materials = facade_basket_saved.get_category_materials('facade_inserts')
+                    
+                    vedomost_rows = []
+                    
+                    # Каркас
+                    if frame_materials:
+                        vedomost_rows.append({
+                            "Артикул": "─── КАРКАС ───",
+                            "Товар": "", "Факт. расход": "", "Норма упак.": "",
+                            "К отгрузке": "", "Цена": "", "Сумма": ""
+                        })
+                        for m in frame_materials:
+                            vedomost_rows.append({
+                                "Артикул":      m["Артикул"],
+                                "Товар":        m["Элемент"],
+                                "Факт. расход": f"{m['Количество_raw']:.2f} {m['Единица']}",
+                                "Норма упак.":  f"{m['Кратность']:.0f} {m['Единица']}",
+                                "К отгрузке":   f"{m['Количество']:.1f} {m['Единица']}",
+                                "Цена":         f"{m['Цена']:,.0f} ₸",
+                                "Сумма":        f"{m['Сумма']:,.0f} ₸"
+                            })
+                        frame_total = sum(m["Сумма"] for m in frame_materials)
+                        vedomost_rows.append({
+                            "Артикул": "", "Товар": "ИТОГО каркас",
+                            "Факт. расход": "", "Норма упак.": "", "К отгрузке": "",
+                            "Цена": "", "Сумма": f"{frame_total:,.0f} ₸"
+                        })
+                    
+                    # Вставки
+                    if insert_materials:
+                        vedomost_rows.append({
+                            "Артикул": "─── ВСТАВКИ ───",
+                            "Товар": "", "Факт. расход": "", "Норма упак.": "",
+                            "К отгрузке": "", "Цена": "", "Сумма": ""
+                        })
+                        for m in insert_materials:
+                            vedomost_rows.append({
+                                "Артикул":      m["Артикул"],
+                                "Товар":        m["Элемент"],
+                                "Факт. расход": f"{m['Количество_raw']:.2f} {m['Единица']}",
+                                "Норма упак.":  f"{m['Кратность']:.0f} {m['Единица']}",
+                                "К отгрузке":   f"{m['Количество']:.1f} {m['Единица']}",
+                                "Цена":         f"{m['Цена']:,.0f} ₸",
+                                "Сумма":        f"{m['Сумма']:,.0f} ₸"
+                            })
+                        insert_total = sum(m["Сумма"] for m in insert_materials)
+                        vedomost_rows.append({
+                            "Артикул": "", "Товар": "ИТОГО вставки",
+                            "Факт. расход": "", "Норма упак.": "", "К отгрузке": "",
+                            "Цена": "", "Сумма": f"{insert_total:,.0f} ₸"
+                        })
+                    
+                    if vedomost_rows:
+                        st.dataframe(pd.DataFrame(vedomost_rows), width="stretch", hide_index=True)
+                    else:
+                        st.info("ℹ️ Материалов в ведомости нет")
                     
                     st.markdown("---")
                 
