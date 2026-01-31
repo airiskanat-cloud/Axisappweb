@@ -8,12 +8,24 @@
 import math
 from typing import Dict, List, Any, Optional
 
-# Импорт констант (Этап 3)
+# Импорт констант (Этап 3) — constants.py кладётся в calculations/
 try:
     from calculations.constants import MaterialKeys, TambourArticles, ServiceKeys
-except ImportError:
-    # Fallback для тестов вне пакета
-    from constants import MaterialKeys, TambourArticles, ServiceKeys
+except (ImportError, ModuleNotFoundError):
+    try:
+        from .constants import MaterialKeys, TambourArticles, ServiceKeys
+    except (ImportError, ModuleNotFoundError):
+        # Финальный fallback: определяем минимально необходимые константы инлайн
+        class MaterialKeys:
+            ARTICLE = "Артикул"
+            ELEMENT = "Элемент"
+            PRICE = "Цена за единицу"
+            PACKAGE_SIZE = "Кратность"
+        class TambourArticles:
+            GUIDE = "2-00-5581"
+            PIPE = "2-00-2010"
+        class ServiceKeys:
+            LAMBRI_NO_THERMO = "ламбри без термо"
 
 # Импорты для расчёта вставок
 try:
