@@ -499,7 +499,7 @@ def render_windows_doors_page():
                 
                 # Округляем материалы ОДИН РАЗ
                 basket.round_all_materials()
-                totals = basket.calculate_final_totals(margin_rate=0.81)
+                totals = basket.calculate_final_totals(margin_rate=0.60)
                 
                 # Объединяем результаты
                 if not all_results:
@@ -537,7 +537,7 @@ def render_windows_doors_page():
                 subtotal = materials_cost + total_glass + total_lambri + total_toning + total_assembly + total_install + total_additional
                 
                 # Обеспечение ОДИН РАЗ
-                margin = subtotal * 0.81
+                margin = subtotal * 0.60
                 total_with_margin = subtotal + margin
                 
                 # Формируем итоговый результат
@@ -1383,7 +1383,7 @@ def render_facade_page():
                 
                 # === ОКРУГЛЯЕМ МАТЕРИАЛЫ ОДИН РАЗ (КАК LOGIKAL!) ===
                 facade_basket.round_all_materials()
-                facade_totals = facade_basket.calculate_final_totals(margin_rate=0.81)
+                facade_totals = facade_basket.calculate_final_totals(margin_rate=0.60)
                 
                 # Получаем материалы
                 materials_list = facade_basket.get_category_materials('facade_frame')
@@ -1632,11 +1632,11 @@ def render_facade_page():
                 print(f"   {'─'*68}")
                 print(f"   СУММА БЕЗ ОБЕСПЕЧЕНИЯ: {subtotal:,.0f}₸")
                 
-                # Обеспечение 81% (было 65%)
-                margin = subtotal * 0.81
+                # Обеспечение 60% (было 81%)
+                margin = subtotal * 0.60
                 total_cost = subtotal + margin
                 
-                print(f"   Обеспечение (81%): {margin:,.0f}₸")
+                print(f"   Обеспечение (60%): {margin:,.0f}₸")
                 print(f"{'='*70}")
                 print(f"К ОПЛАТЕ: {total_cost:,.0f}₸")
                 print(f"{'='*70}")
@@ -1829,7 +1829,7 @@ def render_facade_page():
                 df_part3 = pd.DataFrame(part3_data)
                 st.dataframe(df_part3, width="stretch", hide_index=True)
                 
-                st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 81%")
+                st.metric("🎯 ИТОГО К ОПЛАТЕ", f"{total_cost:,.0f} ₸", help="С учетом обеспечения 60%")
                 
             except Exception as e:
                 st.error(f"❌ Ошибка при расчете: {e}")
@@ -2062,7 +2062,7 @@ def render_tambour_page():
                 # Пересчитываем обеспечение и итого
                 old_margin = result["part3_final"].pop("Обеспечение", 0)
                 subtotal = sum(result["part3_final"].values())
-                margin = subtotal * 0.81
+                margin = subtotal * 0.60
                 result["part3_final"]["Обеспечение"] = round(margin, 0)
                 result["total_with_margin"] = round(subtotal + margin, 0)
                 
