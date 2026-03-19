@@ -1002,108 +1002,135 @@ def render_facade_page():
             # === ОКНО ИЛИ ДВЕРЬ (ВСТАВКА) ===
             elif fill_type in ["Окно", "Дверь"]:
                 pos["filling_type"] = "window" if fill_type == "Окно" else "door"
-                
-                # === ДОБАВЛЕНО: ВЫБОР ЯЧЕЙКИ ДЛЯ ВСТАВКИ ===
-                st.markdown("### 📍 Размещение вставки в фасаде")
-                st.caption("Укажите в какой ячейке разместить вставку (дверь/окно)")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    insert_col = st.number_input(
-                        "Столбец (от 1)",
-                        min_value=1,
-                        max_value=pos.get("columns", 3),
-                        value=pos.get("insert_col", 1),
-                        step=1,
-                        key=f"insert_col_{idx}",
-                        help="Номер столбца слева направо"
-                    )
-                
-                with col2:
-                    insert_row = st.number_input(
-                        "Ряд (от 1)",
-                        min_value=1,
-                        max_value=pos.get("rows", 2),
-                        value=pos.get("insert_row", 1),
-                        step=1,
-                        key=f"insert_row_{idx}",
-                        help="Номер ряда сверху вниз"
-                    )
-                
-                # Визуализация
-                st.info(f"🎯 Вставка будет размещена: **Столбец {insert_col}, Ряд {insert_row}**")
-                
-                # Сохраняем
-                pos["insert_col"] = insert_col
-                pos["insert_row"] = insert_row
-                
-                st.markdown("---")
-                st.info(f"🔧 Настройка вставки ({fill_type})")
-                
-                # ТИП ИЗДЕЛИЯ (ДОБАВЛЕНО)
-                if fill_type == "Дверь":
-                    product_types = ["Дверь 1 створч.", "Дверь 2-х створч."]
-                    saved_product = pos.get("insert_product_type", "Дверь 2-х створч.")
+
+                # === МНОЖЕСТВЕННЫЕ ВСТАВКИ ===
+                st.markdown("### 📍 Вставки в фасаде")
+                st.caption("Добавьте одну или несколько вставок (окно/дверь). Каждая вставка — своя ячейка.")
+
+                # Инициализируем список вставок если его нет
+                if "inserts_list" not in pos:
+                    # Миграция старых данных: если была одна вставка — переносим в список
+                    if pos.get("insert_data"):
+                        pos["inserts_list"] = [{
+                            "fill_type": fill_type,
+                            "insert_col": pos.get("insert_col", 1),
+                            "insert_row": pos.get("insert_row", 1),
+                            "insert_product_type": pos.get("insert_product_type", "Дверь 2-х створч."),
+                            "insert_system": pos.get("insert_system", "ALG 2030-73C"),
+                            "insert_data": pos.get("insert_data", {})
+                        }]
+                    else:
+                        pos["inserts_list"] = [{}]  # Одна пустая вставка по умолчанию
+
+                # Кнопка добавить вставку
+                if st.button("➕ Добавить вставку", key=f"add_insert_{idx}"):
+                    pos["inserts_list"].append({})
+
+                # Рендерим каждую вставку
+                inserts_to_delete = []
+                for ins_i, ins in enumerate(pos["inserts_list"]):
+                    st.markdown(f"**Вставка {ins_i + 1}**")
+
+                    # Тип вставки для этой конкретной вставки
+                    ins_fill_options = ["Окно", "Дверь"]
+                    ins_fill_saved = ins.get("fill_type", fill_type)
                     try:
-                        product_index = product_types.index(saved_product)
+                        ins_fill_idx = ins_fill_options.index(ins_fill_saved)
                     except ValueError:
-                        product_index = 1
-                    
-                    product_type = st.selectbox(
-                        "Тип изделия",
-                        product_types,
-                        index=product_index,
-                        key=f"fac_product_{idx}"
+                        ins_fill_idx = 0
+                    ins_fill_type = st.selectbox(
+                        "Тип вставки",
+                        ins_fill_options,
+                        index=ins_fill_idx,
+                        key=f"ins_fill_{idx}_{ins_i}"
                     )
-                    pos["insert_product_type"] = product_type
-                    sash_count = 1 if "1 створч" in product_type else 2
-                else:
-                    product_type = "Окно с откр."
-                    pos["insert_product_type"] = product_type
-                    sash_count = 2
-                
-                # Система профиля для вставки
-                # Получаем сохраненную систему или используем дефолтную
-                saved_system = pos.get("insert_system", "ALG 2030-73C")
-                system_options = ["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"]
-                
-                try:
-                    system_index = system_options.index(saved_system)
-                except ValueError:
-                    system_index = 0  # Дефолт на 73C если не найдено
-                
-                insert_system = st.selectbox(
-                    "Система профиля вставки",
-                    system_options,
-                    index=system_index,  # ← Используем сохраненный индекс
-                    key=f"fac_ins_sys_{idx}"
-                )
-                
-                # Вызываем форму окна/двери для вставки
-                with st.container():
-                    st.caption(f"⚠️ Максимальные размеры вставки: {cell_w_mm:.0f} × {cell_h_mm:.0f} мм")
-                    
-                    # Получаем ранее сохраненные данные (если есть)
-                    initial_insert_data = pos.get("insert_data", None)
-                    
-                    # Вызываем форму с начальными данными
-                    insert_data = window_door_ui(
-                        f"fac_insert_{idx}", 
-                        idx, 
-                        insert_system,
-                        initial_data=initial_insert_data  # ← Передаем сохраненные данные
+                    ins["fill_type"] = ins_fill_type
+
+                    # Ячейка
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        ins_col = st.number_input(
+                            "Столбец (от 1)",
+                            min_value=1,
+                            max_value=pos.get("columns", 3),
+                            value=ins.get("insert_col", 1),
+                            step=1,
+                            key=f"insert_col_{idx}_{ins_i}",
+                            help="Номер столбца слева направо"
+                        )
+                    with col2:
+                        ins_row = st.number_input(
+                            "Ряд (от 1)",
+                            min_value=1,
+                            max_value=pos.get("rows", 2),
+                            value=ins.get("insert_row", 1),
+                            step=1,
+                            key=f"insert_row_{idx}_{ins_i}",
+                            help="Номер ряда сверху вниз"
+                        )
+                    st.info(f"🎯 Вставка {ins_i + 1}: **Столбец {ins_col}, Ряд {ins_row}**")
+                    ins["insert_col"] = ins_col
+                    ins["insert_row"] = ins_row
+
+                    # Тип изделия
+                    if ins_fill_type == "Дверь":
+                        product_types = ["Дверь 1 створч.", "Дверь 2-х створч."]
+                        saved_product = ins.get("insert_product_type", "Дверь 2-х створч.")
+                        try:
+                            product_index = product_types.index(saved_product)
+                        except ValueError:
+                            product_index = 1
+                        ins_product_type = st.selectbox(
+                            "Тип изделия",
+                            product_types,
+                            index=product_index,
+                            key=f"fac_product_{idx}_{ins_i}"
+                        )
+                        ins_sash_count = 1 if "1 створч" in ins_product_type else 2
+                    else:
+                        ins_product_type = "Окно с откр."
+                        ins_sash_count = 2
+                    ins["insert_product_type"] = ins_product_type
+
+                    # Система профиля
+                    system_options = ["ALG 2030-73C", "ALG 2030-63C", "ALG 2030-55C", "ALG 2030-45C"]
+                    saved_system = ins.get("insert_system", "ALG 2030-73C")
+                    try:
+                        system_index = system_options.index(saved_system)
+                    except ValueError:
+                        system_index = 0
+                    ins_system = st.selectbox(
+                        "Система профиля вставки",
+                        system_options,
+                        index=system_index,
+                        key=f"fac_ins_sys_{idx}_{ins_i}"
                     )
-                    
-                    # ИСПРАВЛЕНО: Добавляем тип изделия и количество створок
-                    insert_data["product_type"] = product_type
-                    insert_data["sash_count"] = sash_count
-                    
-                    # Заполнение УЖЕ установлено в window_door_ui (форма спросила)
-                    
-                    # Сохраняем данные вставки
-                    pos["insert_data"] = insert_data
-                    pos["insert_system"] = insert_system
+                    ins["insert_system"] = ins_system
+
+                    # Форма окна/двери
+                    with st.container():
+                        st.caption(f"⚠️ Максимальные размеры вставки: {cell_w_mm:.0f} × {cell_h_mm:.0f} мм")
+                        initial_insert_data = ins.get("insert_data", None)
+                        ins_data = window_door_ui(
+                            f"fac_insert_{idx}_{ins_i}",
+                            idx,
+                            ins_system,
+                            initial_data=initial_insert_data
+                        )
+                        ins_data["product_type"] = ins_product_type
+                        ins_data["sash_count"] = ins_sash_count
+                        ins["insert_data"] = ins_data
+
+                    # Кнопка удалить (только если больше одной вставки)
+                    if len(pos["inserts_list"]) > 1:
+                        if st.button(f"🗑 Удалить вставку {ins_i + 1}", key=f"del_insert_{idx}_{ins_i}"):
+                            inserts_to_delete.append(ins_i)
+
+                    st.markdown("---")
+
+                # Удаляем отмеченные вставки
+                for i in sorted(inserts_to_delete, reverse=True):
+                    pos["inserts_list"].pop(i)
     
     # ========== КОНЕЦ РАЗДЕЛЕНИЯ ==========
     
@@ -1203,115 +1230,120 @@ def render_facade_page():
                     transom_size = pos.get("transom_size", 85)
                     brackets_per_mullion = pos.get("brackets_per_mullion", 2)
                     
-                    # Вставка ЭТОЙ позиции (если есть)
+                    # Вставки ЭТОЙ позиции (если есть)
                     inserts_for_this_pos = []
                     insert_materials_cost = 0  # Стоимость материалов вставки
                     insert_calc_details = None  # Детализация вставки для UI
                     filling_type = pos.get("filling_type", "blind")
                     
                     if filling_type in ["window", "door"]:
-                        insert_data = pos.get("insert_data", {})
-                        
-                        # Данные для передачи в calculate_facade_materials (для адаптера рамы)
-                        inserts_for_this_pos.append({
-                            "type": filling_type,
-                            "cell_col": pos.get("insert_col", 1),
-                            "cell_row": pos.get("insert_row", 1),
-                            "width": insert_data.get("width", 1800) / 1000,
-                            "height": insert_data.get("height", 2200) / 1000,
-                            "system": pos.get("insert_system", "ALG 2030-63C"),
-                            "product_type": insert_data.get("product_type", "Дверь 2-х створч."),
-                            "data": {
-                                "glass_type": insert_data.get("glass_type", "двойной"),
-                                "fill_category": insert_data.get("fill_category", "Стеклопакет"),
-                                "lambri_type": insert_data.get("lambri_type", "Ламбри без термо"),
-                                "toning": "Нет",
-                                "assembly": "Нет",
-                                "installation": "Нет",
-                                "sash_count": insert_data.get("sash_count", 2)
-                            }
-                        })
-                        
-                        print(f"   Вставка: {filling_type} в ячейке ({pos.get('insert_col', 1)}, {pos.get('insert_row', 1)})")
-                        
-                        # ============================================================================
-                        # НОВОЕ: РАСЧЁТ МАТЕРИАЛОВ ВСТАВКИ через calculate_window_smeta()
-                        # ============================================================================
-                        
-                        try:
-                            # Формируем order_data для calculate_window_smeta
-                            insert_system = pos.get("insert_system", "ALG 2030-63C")
-                            product_type = insert_data.get("product_type", "Дверь 2-х створч.")
-                            
-                            # КРИТИЧНО: Используем правильную функцию для получения CODE
-                            code = get_code_for_windows_doors(product_type, insert_system)
-                            
-                            print(f"   📋 Система: {insert_system}, Тип: {product_type}")
-                            print(f"   🔑 CODE: {code}")
-                            
-                            insert_order_data = {
-                                "common": {
-                                    "order_number": f"INS-{idx}",
+                        # Поддержка нового формата (inserts_list) и старого (insert_data)
+                        inserts_list = pos.get("inserts_list", [])
+                        if not inserts_list and pos.get("insert_data"):
+                            # Обратная совместимость со старым форматом
+                            inserts_list = [{
+                                "fill_type": "Дверь" if filling_type == "door" else "Окно",
+                                "insert_col": pos.get("insert_col", 1),
+                                "insert_row": pos.get("insert_row", 1),
+                                "insert_product_type": pos.get("insert_product_type", "Дверь 2-х створч."),
+                                "insert_system": pos.get("insert_system", "ALG 2030-63C"),
+                                "insert_data": pos.get("insert_data", {})
+                            }]
+
+                        for ins in inserts_list:
+                            insert_data = ins.get("insert_data", {})
+                            if not insert_data:
+                                continue
+
+                            ins_filling = ins.get("fill_type", "Дверь")
+                            ins_type = "window" if ins_filling == "Окно" else "door"
+
+                            # Данные для передачи в calculate_facade_materials (для адаптера рамы)
+                            inserts_for_this_pos.append({
+                                "type": ins_type,
+                                "cell_col": ins.get("insert_col", 1),
+                                "cell_row": ins.get("insert_row", 1),
+                                "width": insert_data.get("width", 1800) / 1000,
+                                "height": insert_data.get("height", 2200) / 1000,
+                                "system": ins.get("insert_system", "ALG 2030-63C"),
+                                "product_type": insert_data.get("product_type", "Дверь 2-х створч."),
+                                "data": {
+                                    "glass_type": insert_data.get("glass_type", "двойной"),
+                                    "fill_category": insert_data.get("fill_category", "Стеклопакет"),
+                                    "lambri_type": insert_data.get("lambri_type", "Ламбри без термо"),
                                     "toning": "Нет",
                                     "assembly": "Нет",
-                                    "installation": "Нет"
-                                },
-                                "positions": [{
-                                    "product_type": product_type,
-                                    "system_id": insert_system,  # ИСПРАВЛЕНО: system_id вместо system
-                                    "code": code,                 # ИСПРАВЛЕНО: правильный CODE
-                                    "count": 1,
-                                    "data": insert_data  # КРИТИЧНО: передаём ВСЕ данные напрямую!
-                                }]
-                            }
-                            
-                            # Вызываем расчёт
-                            print(f"   🔧 Расчёт материалов вставки через calculate_window_smeta...")
-                            insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
-                            
-                            # КРИТИЧНО: Для вставки в фасад берём ТОЛЬКО профили и фурнитуру
-                            # Стеклопакет НЕ включаем - он считается в общем итоге фасада!
-                            # Нащельник вставки ТОЖЕ НЕ включаем - он часть общего нащельника фасада!
-                            
-                            # ИСПРАВЛЕНО: Извлекаем материалы из part2_materials (новый формат от adapter.py)
-                            part2_materials = insert_result.get("part2_materials", [])
-                            
-                            # ВСЕ материалы вставки (профили + фурнитура + комплектующие + уплотнители)
-                            # НО БЕЗ: стеклопакета, нащельника, обеспечения
-                            insert_materials_cost = 0
-                            
-                            for material in part2_materials:
-                                material_type = material.get("Тип элемента", "")
-                                material_sum = material.get("Сумма", 0)
-                                
-                                # Берём ВСЁ кроме стеклопакета (он в общем итоге фасада)
-                                if material_type not in ["Стеклопакет", ""]:
-                                    insert_materials_cost += material_sum
-                            insert_calc_details = insert_result  # Сохраняем для детализации
-                            
-                            # Добавляем материалы вставки в корзину напрямую
-                            for mat in part2_materials:
-                                mat_type = mat.get("Тип элемента", "")
-                                if mat_type not in ["Стеклопакет", ""]:
-                                    facade_basket.add_material(
-                                        category='facade_inserts',
-                                        article=mat.get("Артикул", ""),
-                                        quantity_raw=mat.get("Расход факт.", mat.get("Количество_raw", 0)),
-                                        unit=mat.get("Ед.", mat.get("Единица", "шт")),
-                                        price=mat.get("Цена", 0),
-                                        name=mat.get("Товар", mat.get("Элемент", ""))
-                                    )
-                            
-                            print(f"   💎 Детализация вставки:")
-                            print(f"      Всего материалов: {insert_materials_cost:,.0f}₸")
-                            print(f"      (Нащельник считается в общем нащельнике фасада)")
-                            print(f"      (Стеклопакет считается в общем итоге)")
-                            print(f"   ✅ ИТОГО материалы вставки: {insert_materials_cost:,.0f}₸")
-                            
-                        except Exception as e:
-                            print(f"   ⚠️ Ошибка расчёта вставки: {e}")
-                            insert_materials_cost = 0
-                            insert_calc_details = None
+                                    "installation": "Нет",
+                                    "sash_count": insert_data.get("sash_count", 2)
+                                }
+                            })
+
+                            print(f"   Вставка: {ins_type} в ячейке ({ins.get('insert_col', 1)}, {ins.get('insert_row', 1)})")
+
+                            # ============================================================================
+                            # РАСЧЁТ МАТЕРИАЛОВ ВСТАВКИ через calculate_window_smeta()
+                            # ============================================================================
+                            try:
+                                insert_system = ins.get("insert_system", "ALG 2030-63C")
+                                product_type = insert_data.get("product_type", "Дверь 2-х створч.")
+
+                                code = get_code_for_windows_doors(product_type, insert_system)
+
+                                print(f"   📋 Система: {insert_system}, Тип: {product_type}")
+                                print(f"   🔑 CODE: {code}")
+
+                                insert_order_data = {
+                                    "common": {
+                                        "order_number": f"INS-{idx}",
+                                        "toning": "Нет",
+                                        "assembly": "Нет",
+                                        "installation": "Нет"
+                                    },
+                                    "positions": [{
+                                        "product_type": product_type,
+                                        "system_id": insert_system,
+                                        "code": code,
+                                        "count": 1,
+                                        "data": insert_data
+                                    }]
+                                }
+
+                                print(f"   🔧 Расчёт материалов вставки через calculate_window_smeta...")
+                                insert_result = calculate_window_smeta(insert_order_data, ref1, ref2, ref3)
+
+                                part2_materials = insert_result.get("part2_materials", [])
+
+                                for material in part2_materials:
+                                    material_type = material.get("Тип элемента", "")
+                                    material_sum = material.get("Сумма", 0)
+                                    if material_type not in ["Стеклопакет", ""]:
+                                        insert_materials_cost += material_sum
+
+                                insert_calc_details = insert_result  # Сохраняем последнюю для детализации
+
+                                # Добавляем материалы вставки в корзину
+                                for mat in part2_materials:
+                                    mat_type = mat.get("Тип элемента", "")
+                                    if mat_type not in ["Стеклопакет", ""]:
+                                        facade_basket.add_material(
+                                            category='facade_inserts',
+                                            article=mat.get("Артикул", ""),
+                                            quantity_raw=mat.get("Расход факт.", mat.get("Количество_raw", 0)),
+                                            unit=mat.get("Ед.", mat.get("Единица", "шт")),
+                                            price=mat.get("Цена", 0),
+                                            name=mat.get("Товар", mat.get("Элемент", ""))
+                                        )
+
+                                print(f"   💎 Детализация вставки:")
+                                print(f"      Всего материалов: {insert_materials_cost:,.0f}₸")
+                                print(f"      (Нащельник считается в общем нащельнике фасада)")
+                                print(f"      (Стеклопакет считается в общем итоге)")
+                                print(f"   ✅ ИТОГО материалы вставки: {insert_materials_cost:,.0f}₸")
+
+                            except Exception as e:
+                                print(f"   ⚠️ Ошибка расчёта вставки: {e}")
+                                insert_materials_cost = 0
+                                insert_calc_details = None
                     
                     # Расчёт ЭТОЙ позиции (count=1!)
                     pos_calc = calculate_facade_materials(
