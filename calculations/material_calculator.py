@@ -156,12 +156,17 @@ class MaterialCalculator:
             price = mat["price"]
             
             # ФОРМУЛА ИЗ engine_windows.py (строки 339-344):
-            if norm > 0:
-                qty_ship = math.ceil(qty_fact / norm)
+            # ИСПРАВЛЕНО: штучные товары (шт, комп, комплек) не округляются до кратности упаковки
+            unit = mat["unit"]
+            is_linear = unit.lower() in ("м", "м²", "хлыст", "рулон")
+            if is_linear and norm > 0:
+                # Профили: ceil до хлыста → qty_ship в метрах
+                qty_ship = math.ceil(qty_fact / norm) * norm
             else:
+                # Штучные: просто ceil, кратность упаковки не применяем
                 qty_ship = math.ceil(qty_fact)
             
-            row_sum = (price * norm) * qty_ship
+            row_sum = price * qty_ship
             materials_sum += row_sum
             
             if qty_fact > 0:

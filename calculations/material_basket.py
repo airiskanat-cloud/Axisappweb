@@ -160,9 +160,16 @@ class MaterialAggregator:
                 qty_raw = data['quantity_raw']
                 package_size = data['package_size']
                 
-                # Округление вверх до кратности
-                packages_needed = math.ceil(qty_raw / package_size)
-                qty_rounded = packages_needed * package_size
+                # ИСПРАВЛЕНО: штучные товары не округляются до кратности упаковки
+                unit = data['unit']
+                is_linear = unit.lower() in ("м", "м²", "хлыст", "рулон")
+                if is_linear and package_size > 1:
+                    # Профили: округляем до хлыста (6м)
+                    packages_needed = math.ceil(qty_raw / package_size)
+                    qty_rounded = packages_needed * package_size
+                else:
+                    # Штучные (шт, комп, комплек и т.д.): просто ceil
+                    qty_rounded = math.ceil(qty_raw)
                 
                 # Сохраняем
                 data['quantity_rounded'] = qty_rounded
